@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { AiInput } from "@/components/ui/ai-input";
-import { AnimatedButton } from "@/components/ui/animated-button";
 import { cn } from "@/lib/utils";
 import { ChatMessage } from "./ChatMessage";
 import { useChat } from "./useChat";
@@ -8,7 +7,7 @@ import { useChat } from "./useChat";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage() {
-  const { messages, loading, send, clear } = useChat();
+  const { messages, loading, send, clear, confirmMusic } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -18,7 +17,7 @@ export function ChatPage() {
   return (
     <div
       className={cn(
-        "dark mx-auto flex h-dvh w-full max-w-3xl flex-col",
+        "mx-auto flex h-dvh w-full max-w-3xl flex-col",
         "px-4 py-4 font-sans text-zinc-100 sm:px-6 sm:py-6",
       )}
     >
@@ -34,22 +33,20 @@ export function ChatPage() {
             Powered by Nebius Token Factory & Strands Agents SDK
           </p>
         </div>
-        <AnimatedButton
-          variant="outline"
+        <button
+          type="button"
           onClick={clear}
           disabled={loading}
-          className={cn(
-            "shrink-0 border border-white/10 px-3 py-1.5 text-xs",
-            "hover:border-white/20 disabled:cursor-not-allowed disabled:opacity-60",
-          )}
+          className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           Clear
-        </AnimatedButton>
+        </button>
       </header>
 
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto py-4 space-y-4">
         {messages.map((message, index) => (
-          <ChatMessage key={index} message={message} />
+          <ChatMessage key={index} message={message} loading={loading}
+            onConfirmMusic={() => confirmMusic(index)} />
         ))}
 
         {loading && (
@@ -58,12 +55,13 @@ export function ChatPage() {
               Nemotron Super
             </div>
             <div
+              role="status"
               className={cn(
                 "flex items-center gap-2 rounded-2xl border border-white/10",
                 "bg-zinc-900/80 px-4 py-2.5 text-sm text-zinc-400",
               )}
             >
-              <span className="inline-block size-2 rounded-full bg-emerald-400 animate-ping" />
+              <span className="size-3 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" aria-label="Thinking" />
               <span>Thinking...</span>
             </div>
           </div>
@@ -80,6 +78,7 @@ export function ChatPage() {
           allowAttachments={false}
           allowEffortSelect={false}
           allowModelSelect={false}
+          allowVoice={false}
           disabled={loading}
           minWidth="100%"
           maxWidth="100%"

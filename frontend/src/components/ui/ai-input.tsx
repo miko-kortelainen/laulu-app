@@ -44,8 +44,8 @@ export interface PromptInputRef {
   focus: () => void;
   expand: () => void;
   collapse: () => void;
-  startVoice: () => void;
-  stopVoice: () => void;
+  startVoice?: () => void;
+  stopVoice?: () => void;
   addAttachment: (
     file: File,
     url: string,
@@ -86,28 +86,7 @@ export interface PromptInputProps {
   modelIcons?: Record<string, string | React.ReactNode>;
 }
 
-interface BrowserSpeechRecognitionEvent {
-  resultIndex: number;
-  results: {
-    length: number;
-    [index: number]: {
-      isFinal: boolean;
-      [index: number]: { transcript: string };
-    };
-  };
-}
 
-interface BrowserSpeechRecognition {
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-}
-
-type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
 const DEFAULT_MODELS: string[] = [
   "GPT 5.5",
@@ -152,47 +131,6 @@ function ArrowUpIcon() {
   );
 }
 
-function MicIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 14 14"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect
-        x="5"
-        y="1"
-        width="4"
-        height="7"
-        rx="2"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M2.75 6.5V7a4.25 4.25 0 0 0 8.5 0v-.5M7 11.25V13"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function StopIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 14 14"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" fill="currentColor" />
-    </svg>
-  );
-}
 
 function PlusIcon() {
   return (
@@ -626,7 +564,7 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
       onExpandedChange,
       maxAttachments = 6,
       allowAttachments = true,
-      allowVoice = true,
+      allowVoice: _allowVoice = false,
       allowModelSelect = true,
       allowEffortSelect = true,
       minWidth = 320,
@@ -678,18 +616,9 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
       rect: DOMRect;
     } | null>(null);
 
-    const [isRecording, setIsRecording] = useState(false);
-    const [audioData, setAudioData] = useState<number[]>(new Array(5).fill(0));
     const valueRef = useRef(
       controlledValue !== undefined ? controlledValue : localValue,
     );
-
-    const streamRef = useRef<MediaStream | null>(null);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const rafRef = useRef<number | null>(null);
-    const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-    const demoIntervalRef = useRef<number | null>(null);
-    const demoTextIntervalRef = useRef<number | null>(null);
 
     const initialModelIdx = Math.max(
       0,
@@ -771,193 +700,15 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
       onExpandedChange?.(true);
     }, [onExpandedChange]);
 
-    const stopRecording = useCallback(() => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
-        recognitionRef.current = null;
-      }
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-      if (audioContextRef.current) {
-        try {
-          audioContextRef.current.close();
-        } catch {}
-        audioContextRef.current = null;
-      }
-      if (demoIntervalRef.current) {
-        window.clearInterval(demoIntervalRef.current);
-        demoIntervalRef.current = null;
-      }
-      if (demoTextIntervalRef.current) {
-        window.clearInterval(demoTextIntervalRef.current);
-        demoTextIntervalRef.current = null;
-      }
-      setIsRecording(false);
-      setAudioData(new Array(5).fill(0));
-    }, []);
-
-    const startRecording = useCallback(async () => {
-      setIsSmoothResize(false);
-      setInternalExpanded(true);
-      onExpandedChange?.(true);
-
-      let stream: MediaStream | null = null;
-      try {
-        if (
-          typeof navigator !== "undefined" &&
-          navigator.mediaDevices?.getUserMedia
-        ) {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        }
-      } catch {
-        stream = null;
-      }
-
-      setIsRecording(true);
-
-      const simulateText = () => {
-        const fakeText =
-          "Build a high performance, accessible AI prompt input with smooth spring transitions.";
-        const words = fakeText.split(" ");
-        let i = 0;
-        let currentBase = valueRef.current;
-        demoTextIntervalRef.current = window.setInterval(() => {
-          if (i < words.length) {
-            currentBase = (currentBase ? currentBase + " " : "") + words[i];
-            handleValueChange(currentBase);
-            i++;
-          } else {
-            stopRecording();
-          }
-        }, 260);
-      };
-
-      if (stream) {
-        streamRef.current = stream;
-        const AudioCtx =
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext })
-            .webkitAudioContext;
-        const audioCtx = new AudioCtx();
-        audioContextRef.current = audioCtx;
-
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 64;
-        const source = audioCtx.createMediaStreamSource(stream);
-        source.connect(analyser);
-
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-        const updateVisualizer = () => {
-          analyser.getByteFrequencyData(dataArray);
-          const bands = new Array(5).fill(0);
-          const step = Math.floor(dataArray.length / 5);
-          for (let i = 0; i < 5; i++) {
-            let sum = 0;
-            for (let j = 0; j < step; j++) {
-              sum += dataArray[i * step + j];
-            }
-            bands[i] = sum / step / 255;
-          }
-          setAudioData(bands);
-          rafRef.current = requestAnimationFrame(updateVisualizer);
-        };
-        updateVisualizer();
-
-        const SpeechRec =
-          (
-            window as unknown as {
-              SpeechRecognition?: BrowserSpeechRecognitionConstructor;
-              webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
-            }
-          ).SpeechRecognition ||
-          (
-            window as unknown as {
-              SpeechRecognition?: BrowserSpeechRecognitionConstructor;
-              webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
-            }
-          ).webkitSpeechRecognition;
-
-        if (SpeechRec) {
-          const recognition = new SpeechRec();
-          recognition.continuous = true;
-          recognition.interimResults = true;
-
-          let baseline = valueRef.current;
-
-          recognition.onresult = (event: BrowserSpeechRecognitionEvent) => {
-            let interimTranscript = "";
-            let finalTranscript = "";
-
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-              if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-              } else {
-                interimTranscript += event.results[i][0].transcript;
-              }
-            }
-
-            if (finalTranscript) {
-              baseline += (baseline ? " " : "") + finalTranscript;
-            }
-
-            handleValueChange(
-              (
-                baseline + (interimTranscript ? " " + interimTranscript : "")
-              ).trim(),
-            );
-          };
-
-          recognition.onerror = () => {
-            stopRecording();
-          };
-
-          recognition.onend = () => {
-            stopRecording();
-          };
-
-          recognitionRef.current = recognition;
-          try {
-            recognition.start();
-          } catch {
-            simulateText();
-          }
-        } else {
-          simulateText();
-        }
-      } else {
-        demoIntervalRef.current = window.setInterval(() => {
-          setAudioData(
-            Array.from({ length: 5 }, () => Math.random() * 0.75 + 0.15),
-          );
-        }, 90);
-        simulateText();
-      }
-    }, [handleValueChange, stopRecording, onExpandedChange]);
-
-    useEffect(() => {
-      if (isRecording && textareaRef.current) {
-        textareaRef.current.scrollTop = textareaRef.current.scrollHeight;
-      }
-    }, [value, isRecording]);
 
     useEffect(() => {
       return () => {
-        stopRecording();
         attachments.forEach((a) => URL.revokeObjectURL(a.url));
       };
-    }, [stopRecording, attachments]);
+    }, [attachments]);
 
     useEffect(() => {
-      if (expanded && !isRecording) {
+      if (expanded) {
         const timer = setTimeout(() => {
           if (textareaRef.current) {
             textareaRef.current.focus();
@@ -967,7 +718,7 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
         }, 40);
         return () => clearTimeout(timer);
       }
-    }, [expanded, isRecording]);
+    }, [expanded]);
 
     useEffect(() => {
       const el = textareaRef.current;
@@ -1006,7 +757,7 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
       ) {
         return;
       }
-      if (value.trim() === "" && !hasAttachments && !isRecording) {
+      if (value.trim() === "" && !hasAttachments) {
         setIsSmoothResize(false);
         setInternalExpanded(false);
         onExpandedChange?.(false);
@@ -1109,12 +860,8 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
           setInternalExpanded(false);
           onExpandedChange?.(false);
         },
-        startVoice: () => {
-          startRecording();
-        },
-        stopVoice: () => {
-          stopRecording();
-        },
+        startVoice: () => {},
+        stopVoice: () => {},
         addAttachment: (file: File, url: string, width = 800, height = 600) => {
           addAttachment(file, url, width, height);
         },
@@ -1128,8 +875,6 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
         element: internalContainerRef.current,
       }),
       [
-        startRecording,
-        stopRecording,
         addAttachment,
         handleValueChange,
         attachments,
@@ -1147,20 +892,12 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
       thumbRefs.current.delete(id);
     };
 
-    const showArrow = hasValue && !isRecording;
-    const showStop = isRecording;
-    const showMic = !hasValue && !isRecording;
+    const canSubmit = hasValue;
 
     const onActionButtonClick = (e: React.MouseEvent) => {
       e.preventDefault();
-      if (disabled) return;
-      if (isRecording) {
-        stopRecording();
-      } else if (hasValue) {
-        handleSubmit();
-      } else if (allowVoice) {
-        startRecording();
-      }
+      if (disabled || !canSubmit) return;
+      handleSubmit();
     };
 
     const resolvedMinW =
@@ -1257,7 +994,7 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
           <div
             onMouseDown={(e) => {
               const isTextarea = e.target === textareaRef.current;
-              if (expanded && !isTextarea && !isRecording && !disabled) {
+              if (expanded && !isTextarea && !disabled) {
                 e.preventDefault();
                 textareaRef.current?.focus();
               }
@@ -1308,7 +1045,7 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
               }}
               placeholder={placeholder}
               aria-label="Prompt message"
-              disabled={isRecording || disabled}
+              disabled={disabled}
               style={{
                 transition: isSmoothResize
                   ? "height 0.16s ease-out"
@@ -1320,7 +1057,6 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
                   ? "opacity-100 scale-100 translate-y-0"
                   : "opacity-0 scale-95 -translate-y-1 pointer-events-none",
                 isScrolling ? "overflow-y-auto" : "overflow-y-hidden",
-                isRecording && "pointer-events-none",
               )}
             />
 
@@ -1361,7 +1097,7 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
             <div
               className={cn(
                 "absolute bottom-2 left-3 right-12 z-10 flex items-center gap-1 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                expanded && !isRecording
+                expanded
                   ? "opacity-100 blur-0 translate-y-0 pointer-events-auto"
                   : "opacity-0 blur-sm translate-y-2 pointer-events-none",
               )}
@@ -1523,29 +1259,6 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
               )}
             </div>
 
-            <div
-              className={cn(
-                "absolute right-12 bottom-2 z-10 flex h-8 items-center justify-end gap-0.75 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                isRecording
-                  ? "w-16 opacity-100 translate-x-0"
-                  : "w-0 opacity-0 translate-x-4 pointer-events-none",
-              )}
-            >
-              {audioData.map((val, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    "w-1 rounded-full transition-[height] duration-75 ease-out",
-                    !accentColor && "bg-zinc-900 dark:bg-white",
-                  )}
-                  style={{
-                    height: `${Math.max(4, val * 24)}px`,
-                    ...(accentColor ? { backgroundColor: accentColor } : {}),
-                  }}
-                />
-              ))}
-            </div>
-
             <button
               type="button"
               onMouseDown={(e) => {
@@ -1553,52 +1266,15 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
                 e.stopPropagation();
               }}
               onClick={onActionButtonClick}
-              disabled={disabled}
-              aria-label={
-                showArrow
-                  ? "Send prompt"
-                  : showStop
-                    ? "Stop recording"
-                    : "Use voice input"
-              }
+              disabled={disabled || !canSubmit}
+              aria-label="Send prompt"
               style={{
                 backgroundColor: accentColor || undefined,
                 color: accentColor ? "#000000" : undefined,
               }}
-              className="absolute right-2 bottom-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-white dark:text-black transition-all duration-300 hover:opacity-90 active:scale-95 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-white/40 cursor-pointer shadow-sm"
+              className="absolute right-2 bottom-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-white dark:text-black transition-all duration-200 outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-white/40 cursor-pointer shadow-sm disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 active:scale-95 disabled:active:scale-100"
             >
-              <span className="relative flex h-full w-full items-center justify-center">
-                <span
-                  className={cn(
-                    "absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                    showArrow
-                      ? "opacity-100 scale-100 rotate-0 blur-none"
-                      : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none",
-                  )}
-                >
-                  <ArrowUpIcon />
-                </span>
-                <span
-                  className={cn(
-                    "absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                    showMic
-                      ? "opacity-100 scale-100 rotate-0 blur-none"
-                      : "opacity-0 scale-50 -rotate-45 blur-[1px] pointer-events-none",
-                  )}
-                >
-                  <MicIcon />
-                </span>
-                <span
-                  className={cn(
-                    "absolute inset-0 flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]",
-                    showStop
-                      ? "opacity-100 scale-100 rotate-0 blur-none"
-                      : "opacity-0 scale-50 rotate-45 blur-[1px] pointer-events-none",
-                  )}
-                >
-                  <StopIcon />
-                </span>
-              </span>
+              <ArrowUpIcon />
             </button>
           </div>
         </div>

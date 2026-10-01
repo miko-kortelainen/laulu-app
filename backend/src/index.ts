@@ -1,12 +1,31 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { getOrCreateAgent, resetAgentSession, getModelConfig } from './agent.js';
+import { generateMusic, musicDirectory, validateMusicPrompt } from './music.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+app.use('/api/music', express.static(musicDirectory));
+
+const busySessions = new Set<string>();
+app.use(['/api/chat', '/api/music', '/api/reset'], (req, res, next) => {
+  if (req.method !== 'POST') return next();
+  const sessionId: unknown = req.body?.sessionId ?? 'default';
+  if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 200) {
+    res.status(400).json({ error: 'invalid conversation session.' });
+    return;
+  }
+  if (busySessions.has(sessionId)) {
+    res.status(409).json({ error: 'wait for the current action to finish.' });
+    return;
+  }
+  busySessions.add(sessionId);
+  res.locals.sessionId = sessionId;
+  next();
+});
 
 // Health & Status
 app.get('/api/health', (_req: Request, res: Response) => {
@@ -18,9 +37,11 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // Chat endpoint
 app.post('/api/chat', async (req: Request, res: Response) => {
-  const { message, sessionId = 'default' } = req.body;
+  const message: unknown = req.body?.message;
+  const sessionId: string = res.locals.sessionId;
 
   if (!message || typeof message !== 'string' || message.trim() === '') {
+    busySessions.delete(sessionId);
     res.status(400).json({ error: 'Message is required.' });
     return;
   }
@@ -28,20 +49,43 @@ app.post('/api/chat', async (req: Request, res: Response) => {
   try {
     const agent = getOrCreateAgent(sessionId);
     const result = await agent.invoke(message.trim());
-    res.json({ reply: result.toString() });
-  } catch (error: any) {
+    res.json({ reply: result.toString(), musicPrompt: result.invocationState.musicPrompt });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to process message with agent';
     console.error('Agent invocation error:', error);
     res.status(500).json({
-      error: error.message || 'Failed to process message with agent',
-      reply: `Agent Error: ${error.message || 'Unknown error'}`,
+      error: message,
+      reply: `Agent Error: ${message}`,
     });
+  } finally {
+    busySessions.delete(sessionId);
   }
+});
+
+// Only this explicit confirmation request can make a paid Lyria call.
+app.post('/api/music', async (req: Request, res: Response) => {
+  const sessionId: string = res.locals.sessionId;
+  let prompt: string;
+  try {
+    prompt = validateMusicPrompt(req.body?.prompt);
+  } catch (error: unknown) {
+    busySessions.delete(sessionId);
+    res.status(400).json({ error: error instanceof Error ? error.message : 'invalid music prompt.' });
+    return;
+  }
+
+  const track = await generateMusic(prompt).catch((error: unknown) => {
+    res.status(502).json({ error: error instanceof Error ? error.message : 'music generation failed.' });
+  });
+  busySessions.delete(sessionId);
+  if (track) res.json({ track });
 });
 
 // Reset endpoint
 app.post('/api/reset', (req: Request, res: Response) => {
-  const { sessionId = 'default' } = req.body;
+  const sessionId: string = res.locals.sessionId;
   resetAgentSession(sessionId);
+  busySessions.delete(sessionId);
   res.json({ status: 'ok' });
 });
 

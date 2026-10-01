@@ -1,4 +1,3 @@
-import { CodeBlock } from "@/components/ui/code-block";
 import { cn } from "@/lib/utils";
 import type { Message } from "./useChat";
 
@@ -16,12 +15,12 @@ function MessageContent({ text }: { text: string }) {
     }
 
     parts.push(
-      <div
+      <pre
         key={match.index}
-        className="my-2 max-w-full overflow-hidden first:mt-0 last:mb-0"
+        className="my-2 max-w-full overflow-x-auto rounded-lg border border-white/10 bg-zinc-950/60 p-3 font-mono text-xs text-zinc-300"
       >
-        <CodeBlock code={match[2]} language={match[1] || "typescript"} />
-      </div>,
+        <code>{match[2]}</code>
+      </pre>,
     );
     lastIndex = match.index + match[0].length;
   }
@@ -37,7 +36,11 @@ function MessageContent({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-export function ChatMessage({ message }: { message: Message }) {
+export function ChatMessage({ message, loading, onConfirmMusic }: {
+  message: Message;
+  loading: boolean;
+  onConfirmMusic: () => void;
+}) {
   const isUser = message.role === "user";
 
   return (
@@ -60,6 +63,47 @@ export function ChatMessage({ message }: { message: Message }) {
         )}
       >
         <MessageContent text={isUser ? message.text : message.text.trim()} />
+        {message.musicPrompt && (
+          <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
+            <p className="whitespace-pre-wrap">{message.musicPrompt}</p>
+            {!message.track && (
+              <button
+                type="button"
+                onClick={onConfirmMusic}
+                disabled={loading}
+                className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                generate music
+              </button>
+            )}
+            {message.musicError && <p role="alert" className="text-xs text-red-400">{message.musicError}</p>}
+          </div>
+        )}
+        {message.track && (
+          <div className="mt-3 space-y-3">
+            <audio controls preload="none" src={message.track.url}
+              aria-label="generated music" className="max-w-full" />
+            <div>
+              <a
+                href={message.track.url}
+                download
+                className="text-xs text-zinc-300 underline underline-offset-4 hover:text-white"
+              >
+                download MP3
+              </a>
+            </div>
+            {message.track.lyrics && (
+              <details className="rounded-lg border border-white/10 bg-zinc-900/40 p-3 text-xs">
+                <summary className="cursor-pointer font-medium text-zinc-400 hover:text-zinc-200 select-none">
+                  lyrics
+                </summary>
+                <div className="mt-2 whitespace-pre-wrap text-zinc-300">
+                  {message.track.lyrics}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

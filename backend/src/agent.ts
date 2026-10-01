@@ -3,6 +3,7 @@ import { OpenAIModel } from '@strands-agents/sdk/models/openai';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { generateMusicTool } from './music.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -63,15 +64,23 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   const model = createNebiusModel();
   const agent = new Agent({
     model: model,
+    tools: [generateMusicTool],
     systemPrompt:
       'you are a helpful ai assistant powered by nvidia nemotron super on nebius token factory. ' +
       'answer directly in the user\'s language, with a relaxed, natural tone and everyday words. ' +
       'default to 2–4 short sentences. add detail only when the user asks or the answer needs it to be useful and accurate. ' +
       'skip canned greetings, praise, filler, repeated summaries, and unasked follow-up questions. ' +
       'use short paragraphs; use lists only when they make the answer easier to follow. ' +
+      'the chat displays plain text, so do not use markdown formatting: no **bold**, *italics*, headings with #, or markdown tables. ' +
+      'use plain labels and line breaks instead. write music tool prompts in plain text too. ' +
       'always write conversational text in lowercase, including sentence starts, names, acronyms, headings, and list items. ' +
-      'preserve required casing in code, commands, file paths, urls, and exact quotations. ' +
-      'be honest about uncertainty and never pretend to be human.',
+      'preserve required casing in code, commands, file paths, urls, exact quotations, supplied lyrics, and lyria section tags and the Lyrics: label. ' +
+      'be honest about uncertainty and never pretend to be human. ' +
+      'when the user asks to create music, follow the generate_music tool instructions to prepare the exact lyria 3.5 song prompt. ' +
+      'the user must approve it with the generate music button before audio is generated. ' +
+      'tell them to review the prompt and click the button; never claim the track is already generated. ' +
+      'keep that reply to one short sentence; the prompt is already shown separately, so do not repeat it or its lyrics in your reply. ' +
+      'use the tool again for prompt changes. do not use it for general music advice.',
     printer: false,
   });
 

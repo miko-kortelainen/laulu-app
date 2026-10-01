@@ -1,9 +1,12 @@
 import { useRef, useState } from "react";
-import { resetChat, sendMessage } from "./api";
+import { generateMusic, resetChat, sendMessage, type MusicTrack } from "./api";
 
 export interface Message {
   role: "user" | "agent";
   text: string;
+  musicPrompt?: string;
+  track?: MusicTrack;
+  musicError?: string;
 }
 
 function errorMessage(error: unknown): string {
@@ -28,11 +31,29 @@ export function useChat() {
     setLoading(true);
     setMessages((previous) => [...previous, { role: "user", text: message }]);
 
-    const reply = await sendMessage(message).catch(
-      (error: unknown) => `Error: ${errorMessage(error)}`,
+    const result = await sendMessage(message).catch(
+      (error: unknown) => ({ reply: `Error: ${errorMessage(error)}` }),
     );
 
-    setMessages((previous) => [...previous, { role: "agent", text: reply }]);
+    setMessages((previous) => [...previous, { role: "agent", text: result.reply,
+      musicPrompt: "musicPrompt" in result ? result.musicPrompt : undefined }]);
+    busy.current = false;
+    setLoading(false);
+  }
+
+  async function confirmMusic(index: number): Promise<void> {
+    const message = messages[index];
+    if (busy.current || !message?.musicPrompt || message.track) return;
+
+    busy.current = true;
+    setLoading(true);
+    const result = await generateMusic(message.musicPrompt).catch(
+      (error: unknown) => new Error(errorMessage(error)),
+    );
+    setMessages((previous) => previous.map((item, itemIndex) => itemIndex !== index ? item :
+      result instanceof Error
+        ? { ...item, musicError: result.message }
+        : { ...item, track: result, musicError: undefined }));
     busy.current = false;
     setLoading(false);
   }
@@ -62,5 +83,5 @@ export function useChat() {
     setLoading(false);
   }
 
-  return { messages, loading, send, clear };
+  return { messages, loading, send, clear, confirmMusic };
 }
