@@ -14,15 +14,16 @@ const uploadPath = `/tmp/musical-chat-upload-${process.pid}.wav`;
 
 function openInput() {
   run("click", opener);
-  run("wait", "--fn", 'document.activeElement === document.querySelector("textarea")');
+  run("wait", "--fn", 'document.activeElement === document.querySelector("textarea:not([name])")');
 }
 
 try {
   run("open", url);
   run("network", "route", "**/api/**", "--body", '{"reply":"e2e reply"}');
-  run("eval", `window.chatRequests = []; const originalFetch = window.fetch;
+  run("eval", `window.chatRequests = []; window.musicRequests = []; const originalFetch = window.fetch;
     window.fetch = (input, options) => {
       if (input === "/api/chat") window.chatRequests.push(JSON.parse(options.body));
+      if (input === "/api/music") window.musicRequests.push(JSON.parse(options.body));
       return originalFetch(input, options);
     };`);
 
@@ -32,23 +33,23 @@ try {
   run("mouse", "move", x, y);
   run("mouse", "down");
   run("mouse", "up");
-  run("wait", "--fn", 'document.activeElement === document.querySelector("textarea")');
-  run("fill", "textarea", "mouse message");
+  run("wait", "--fn", 'document.activeElement === document.querySelector("textarea:not([name])")');
+  run("fill", "textarea:not([name])", "mouse message");
   run("click", send);
   run("wait", "--text", "e2e reply");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
   openInput();
-  run("fill", "textarea", "keyboard message");
+  run("fill", "textarea:not([name])", "keyboard message");
   run("press", "Shift+Enter");
-  assert.equal(run("eval", 'document.querySelector("textarea").value === "keyboard message\\n"'), "true");
+  assert.equal(run("eval", 'document.querySelector("textarea:not([name])").value === "keyboard message\\n"'), "true");
   run("press", "Enter");
   run("wait", "--fn", 'document.querySelector("main").innerText.split("e2e reply").length === 3');
 
   run("network", "unroute", "**/api/**");
   run("network", "route", "**/api/**", "--abort");
   openInput();
-  run("fill", "textarea", "failed message");
+  run("fill", "textarea:not([name])", "failed message");
   run("click", send);
   run("wait", "--text", "Error: Failed to fetch");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
@@ -56,13 +57,17 @@ try {
   run("network", "unroute", "**/api/**");
   run("network", "route", "**/api/**", "--body", '{"reply":"recovered reply"}');
   openInput();
-  run("fill", "textarea", "retry message");
+  run("fill", "textarea:not([name])", "retry message");
   run("click", send);
   run("wait", "--text", "recovered reply");
 
   run("network", "unroute", "**/api/**");
   run("network", "route", "**/api/chat", "--body", JSON.stringify({
-    reply: "review the prompt and click generate music.", musicPrompt: "a song about tiny paws",
+    reply: "review the prompt and click generate music.", musicPrompt: {
+      genre: "indie folk", mood: "warm", key: "G major", bpm: "82", duration: "2 minutes",
+      instruments: "acoustic guitar", vocals: "alto vocals in English", production: "natural",
+      structure: "[Intro] -> [Verse] -> [Chorus] -> [Outro]", lyrics: "a song about tiny paws",
+    },
   }));
   const lyrics = "Tiny paws in the morning dew,\nA world of green and a sky of blue.";
   const generatedAudioUrl = "/api/music/00000000-0000-0000-0000-000000000000.mp3";
@@ -70,12 +75,40 @@ try {
     track: { url: generatedAudioUrl, lyrics },
   }));
   openInput();
-  run("fill", "textarea", "create a song about cats");
+  run("fill", "textarea:not([name])", "create a song about cats");
   run("click", send);
   run("wait", "--text", "review the prompt and click generate music.");
   assert.equal(run("eval", 'document.querySelector("audio") === null'), "true");
+  assert.equal(run("eval", 'document.querySelector("input[name=key]").value'), '"G major"');
+  assert.equal(run("eval", 'window.musicRequests.length'), "0");
+  run("find", "label", "key", "fill", "D minor");
+  run("press", "Tab");
+  assert.equal(run("eval", 'document.activeElement.name'), '"bpm"');
+  run("find", "label", "BPM", "fill", "110 with a swung feel");
+  run("find", "label", "mood", "fill", "hopeful");
+  run("find", "label", "lyrics", "fill", lyrics);
+  run("set", "viewport", "390", "844");
+  assert.equal(run("eval", 'document.documentElement.scrollWidth <= window.innerWidth'), "true");
+  assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().right <= window.innerWidth)'), "true");
+  run("set", "viewport", "1280", "900");
+  run("network", "unroute", "**/api/music");
+  run("network", "route", "**/api/music", "--abort");
+  run("find", "role", "button", "click", "--name", "generate music");
+  run("wait", "--text", "Failed to fetch");
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled');
+  assert.equal(run("eval", 'document.querySelector("input[name=key]").value'), '"D minor"');
+  assert.equal(run("eval", 'document.querySelector("textarea[name=lyrics]").value'), JSON.stringify(lyrics));
+  assert.equal(run("eval", 'window.musicRequests.at(-1).prompt'), JSON.stringify(
+    "genre / style: indie folk\n\nmood: hopeful\n\nkey: D minor\n\nBPM: 110 with a swung feel\n\nduration: 2 minutes\n\nvocals / language: alto vocals in English\n\ninstruments: acoustic guitar\n\nproduction: natural\n\nsong structure: [Intro] -> [Verse] -> [Chorus] -> [Outro]\n\nLyrics:\n" + lyrics,
+  ));
+  run("network", "unroute", "**/api/music");
+  run("network", "route", "**/api/music", "--body", JSON.stringify({
+    track: { url: generatedAudioUrl, lyrics },
+  }));
   run("find", "role", "button", "click", "--name", "generate music");
   run("wait", "--fn", 'document.querySelector("audio") !== null');
+  assert.equal(run("eval", 'document.querySelector("fieldset").disabled'), "true");
+  assert.equal(run("eval", 'window.musicRequests.length'), "2");
   assert.equal(run("eval", 'document.querySelector("summary").textContent.trim()'), '"lyrics"');
   run("click", "summary");
   assert.equal(run("eval", 'document.querySelector("details > div").textContent.trim()'), JSON.stringify(lyrics));
@@ -122,7 +155,7 @@ try {
   run("click", 'div:has(> audio[aria-label="generated music"]) ~ button:first-of-type');
   run("wait", "--fn", 'document.querySelectorAll("audio").length === 8');
   openInput();
-  run("fill", "textarea", "separate that track again");
+  run("fill", "textarea:not([name])", "separate that track again");
   run("click", send);
   run("wait", "--fn", 'document.querySelectorAll("audio").length === 10');
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(generatedAudioUrl));
@@ -143,7 +176,7 @@ try {
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(stems.vocalsUrl));
   assert.equal(run("eval", 'document.querySelector(`audio[aria-label="cleaned audio"]`).getAttribute("src")'), JSON.stringify(cleanedAudio.url));
   openInput();
-  run("fill", "textarea", "clean it again");
+  run("fill", "textarea:not([name])", "clean it again");
   run("click", send);
   run("wait", "--fn", 'document.querySelectorAll("audio").length === 12');
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(cleanedAudio.url));

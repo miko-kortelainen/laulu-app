@@ -11,6 +11,12 @@ test('music waits for confirmation, validates responses, and saves only valid au
     'Lyrics:\n[Verse 1]\nTiny paws in the morning dew,\nA world of green and a sky of blue.\n\n' +
     '[Chorus]\nStay with me (stay with me)';
   const originalFetch = globalThis.fetch;
+  const fields = {
+    genre: 'Indie folk', mood: 'warm and relaxed', key: 'G major', bpm: '82', duration: '2 minutes',
+    instruments: 'warm acoustic guitar and soft brushed drums', vocals: 'intimate alto vocals in English',
+    production: 'natural acoustic sound', structure: '[Intro] -> [Verse 1] -> [Chorus] -> [Outro]',
+    lyrics: '[Verse 1]\nTiny paws in the morning dew,\nA world of green and a sky of blue.\n\n[Chorus]\nStay with me (stay with me)',
+  };
   const originalKey = process.env.GEMINI_API_KEY;
   let calls = 0;
   let response = new Response();
@@ -28,12 +34,16 @@ test('music waits for confirmation, validates responses, and saves only valid au
     process.env.GEMINI_API_KEY = 'offline-test-key';
     const invocationState: Record<string, unknown> = {};
     const context = { invocationState } as ToolContext;
-    assert.deepEqual(await generateMusicTool.invoke({ prompt }, context), {
-      status: 'awaiting_confirmation', prompt,
+    assert.deepEqual(await generateMusicTool.invoke(fields, context), {
+      status: 'awaiting_confirmation', prompt: fields,
     });
-    assert.equal(invocationState.musicPrompt, prompt);
+    assert.deepEqual(invocationState.musicPrompt, fields);
     assert.equal(calls, 0);
-    await assert.rejects(generateMusicTool.invoke({ prompt: '' }, context), /music prompt/);
+    await assert.rejects(generateMusicTool.invoke({ ...fields, bpm: 82 }, context), /music prompt field bpm/);
+    await assert.rejects(generateMusicTool.invoke({ ...fields, lyrics: 'a'.repeat(10_001) }, context), /music prompt/);
+    await assert.rejects(generateMusicTool.invoke(Object.fromEntries(Object.keys(fields).map((key) => [key, ''])), context), /music prompt/);
+    assert.deepEqual(invocationState.musicPrompt, fields);
+    assert.equal(calls, 0);
     await assert.rejects(generateMusic(' '.repeat(2)), /music prompt/);
     await assert.rejects(generateMusic('a'.repeat(10_001)), /music prompt/);
     delete process.env.GEMINI_API_KEY;
@@ -63,7 +73,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
         { type: 'audio', mime_type: 'audio/mpeg', data: bytes.toString('base64') },
       ] },
     ] });
-    const track = await generateMusic(invocationState.musicPrompt as string);
+    const track = await generateMusic(prompt);
     assert.match(track.url, /^\/api\/music\/[0-9a-f-]{36}\.mp3$/);
     savedPath = `${musicDirectory}${track.url.split('/').at(-1)}`;
     assert.deepEqual(await readFile(savedPath), bytes);

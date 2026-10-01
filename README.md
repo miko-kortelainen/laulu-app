@@ -84,9 +84,11 @@ Set `GEMINI_API_KEY` in `backend/.env` to a Gemini API key with access to
 [`lyria-3.5`](https://ai.google.dev/gemini-api/docs/music-generation).
 Restart the backend after changing this key.
 
-Ask the agent to create music. It prepares a prompt for you to review in chat.
-Click **generate music** to approve that exact prompt and start the paid API call.
-To change the prompt, tell the agent what to change before you approve it.
+Ask the agent to create music. It fills editable fields for genre/style, mood,
+key, BPM, duration, vocals/language, instruments, production, song structure,
+and lyrics. Edit these fields directly before you approve the song.
+Click **generate music** to send the edited fields as one prompt and start the paid API call.
+You can also tell the agent what to change before you approve it.
 Music advice and prompt preparation do not call Lyria.
 
 Prompt preparation follows Google's [Lyria prompt guide](https://ai.google.dev/gemini-api/docs/lyria-prompt-guide)
@@ -107,7 +109,8 @@ Clear resets the conversation and leaves saved tracks in place.
 
 The backend uses the Interactions REST API with `store: false`, reads audio from
 `model_output` steps, and allows five minutes for generation. Failed requests
-show an error and leave the prompt available for retry. Chat, reset, and music
+show an error and keep your edits available for retry. After success, the fields
+are locked to show the prompt used for that track. Chat, reset, and music
 generation cannot overlap within the same conversation.
 
 Offline backend check: `npm --prefix backend run test:music`.

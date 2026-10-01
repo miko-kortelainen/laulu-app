@@ -1,0 +1,28 @@
+import { cn } from "@/lib/utils";
+import { musicPromptFields, type MusicPrompt } from "./musicPrompt";
+
+export function MusicPromptFields({ prompt, disabled, onChange }: {
+  prompt: MusicPrompt;
+  disabled: boolean;
+  onChange: (field: keyof MusicPrompt, value: string) => void;
+}) {
+  const controlClass = "w-full min-w-0 rounded-lg border border-white/15 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-60";
+
+  return (
+    <fieldset disabled={disabled} aria-label="song prompt" className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+      {musicPromptFields.map((field) => (
+        <label key={field.name} className={cn("flex min-w-0 flex-col gap-1", "multiline" in field && "sm:col-span-2")}>
+          <span className="text-xs text-zinc-400">{field.label}</span>
+          {"multiline" in field ? (
+            <textarea name={field.name} value={prompt[field.name]} rows={field.name === "lyrics" ? 6 : 2}
+              onChange={(event) => onChange(field.name, event.target.value)}
+              className={`${controlClass} resize-y`} />
+          ) : (
+            <input name={field.name} type="text" value={prompt[field.name]}
+              onChange={(event) => onChange(field.name, event.target.value)} className={controlClass} />
+          )}
+        </label>
+      ))}
+    </fieldset>
+  );
+}

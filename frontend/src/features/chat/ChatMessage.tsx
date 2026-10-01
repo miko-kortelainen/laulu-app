@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 import type { Message } from "./useChat";
+import { MusicPromptFields } from "./MusicPromptFields";
+import type { MusicPrompt } from "./musicPrompt";
 
 function MessageContent({ text }: { text: string }) {
   const parts = [];
@@ -36,10 +38,11 @@ function MessageContent({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-export function ChatMessage({ message, loading, onConfirmMusic, onSeparate, onRemoveEcho }: {
+export function ChatMessage({ message, loading, onConfirmMusic, onEditMusicPrompt, onSeparate, onRemoveEcho }: {
   message: Message;
   loading: boolean;
   onConfirmMusic: () => void;
+  onEditMusicPrompt: (field: keyof MusicPrompt, value: string) => void;
   onSeparate: (url: string) => void;
   onRemoveEcho: (url: string) => void;
 }) {
@@ -68,7 +71,7 @@ export function ChatMessage({ message, loading, onConfirmMusic, onSeparate, onRe
         <MessageContent text={isUser ? message.text : message.text.trim()} />
         {message.musicPrompt && (
           <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
-            <p className="whitespace-pre-wrap">{message.musicPrompt}</p>
+            <MusicPromptFields prompt={message.musicPrompt} disabled={loading || Boolean(message.track)} onChange={onEditMusicPrompt} />
             {!message.track && (
               <button
                 type="button"

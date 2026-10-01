@@ -12,7 +12,11 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
   const runs: Parameters<Client['createRun']>[0][] = [];
   const updates = new Map<string, Parameters<Client['updateRun']>[1]>();
   const sessionId = 'offline-tracing-test';
-  const prompt = 'instrumental folk, acoustic guitar, 80 bpm';
+  const prompt = {
+    genre: 'folk', mood: 'gentle', key: 'G major', bpm: '80', duration: '',
+    instruments: 'acoustic guitar', vocals: 'instrumental only, no vocals',
+    production: 'natural', structure: 'intro, main theme, outro', lyrics: '',
+  };
   let modelCalls = 0;
   let fail = false;
 
@@ -27,7 +31,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     const toolCall = modelCalls === 1;
     const delta = toolCall
       ? { role: 'assistant', tool_calls: [{ index: 0, id: 'music-1', type: 'function',
-          function: { name: 'generate_music', arguments: JSON.stringify({ prompt }) } }] }
+          function: { name: 'generate_music', arguments: JSON.stringify(prompt) } }] }
       : { role: 'assistant', content: 'review the prompt and click generate music.' };
     const base = { id: `completion-${modelCalls}`, object: 'chat.completion.chunk',
       created: 0, model: 'offline-model' };
@@ -44,7 +48,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     process.env.LANGSMITH_TRACING = 'true';
     const agent = getOrCreateAgent(sessionId);
     const result = await agent.invoke('prepare a folk song');
-    assert.equal(result.invocationState.musicPrompt, prompt);
+    assert.deepEqual(result.invocationState.musicPrompt, prompt);
     assert.equal(modelCalls, 2);
     const root = runs.find((run) => run.name === 'musical-copilot');
     assert.ok(root?.id);
@@ -53,7 +57,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     assert.equal(children.filter((run) => run.run_type === 'llm').length, 2);
     const tool = children.find((run) => run.name === 'generate_music');
     assert.ok(tool?.id);
-    assert.deepEqual(tool.inputs, { prompt });
+    assert.deepEqual(tool.inputs, prompt);
     assert.equal(tool.extra?.metadata?.thread_id, sessionId);
     assert.equal(updates.get(root.id)?.outputs?.outputs?.stopReason, 'endTurn');
     assert.equal(updates.get(root.id)?.outputs?.outputs?.lastMessage?.content?.[0]?.text, result.toString());

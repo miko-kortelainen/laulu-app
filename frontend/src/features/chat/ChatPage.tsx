@@ -7,12 +7,12 @@ import { useChat } from "./useChat";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage() {
-  const { messages, loading, send, clear, confirmMusic, upload } = useChat();
+  const { messages, loading, send, clear, confirmMusic, editMusicPrompt, upload } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages.length, loading]);
 
   return (
     <div
@@ -47,6 +47,7 @@ export function ChatPage() {
         {messages.map((message, index) => (
           <ChatMessage key={index} message={message} loading={loading}
             onConfirmMusic={() => confirmMusic(index)}
+            onEditMusicPrompt={(field, value) => editMusicPrompt(index, field, value)}
             onSeparate={(url) => send("separate the vocals and instrumental from this track.", url)}
             onRemoveEcho={(url) => send("remove echo and reverb from this audio.", url)} />
         ))}

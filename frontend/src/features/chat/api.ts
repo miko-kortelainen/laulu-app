@@ -1,6 +1,8 @@
+import { formatMusicPrompt, isMusicPrompt, type MusicPrompt } from "./musicPrompt";
+
 export interface ChatReply {
   reply: string;
-  musicPrompt?: string;
+  musicPrompt?: MusicPrompt;
   stems?: SeparatedStems;
   cleanedAudio?: AudioTrack;
 }
@@ -40,7 +42,7 @@ export async function sendMessage(message: string, audioUrl?: string): Promise<C
   }
 
   if (!reply || ("musicPrompt" in data && data.musicPrompt !== undefined &&
-      (typeof data.musicPrompt !== "string" || !data.musicPrompt.trim()))) {
+      !isMusicPrompt(data.musicPrompt))) {
     throw new Error("Invalid chat response.");
   }
 
@@ -63,7 +65,7 @@ export async function sendMessage(message: string, audioUrl?: string): Promise<C
 
   return {
     reply,
-    musicPrompt: "musicPrompt" in data && typeof data.musicPrompt === "string"
+    musicPrompt: "musicPrompt" in data && isMusicPrompt(data.musicPrompt)
       ? data.musicPrompt : undefined,
     stems: stems as SeparatedStems | undefined,
     cleanedAudio: cleanedAudio as AudioTrack | undefined,
@@ -94,7 +96,11 @@ export async function uploadAudio(file: File): Promise<AudioTrack> {
   return { url: audio.url, name: audio.name };
 }
 
-export async function generateMusic(prompt: string): Promise<MusicTrack> {
+export async function generateMusic(fields: MusicPrompt): Promise<MusicTrack> {
+  const prompt = formatMusicPrompt(fields);
+  if (!prompt.trim() || prompt.length > 10_000) {
+    throw new Error("Music prompt must contain 1–10,000 characters.");
+  }
   const response = await fetch("/api/music", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

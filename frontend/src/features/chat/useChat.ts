@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { generateMusic, resetChat, sendMessage, uploadAudio, type AudioTrack, type MusicTrack, type SeparatedStems } from "./api";
+import type { MusicPrompt } from "./musicPrompt";
 
 export interface Message {
   role: "user" | "agent";
   text: string;
-  musicPrompt?: string;
+  musicPrompt?: MusicPrompt;
   track?: MusicTrack;
   musicError?: string;
   audio?: AudioTrack;
@@ -62,6 +63,14 @@ export function useChat() {
     setLoading(false);
   }
 
+  function editMusicPrompt(index: number, field: keyof MusicPrompt, value: string): void {
+    if (busy.current) return;
+    setMessages((previous) => previous.map((message, itemIndex) =>
+      itemIndex === index && message.musicPrompt && !message.track
+        ? { ...message, musicPrompt: { ...message.musicPrompt, [field]: value }, musicError: undefined }
+        : message));
+  }
+
   async function confirmMusic(index: number): Promise<void> {
     const message = messages[index];
     if (busy.current || !message?.musicPrompt || message.track) return;
@@ -106,5 +115,5 @@ export function useChat() {
     setLoading(false);
   }
 
-  return { messages, loading, send, clear, confirmMusic, upload };
+  return { messages, loading, send, clear, confirmMusic, editMusicPrompt, upload };
 }
