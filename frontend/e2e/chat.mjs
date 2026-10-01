@@ -114,19 +114,40 @@ try {
   run("network", "route", "**/api/chat", "--body", JSON.stringify({
     reply: "uploaded stems are ready.", stems,
   }));
-  run("click", 'audio[aria-label^="uploaded audio:"] ~ button');
+  run("click", 'audio[aria-label^="uploaded audio:"] ~ button:first-of-type');
   run("wait", "--text", "uploaded stems are ready.");
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(audioUrl));
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "6");
   // Selecting an older generated track also changes the source for follow-up requests.
-  run("click", 'div:has(> audio[aria-label="generated music"]) ~ button');
+  run("click", 'div:has(> audio[aria-label="generated music"]) ~ button:first-of-type');
   run("wait", "--fn", 'document.querySelectorAll("audio").length === 8');
   openInput();
   run("fill", "textarea", "separate that track again");
   run("click", send);
   run("wait", "--fn", 'document.querySelectorAll("audio").length === 10');
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(generatedAudioUrl));
-  console.log("Chat E2E passed: chat recovery, music confirmation, uploads, and stem separation recovery.");
+  // Cleanup supports the original track, selected stems, and valid retry after failure.
+  run("network", "unroute", "**/api/chat");
+  run("network", "route", "**/api/chat", "--abort");
+  run("click", 'div:has(> audio[aria-label="generated music"]) ~ button:last-of-type');
+  run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 4');
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "10");
+  assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(generatedAudioUrl));
+  const cleanedAudio = {
+    url: "/api/cleaned/33333333-3333-3333-3333-333333333333/source_cleaned.wav", name: "cleaned audio",
+  };
+  run("network", "unroute", "**/api/chat");
+  run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "cleaned audio is ready.", cleanedAudio }));
+  run("click", 'button[aria-label="remove echo/reverb from vocals"]:first-of-type');
+  run("wait", "--text", "download cleaned audio WAV");
+  assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(stems.vocalsUrl));
+  assert.equal(run("eval", 'document.querySelector(`audio[aria-label="cleaned audio"]`).getAttribute("src")'), JSON.stringify(cleanedAudio.url));
+  openInput();
+  run("fill", "textarea", "clean it again");
+  run("click", send);
+  run("wait", "--fn", 'document.querySelectorAll("audio").length === 12');
+  assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(cleanedAudio.url));
+  console.log("Chat E2E passed: chat recovery, music confirmation, uploads, stem separation, and echo removal recovery.");
 } finally {
   try { unlinkSync(uploadPath); } catch { /* No upload fixture to remove. */ }
   run("close");

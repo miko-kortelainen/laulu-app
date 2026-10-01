@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { getOrCreateAgent, resetAgentSession, getModelConfig } from './agent.js';
 import { generateMusic, musicDirectory, validateMusicPrompt } from './music.js';
-import { audioDirectory, audioPath, stemsDirectory, uploadAudio } from './stems.js';
+import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -12,6 +12,7 @@ app.use(express.json());
 app.use('/api/music', express.static(musicDirectory));
 app.use('/api/audio', express.static(audioDirectory));
 app.use('/api/stems', express.static(stemsDirectory));
+app.use('/api/cleaned', express.static(cleanedDirectory));
 
 app.post('/api/audio', express.raw({ type: 'application/octet-stream', limit: '50mb' }), async (req, res) => {
   const audio = await uploadAudio(req.query.name, req.body).catch((error: unknown) => {
@@ -65,7 +66,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     if (audioUrl !== undefined) audioPath(audioUrl);
     const agent = getOrCreateAgent(sessionId);
     const result = await agent.invoke(message.trim() + (audioUrl ? `\n\navailable audio: ${audioUrl}` : ''));
-    res.json({ reply: result.toString(), musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems });
+    res.json({ reply: result.toString(), musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems, cleanedAudio: result.invocationState.cleanedAudio });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process message with agent';
     console.error('Agent invocation error:', error);

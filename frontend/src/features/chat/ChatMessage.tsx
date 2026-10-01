@@ -36,11 +36,12 @@ function MessageContent({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-export function ChatMessage({ message, loading, onConfirmMusic, onSeparate }: {
+export function ChatMessage({ message, loading, onConfirmMusic, onSeparate, onRemoveEcho }: {
   message: Message;
   loading: boolean;
   onConfirmMusic: () => void;
   onSeparate: (url: string) => void;
+  onRemoveEcho: (url: string) => void;
 }) {
   const isUser = message.role === "user";
   const sourceUrl = message.audio?.url ?? message.track?.url;
@@ -111,16 +112,25 @@ export function ChatMessage({ message, loading, onConfirmMusic, onSeparate }: {
             aria-label={`uploaded audio: ${message.audio.name}`} className="mt-3 max-w-full" />
         )}
         {sourceUrl && (
-          <button type="button" disabled={loading} onClick={() => onSeparate(sourceUrl)}
-            className="mt-3 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50">
-            separate stems
-          </button>
+          <>
+            <button type="button" disabled={loading} onClick={() => onSeparate(sourceUrl)}
+              className="mt-3 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50">
+              separate stems
+            </button>
+            <button type="button" disabled={loading} onClick={() => onRemoveEcho(sourceUrl)}
+              className="ml-2 mt-3 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50">
+              remove echo/reverb
+            </button>
+          </>
         )}
-        {message.stems && (
+        {(message.stems || message.cleanedAudio) && (
           <div className="mt-3 space-y-3">
             {[
-              { name: "vocals", url: message.stems.vocalsUrl },
-              { name: "instrumental", url: message.stems.instrumentalUrl },
+              ...(message.stems ? [
+                { name: "vocals", url: message.stems.vocalsUrl },
+                { name: "instrumental", url: message.stems.instrumentalUrl },
+              ] : []),
+              ...(message.cleanedAudio ? [message.cleanedAudio] : []),
             ].map((stem) => (
               <div key={stem.name} className="space-y-1">
                 <p className="text-xs">{stem.name}</p>
@@ -128,6 +138,11 @@ export function ChatMessage({ message, loading, onConfirmMusic, onSeparate }: {
                 <a href={stem.url} download className="text-xs underline underline-offset-4 hover:text-white">
                   download {stem.name} WAV
                 </a>
+                <button type="button" disabled={loading} onClick={() => onRemoveEcho(stem.url)}
+                  aria-label={`remove echo/reverb from ${stem.name}`}
+                  className="ml-2 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50">
+                  remove echo/reverb
+                </button>
               </div>
             ))}
           </div>

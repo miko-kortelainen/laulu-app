@@ -5,9 +5,11 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { ToolContext } from '@strands-agents/sdk';
-import { audioDirectory, audioPath, separateStemsTool, stemsDirectory, uploadAudio } from '../src/stems.js';
+import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from '../src/audio.js';
+import { separateStemsTool } from '../src/stems.js';
+import { removeEchoTool } from '../src/dereverb.js';
 
-const python = fileURLToPath(new URL('../stem-separation/.venv/bin/python', import.meta.url));
+const python = fileURLToPath(new URL('../audio-processing/.venv/bin/python', import.meta.url));
 
 function sampleAudio(): Buffer {
   return execFileSync(python, ['-c', `
@@ -19,10 +21,13 @@ sys.stdout.buffer.write(wav.getvalue())
 `]);
 }
 
-test('uploads decode, local tool returns two playable stems, and failures preserve valid state', async () => {
+test('local audio tools validate uploads, return playable stems and cleaned audio, and preserve valid state', async () => {
   process.env.LANGSMITH_TRACING = 'false';
   for (const url of ['https://example.com/song.mp3', '/etc/passwd', '/api/audio/../../.env',
-    '/api/music/00000000-0000-0000-0000-000000000000.wav', '/api/audio/not-a-uuid.mp3']) {
+    '/api/music/00000000-0000-0000-0000-000000000000.wav', '/api/audio/not-a-uuid.mp3',
+    '/api/stems/00000000-0000-0000-0000-000000000000/source_cleaned.wav',
+    '/api/cleaned/00000000-0000-0000-0000-000000000000/source_vocals.wav',
+    '/api/cleaned/../../.env']) {
     assert.throws(() => audioPath(url), /choose a generated track/);
   }
   await assert.rejects(uploadAudio('track.exe', Buffer.from('audio')), /MP3, WAV/);
@@ -35,6 +40,7 @@ test('uploads decode, local tool returns two playable stems, and failures preser
   const input = sampleAudio();
   const audio = await uploadAudio('my voice.wav', input);
   let outputDirectory: string | undefined;
+  const cleanedOutputs: string[] = [];
   try {
     assert.equal(audio.name, 'my voice.wav');
     assert.deepEqual(await readFile(audioPath(audio.url)), input);
@@ -60,11 +66,31 @@ for stem in ("vocals", "instrumental"):
     peak = np.abs(samples).max()
     assert peak == 0 or 0.7 - 1e-6 <= peak <= 0.9 + 1e-6
 `, outputDirectory]);
+    for (const sourceUrl of [audio.url, vocalsUrl]) {
+      const cleaned = await removeEchoTool.invoke({ audio_url: sourceUrl }, context);
+      assert.deepEqual(invocationState.cleanedAudio, cleaned);
+      assert.ok(cleaned && typeof cleaned === 'object' && !Array.isArray(cleaned));
+      const cleanedUrl = String(cleaned.url);
+      assert.match(cleanedUrl, /^\/api\/cleaned\/[0-9a-f-]{36}\/source_cleaned\.wav$/);
+      cleanedOutputs.push(path.join(cleanedDirectory, cleanedUrl.split('/')[3]));
+      execFileSync(python, ['-c', `
+import sys, numpy as np, soundfile as sf
+samples, rate = sf.read(sys.argv[1], always_2d=True)
+info = sf.info(sys.argv[1])
+assert info.subtype == "FLOAT" and rate == 44100 and samples.shape == (44100, 1)
+assert np.isfinite(samples).all()
+peak = np.abs(samples).max()
+assert peak == 0 or 0.7 - 1e-6 <= peak <= 0.9 + 1e-6
+`, audioPath(cleanedUrl)]);
+      await assert.rejects(removeEchoTool.invoke({ audio_url: '/etc/passwd' }, context), /choose a generated track/);
+      assert.deepEqual(invocationState.cleanedAudio, cleaned);
+    }
     await assert.rejects(separateStemsTool.invoke({ audio_url: '/etc/passwd' }, context), /choose a generated track/);
     assert.deepEqual(invocationState.stems, result);
     assert.deepEqual(await readFile(audioPath(audio.url)), input);
   } finally {
     await rm(audioPath(audio.url), { force: true });
+    for (const directory of cleanedOutputs) await rm(directory, { recursive: true, force: true });
     if (outputDirectory) await rm(outputDirectory, { recursive: true, force: true });
   }
 });

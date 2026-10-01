@@ -15,9 +15,11 @@ A simple full-stack AI chatbot built with:
 │   ├── src/
 │   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
 │   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
-│   │   ├── stems.ts       # Audio uploads and local stem-separation tool
+│   │   ├── audio.ts       # Audio storage, validation, and shared processing jobs
+│   │   ├── stems.ts       # Local vocal/instrumental separation tool
+│   │   ├── dereverb.ts    # Local echo/reverb removal tool
 │   │   └── index.ts       # Express server with /api/chat and /api/health endpoints
-│   ├── stem-separation/   # Python runner, locked dependencies, and local model files
+│   ├── audio-processing/ # Shared Python runtime, model runners, and local weights
 │   ├── .env.example       # Sample environment variables
 │   ├── .env               # Active environment file (put your NEBIUS_API_KEY here)
 │   ├── package.json
@@ -122,14 +124,14 @@ overlap **8**, and batch size **1**. The model YAML sets the segment and overlap
 the runner processes one chunk per model call. Input audio and each output stem
 use a normalization peak ceiling of **0.9** and an amplification peak floor of
 **0.7**. Silent audio stays silent. These peak thresholds are set in `normalize_audio`
-in `backend/stem-separation/separate.py`. Run separation again to use these settings;
+in `backend/audio-processing/audio.py`. Run separation again to use these settings;
 existing stems keep their original audio.
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run
 this command from the repository root:
 
 ```bash
-uv sync --frozen --project backend/stem-separation
+uv sync --frozen --project backend/audio-processing
 ```
 
 The environment uses Python 3.13 and
@@ -137,8 +139,8 @@ The environment uses Python 3.13 and
 Keep the supplied checkpoint and config at:
 
 ```text
-backend/stem-separation/models/vocals_mel_band_roformer.ckpt
-backend/stem-separation/models/vocals_mel_band_roformer.yaml
+backend/audio-processing/models/stems/vocals_mel_band_roformer.ckpt
+backend/audio-processing/models/stems/vocals_mel_band_roformer.yaml
 ```
 
 The checkpoint is excluded from Git. For a fresh checkout, download the
@@ -151,24 +153,60 @@ Use **upload audio** to add an MP3, WAV, FLAC, or OGG file. Uploads must be mono
 or stereo, at most 50 MB, and no longer than 10 minutes. Click **separate stems**
 on an uploaded or generated track, or ask the agent to isolate its vocals or
 create an instrumental version. Chat requests use the latest uploaded or generated
-track, or the track most recently selected with its **separate stems** button.
+track, or the track or stem most recently selected with an audio action button.
+A successful cleanup selects its cleaned output for follow-up requests.
 
 Each result has two audio players and WAV download links. Sources stay intact
-when separation fails. One separation job runs at a time, with a 20-minute
+when separation fails. One audio processing job runs at a time, with a 20-minute
 timeout. CPU processing can be slow. Uploads are saved in `backend/uploaded-audio/`
 and completed stems in `backend/separated-audio/`; Git ignores both directories.
 Clear resets chat and leaves audio files in place.
 
 Local integration check: `npm --prefix backend run test:stems`. This requires
 the installed Python environment and model files. It separates synthetic audio
-and checks upload validation, saved stems, and failure recovery. It makes no
+and checks upload validation, saved stems, echo removal on tracks and stems,
+and failure recovery. It makes no
 paid model calls. To check CPU fallback on Linux:
 
 ```bash
 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 CUDA_VISIBLE_DEVICES='' npm --prefix backend run test:stems
 ```
 
-Peak adjustment check: `backend/stem-separation/.venv/bin/python backend/stem-separation/test_separate.py`.
+Peak adjustment check: `backend/audio-processing/.venv/bin/python backend/audio-processing/test_audio.py`.
+
+## Echo and reverb removal
+
+The agent's `remove_echo_reverb` tool uses the supplied **UVR-DeEcho-DeReverb**
+VR model. It accepts generated tracks, uploads, separated stems, and previous
+cleaned results. Ask to remove echo or reverb, or click **remove echo/reverb**
+beside an audio player. For clean isolated vocals, ask the agent to separate
+vocals first and then clean them.
+
+The result is one cleaned 44.1 kHz floating-point WAV with a player and download.
+The model reduces echo and reverb together; it does not guarantee complete removal.
+Sources remain intact. Completed results are saved in `backend/cleaned-audio/`
+and survive a restart. CPU processing can be slow.
+
+Both audio tools use the environment installed with the command above. The lock
+includes audioread for the VR loader and samplerate 0.2.4, whose wheels include
+libsamplerate. Model
+files are grouped by task:
+
+```text
+backend/audio-processing/models/stems/vocals_mel_band_roformer.ckpt
+backend/audio-processing/models/stems/vocals_mel_band_roformer.yaml
+backend/audio-processing/models/dereverb/UVR-DeEcho-DeReverb.pth
+```
+
+Weights are excluded from Git. Copy the supplied `.pth` file to its location
+above on a fresh checkout. The runner loads local weights through
+[`audio-separator`](https://github.com/nomadkaraoke/python-audio-separator)'s VR loader
+and uses the [UVR model metadata](https://github.com/Anjok07/ultimatevocalremovergui/blob/master/models/VR_Models/model_data/model_data.json)
+(`4band_v3`, primary stem `No Reverb`). It downloads no model registry at runtime
+and uses soundfile without requiring ffmpeg. CUDA or Apple MPS is selected when
+available, with CPU fallback. VR uses window size 512 and batch size 1; Roformer
+keeps its existing segment size 256 and overlap 8. Both use the 0.9 normalization
+ceiling and 0.7 amplification floor.
 
 ## LangSmith tracing
 
@@ -178,7 +216,7 @@ restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.
 `https://eu.api.smith.langchain.com` for an EU workspace.
 
 Each agent invocation records its input, reply, errors, and duration. Model calls,
-`generate_music`, and `separate_stems` appear as child runs, including model token
+`generate_music`, `separate_stems`, and `remove_echo_reverb` appear as child runs, including model token
 usage and tool inputs and results. Conversation session IDs group runs into LangSmith threads.
 Confirmed audio generation records a separate `generate_audio` run in the same
 thread, with the prompt, download URL, and lyrics. Audio bytes and API keys are

@@ -9,6 +9,7 @@ export interface Message {
   musicError?: string;
   audio?: AudioTrack;
   stems?: SeparatedStems;
+  cleanedAudio?: AudioTrack;
 }
 
 function errorMessage(error: unknown): string {
@@ -39,9 +40,11 @@ export function useChat() {
       (error: unknown) => ({ reply: `Error: ${errorMessage(error)}` }),
     );
 
+    if ("cleanedAudio" in result && result.cleanedAudio) currentAudio.current = result.cleanedAudio.url;
     setMessages((previous) => [...previous, { role: "agent", text: result.reply,
       musicPrompt: "musicPrompt" in result ? result.musicPrompt : undefined,
-      stems: "stems" in result ? result.stems : undefined }]);
+      stems: "stems" in result ? result.stems : undefined,
+      cleanedAudio: "cleanedAudio" in result ? result.cleanedAudio : undefined }]);
     busy.current = false;
     setLoading(false);
   }

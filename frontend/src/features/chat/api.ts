@@ -2,6 +2,7 @@ export interface ChatReply {
   reply: string;
   musicPrompt?: string;
   stems?: SeparatedStems;
+  cleanedAudio?: AudioTrack;
 }
 
 export interface AudioTrack {
@@ -52,11 +53,20 @@ export async function sendMessage(message: string, audioUrl?: string): Promise<C
     throw new Error("Invalid stem separation response.");
   }
 
+  const cleanedAudio = "cleanedAudio" in data ? data.cleanedAudio : undefined;
+  if (cleanedAudio !== undefined && (!cleanedAudio || typeof cleanedAudio !== "object" ||
+      !("url" in cleanedAudio) || typeof cleanedAudio.url !== "string" ||
+      !/^\/api\/cleaned\/[0-9a-f-]{36}\/source_cleaned\.wav$/.test(cleanedAudio.url) ||
+      !("name" in cleanedAudio) || typeof cleanedAudio.name !== "string")) {
+    throw new Error("Invalid echo removal response.");
+  }
+
   return {
     reply,
     musicPrompt: "musicPrompt" in data && typeof data.musicPrompt === "string"
       ? data.musicPrompt : undefined,
     stems: stems as SeparatedStems | undefined,
+    cleanedAudio: cleanedAudio as AudioTrack | undefined,
   };
 }
 

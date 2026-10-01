@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from separate import normalize_audio
+from audio import normalize_audio
 
 
 class NormalizeAudioTest(unittest.TestCase):

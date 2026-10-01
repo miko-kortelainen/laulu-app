@@ -8,6 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { generateMusicTool } from './music.js';
 import { separateStemsTool } from './stems.js';
+import { removeEchoTool } from './dereverb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,7 +69,7 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   const model = createNebiusModel();
   const agent = new Agent({
     model: model,
-    tools: [generateMusicTool, separateStemsTool],
+    tools: [generateMusicTool, separateStemsTool, removeEchoTool],
     systemPrompt:
       'you are a helpful ai assistant powered by nvidia nemotron super on nebius token factory. ' +
       'answer directly in the user\'s language, with a relaxed, natural tone and everyday words. ' +
@@ -86,7 +87,9 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
       'keep that reply to one short sentence; the prompt is already shown separately, so do not repeat it or its lyrics in your reply. ' +
       'use the tool again for prompt changes. do not use it for general music advice. ' +
       'when the user requests vocal or instrumental separation, use separate_stems with the available audio url. ' +
-      'separation runs locally without a paid model call. after success, keep the reply to one short sentence; the stems appear separately.',
+      'when the user requests echo or reverb removal, use remove_echo_reverb with the requested track or stem url. ' +
+      'if they request isolated clean vocals, separate first, then pass the returned vocalsUrl to remove_echo_reverb. ' +
+      'these audio tools run locally. after success, keep the reply to one short sentence; audio players appear separately.',
     printer: false,
   });
 

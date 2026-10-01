@@ -47,7 +47,8 @@ export function ChatPage() {
         {messages.map((message, index) => (
           <ChatMessage key={index} message={message} loading={loading}
             onConfirmMusic={() => confirmMusic(index)}
-            onSeparate={(url) => send("separate the vocals and instrumental from this track.", url)} />
+            onSeparate={(url) => send("separate the vocals and instrumental from this track.", url)}
+            onRemoveEcho={(url) => send("remove echo and reverb from this audio.", url)} />
         ))}
 
         {loading && (

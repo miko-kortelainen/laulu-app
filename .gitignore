@@ -40,6 +40,8 @@ complete-idea.txt
 backend/generated-music/
 backend/uploaded-audio/
 backend/separated-audio/
-backend/stem-separation/.venv/
-backend/stem-separation/models/*.ckpt
+backend/audio-processing/.venv/
+backend/audio-processing/models/**/*.ckpt
+backend/audio-processing/models/**/*.pth
+backend/cleaned-audio/
 __pycache__/
