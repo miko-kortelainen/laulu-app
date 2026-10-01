@@ -7,7 +7,7 @@ import { useChat } from "./useChat";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage() {
-  const { messages, loading, send, clear, confirmMusic } = useChat();
+  const { messages, loading, send, clear, confirmMusic, upload } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -46,7 +46,8 @@ export function ChatPage() {
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto py-4 space-y-4">
         {messages.map((message, index) => (
           <ChatMessage key={index} message={message} loading={loading}
-            onConfirmMusic={() => confirmMusic(index)} />
+            onConfirmMusic={() => confirmMusic(index)}
+            onSeparate={(url) => send("separate the vocals and instrumental from this track.", url)} />
         ))}
 
         {loading && (
@@ -70,9 +71,19 @@ export function ChatPage() {
       </main>
 
       <footer className="flex-none pt-4 border-t border-white/10">
+        <label className="mb-3 flex flex-col gap-1 text-xs text-zinc-400">
+          upload audio
+          <input type="file" accept=".mp3,.wav,.flac,.ogg" disabled={loading}
+            className="min-w-0 max-w-full text-xs file:mr-2 file:rounded-lg file:border file:border-white/10 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-zinc-200 disabled:opacity-50"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (file) void upload(file);
+            }} />
+        </label>
         <AiInput
           placeholder="Ask Nemotron Super..."
-          onSubmit={send}
+          onSubmit={(text) => send(text)}
           models={MODELS}
           selectedModel={MODELS[0]}
           allowAttachments={false}

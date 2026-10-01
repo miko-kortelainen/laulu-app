@@ -15,7 +15,9 @@ A simple full-stack AI chatbot built with:
 │   ├── src/
 │   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
 │   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
+│   │   ├── stems.ts       # Audio uploads and local stem-separation tool
 │   │   └── index.ts       # Express server with /api/chat and /api/health endpoints
+│   ├── stem-separation/   # Python runner, locked dependencies, and local model files
 │   ├── .env.example       # Sample environment variables
 │   ├── .env               # Active environment file (put your NEBIUS_API_KEY here)
 │   ├── package.json
@@ -108,6 +110,66 @@ generation cannot overlap within the same conversation.
 
 Offline backend check: `npm --prefix backend run test:music`.
 
+## Stem separation
+
+The agent's `separate_stems` tool uses **MelBand Roformer | Vocals by Kimberley
+Jensen** to produce vocals and instrumental WAV files. It runs locally with
+CUDA when available and falls back to CPU. It does not separate drums, bass,
+or other individual instruments.
+
+Separation uses segment size **256** (112,455 samples at a 441-sample STFT hop),
+overlap **8**, and batch size **1**. The model YAML sets the segment and overlap;
+the runner processes one chunk per model call. Input audio and each output stem
+use a normalization peak ceiling of **0.9** and an amplification peak floor of
+**0.7**. Silent audio stays silent. These peak thresholds are set in `normalize_audio`
+in `backend/stem-separation/separate.py`. Run separation again to use these settings;
+existing stems keep their original audio.
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run
+this command from the repository root:
+
+```bash
+uv sync --frozen --project backend/stem-separation
+```
+
+The environment uses Python 3.13 and
+[`melband-roformer-infer`](https://github.com/openmirlab/melband-roformer-infer).
+Keep the supplied checkpoint and config at:
+
+```text
+backend/stem-separation/models/vocals_mel_band_roformer.ckpt
+backend/stem-separation/models/vocals_mel_band_roformer.yaml
+```
+
+The checkpoint is excluded from Git. For a fresh checkout, download the
+[Kimberley Jensen checkpoint](https://huggingface.co/KimberleyJSN/melbandroformer)
+and save `MelBandRoformer.ckpt` under the checkpoint filename above.
+Its SHA-256 is `87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e`.
+The runner loads these local files and does not download models during separation.
+
+Use **upload audio** to add an MP3, WAV, FLAC, or OGG file. Uploads must be mono
+or stereo, at most 50 MB, and no longer than 10 minutes. Click **separate stems**
+on an uploaded or generated track, or ask the agent to isolate its vocals or
+create an instrumental version. Chat requests use the latest uploaded or generated
+track, or the track most recently selected with its **separate stems** button.
+
+Each result has two audio players and WAV download links. Sources stay intact
+when separation fails. One separation job runs at a time, with a 20-minute
+timeout. CPU processing can be slow. Uploads are saved in `backend/uploaded-audio/`
+and completed stems in `backend/separated-audio/`; Git ignores both directories.
+Clear resets chat and leaves audio files in place.
+
+Local integration check: `npm --prefix backend run test:stems`. This requires
+the installed Python environment and model files. It separates synthetic audio
+and checks upload validation, saved stems, and failure recovery. It makes no
+paid model calls. To check CPU fallback on Linux:
+
+```bash
+OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 CUDA_VISIBLE_DEVICES='' npm --prefix backend run test:stems
+```
+
+Peak adjustment check: `backend/stem-separation/.venv/bin/python backend/stem-separation/test_separate.py`.
+
 ## LangSmith tracing
 
 Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `backend/.env`, then
@@ -115,9 +177,9 @@ restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.
 `LANGSMITH_ENDPOINT` defaults to `https://api.smith.langchain.com`; use
 `https://eu.api.smith.langchain.com` for an EU workspace.
 
-Each agent invocation records its input, reply, errors, and duration. Model calls
-and `generate_music` appear as child runs, including model token usage and tool
-inputs and results. Conversation session IDs group runs into LangSmith threads.
+Each agent invocation records its input, reply, errors, and duration. Model calls,
+`generate_music`, and `separate_stems` appear as child runs, including model token
+usage and tool inputs and results. Conversation session IDs group runs into LangSmith threads.
 Confirmed audio generation records a separate `generate_audio` run in the same
 thread, with the prompt, download URL, and lyrics. Audio bytes and API keys are
 excluded. Prompt preparation still requires user approval before generation.

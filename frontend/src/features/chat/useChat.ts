@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { generateMusic, resetChat, sendMessage, type MusicTrack } from "./api";
+import { generateMusic, resetChat, sendMessage, uploadAudio, type AudioTrack, type MusicTrack, type SeparatedStems } from "./api";
 
 export interface Message {
   role: "user" | "agent";
@@ -7,6 +7,8 @@ export interface Message {
   musicPrompt?: string;
   track?: MusicTrack;
   musicError?: string;
+  audio?: AudioTrack;
+  stems?: SeparatedStems;
 }
 
 function errorMessage(error: unknown): string {
@@ -22,8 +24,9 @@ export function useChat() {
   ]);
   const [loading, setLoading] = useState(false);
   const busy = useRef(false);
+  const currentAudio = useRef<string | undefined>(undefined);
 
-  async function send(text: string): Promise<void> {
+  async function send(text: string, audioUrl?: string): Promise<void> {
     const message = text.trim();
     if (!message || busy.current) return;
 
@@ -31,12 +34,27 @@ export function useChat() {
     setLoading(true);
     setMessages((previous) => [...previous, { role: "user", text: message }]);
 
-    const result = await sendMessage(message).catch(
+    if (audioUrl) currentAudio.current = audioUrl;
+    const result = await sendMessage(message, currentAudio.current).catch(
       (error: unknown) => ({ reply: `Error: ${errorMessage(error)}` }),
     );
 
     setMessages((previous) => [...previous, { role: "agent", text: result.reply,
-      musicPrompt: "musicPrompt" in result ? result.musicPrompt : undefined }]);
+      musicPrompt: "musicPrompt" in result ? result.musicPrompt : undefined,
+      stems: "stems" in result ? result.stems : undefined }]);
+    busy.current = false;
+    setLoading(false);
+  }
+
+  async function upload(file: File): Promise<void> {
+    if (busy.current) return;
+    busy.current = true;
+    setLoading(true);
+    const result = await uploadAudio(file).catch((error: unknown) => new Error(errorMessage(error)));
+    if (!(result instanceof Error)) currentAudio.current = result.url;
+    setMessages((previous) => [...previous, result instanceof Error
+      ? { role: "agent", text: `Error: ${result.message}` }
+      : { role: "user", text: result.name, audio: result }]);
     busy.current = false;
     setLoading(false);
   }
@@ -50,6 +68,7 @@ export function useChat() {
     const result = await generateMusic(message.musicPrompt).catch(
       (error: unknown) => new Error(errorMessage(error)),
     );
+    if (!(result instanceof Error)) currentAudio.current = result.url;
     setMessages((previous) => previous.map((item, itemIndex) => itemIndex !== index ? item :
       result instanceof Error
         ? { ...item, musicError: result.message }
@@ -74,6 +93,7 @@ export function useChat() {
         { role: "agent", text: `Error: ${error.message}` },
       ]);
     } else {
+      currentAudio.current = undefined;
       setMessages([
         { role: "agent", text: "Conversation cleared. How can I help you?" },
       ]);
@@ -83,5 +103,5 @@ export function useChat() {
     setLoading(false);
   }
 
-  return { messages, loading, send, clear, confirmMusic };
+  return { messages, loading, send, clear, confirmMusic, upload };
 }

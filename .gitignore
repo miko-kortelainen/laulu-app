@@ -38,3 +38,8 @@ Thumbs.db
 hehe.txt
 complete-idea.txt
 backend/generated-music/
+backend/uploaded-audio/
+backend/separated-audio/
+backend/stem-separation/.venv/
+backend/stem-separation/models/*.ckpt
+__pycache__/

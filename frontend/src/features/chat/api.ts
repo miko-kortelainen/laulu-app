@@ -1,6 +1,17 @@
 export interface ChatReply {
   reply: string;
   musicPrompt?: string;
+  stems?: SeparatedStems;
+}
+
+export interface AudioTrack {
+  url: string;
+  name: string;
+}
+
+export interface SeparatedStems {
+  vocalsUrl: string;
+  instrumentalUrl: string;
 }
 
 export interface MusicTrack {
@@ -8,11 +19,11 @@ export interface MusicTrack {
   lyrics: string;
 }
 
-export async function sendMessage(message: string): Promise<ChatReply> {
+export async function sendMessage(message: string, audioUrl?: string): Promise<ChatReply> {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, audioUrl }),
   });
   const data: unknown = await response.json();
 
@@ -32,11 +43,45 @@ export async function sendMessage(message: string): Promise<ChatReply> {
     throw new Error("Invalid chat response.");
   }
 
+  const stems = "stems" in data ? data.stems : undefined;
+  if (stems !== undefined && (!stems || typeof stems !== "object" ||
+      !("vocalsUrl" in stems) || typeof stems.vocalsUrl !== "string" ||
+      !/^\/api\/stems\/[0-9a-f-]{36}\/source_vocals\.wav$/.test(stems.vocalsUrl) ||
+      !("instrumentalUrl" in stems) || typeof stems.instrumentalUrl !== "string" ||
+      stems.instrumentalUrl !== stems.vocalsUrl.replace("source_vocals.wav", "source_instrumental.wav"))) {
+    throw new Error("Invalid stem separation response.");
+  }
+
   return {
     reply,
     musicPrompt: "musicPrompt" in data && typeof data.musicPrompt === "string"
       ? data.musicPrompt : undefined,
+    stems: stems as SeparatedStems | undefined,
   };
+}
+
+export async function uploadAudio(file: File): Promise<AudioTrack> {
+  if (!/\.(mp3|wav|flac|ogg)$/i.test(file.name) || !file.size || file.size > 50 * 1024 * 1024) {
+    throw new Error("Choose an MP3, WAV, FLAC, or OGG file up to 50 MB.");
+  }
+  const response = await fetch(`/api/audio?name=${encodeURIComponent(file.name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+  });
+  const data: unknown = await response.json();
+  if (!data || typeof data !== "object") throw new Error("Invalid audio upload response.");
+  if (!response.ok) {
+    throw new Error("error" in data && typeof data.error === "string" ? data.error : "Audio upload failed.");
+  }
+  const audio = "audio" in data ? data.audio : undefined;
+  if (!audio || typeof audio !== "object" ||
+      !("url" in audio) || typeof audio.url !== "string" ||
+      !/^\/api\/audio\/[0-9a-f-]{36}\.(mp3|wav|flac|ogg)$/.test(audio.url) ||
+      !("name" in audio) || typeof audio.name !== "string") {
+    throw new Error("Invalid audio upload response.");
+  }
+  return { url: audio.url, name: audio.name };
 }
 
 export async function generateMusic(prompt: string): Promise<MusicTrack> {

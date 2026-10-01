@@ -36,12 +36,14 @@ function MessageContent({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-export function ChatMessage({ message, loading, onConfirmMusic }: {
+export function ChatMessage({ message, loading, onConfirmMusic, onSeparate }: {
   message: Message;
   loading: boolean;
   onConfirmMusic: () => void;
+  onSeparate: (url: string) => void;
 }) {
   const isUser = message.role === "user";
+  const sourceUrl = message.audio?.url ?? message.track?.url;
 
   return (
     <div
@@ -102,6 +104,32 @@ export function ChatMessage({ message, loading, onConfirmMusic }: {
                 </div>
               </details>
             )}
+          </div>
+        )}
+        {message.audio && (
+          <audio controls preload="none" src={message.audio.url}
+            aria-label={`uploaded audio: ${message.audio.name}`} className="mt-3 max-w-full" />
+        )}
+        {sourceUrl && (
+          <button type="button" disabled={loading} onClick={() => onSeparate(sourceUrl)}
+            className="mt-3 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50">
+            separate stems
+          </button>
+        )}
+        {message.stems && (
+          <div className="mt-3 space-y-3">
+            {[
+              { name: "vocals", url: message.stems.vocalsUrl },
+              { name: "instrumental", url: message.stems.instrumentalUrl },
+            ].map((stem) => (
+              <div key={stem.name} className="space-y-1">
+                <p className="text-xs">{stem.name}</p>
+                <audio controls preload="none" src={stem.url} aria-label={stem.name} className="max-w-full" />
+                <a href={stem.url} download className="text-xs underline underline-offset-4 hover:text-white">
+                  download {stem.name} WAV
+                </a>
+              </div>
+            ))}
           </div>
         )}
       </div>

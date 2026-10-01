@@ -1,7 +1,8 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { getOrCreateAgent, resetAgentSession, getModelConfig } from './agent.js';
 import { generateMusic, musicDirectory, validateMusicPrompt } from './music.js';
+import { audioDirectory, audioPath, stemsDirectory, uploadAudio } from './stems.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -9,6 +10,19 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 app.use('/api/music', express.static(musicDirectory));
+app.use('/api/audio', express.static(audioDirectory));
+app.use('/api/stems', express.static(stemsDirectory));
+
+app.post('/api/audio', express.raw({ type: 'application/octet-stream', limit: '50mb' }), async (req, res) => {
+  const audio = await uploadAudio(req.query.name, req.body).catch((error: unknown) => {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'audio upload failed.' });
+  });
+  if (audio) res.json({ audio });
+});
+app.use('/api/audio', (error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const oversized = error && typeof error === 'object' && 'type' in error && error.type === 'entity.too.large';
+  res.status(oversized ? 413 : 400).json({ error: oversized ? 'audio upload must be 50 MB or smaller.' : 'audio upload failed.' });
+});
 
 const busySessions = new Set<string>();
 app.use(['/api/chat', '/api/music', '/api/reset'], (req, res, next) => {
@@ -47,9 +61,11 @@ app.post('/api/chat', async (req: Request, res: Response) => {
   }
 
   try {
+    const audioUrl: unknown = req.body?.audioUrl;
+    if (audioUrl !== undefined) audioPath(audioUrl);
     const agent = getOrCreateAgent(sessionId);
-    const result = await agent.invoke(message.trim());
-    res.json({ reply: result.toString(), musicPrompt: result.invocationState.musicPrompt });
+    const result = await agent.invoke(message.trim() + (audioUrl ? `\n\navailable audio: ${audioUrl}` : ''));
+    res.json({ reply: result.toString(), musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process message with agent';
     console.error('Agent invocation error:', error);

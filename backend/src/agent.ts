@@ -7,6 +7,7 @@ import OpenAI from 'openai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { generateMusicTool } from './music.js';
+import { separateStemsTool } from './stems.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,7 +68,7 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   const model = createNebiusModel();
   const agent = new Agent({
     model: model,
-    tools: [generateMusicTool],
+    tools: [generateMusicTool, separateStemsTool],
     systemPrompt:
       'you are a helpful ai assistant powered by nvidia nemotron super on nebius token factory. ' +
       'answer directly in the user\'s language, with a relaxed, natural tone and everyday words. ' +
@@ -83,7 +84,9 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
       'the user must approve it with the generate music button before audio is generated. ' +
       'tell them to review the prompt and click the button; never claim the track is already generated. ' +
       'keep that reply to one short sentence; the prompt is already shown separately, so do not repeat it or its lyrics in your reply. ' +
-      'use the tool again for prompt changes. do not use it for general music advice.',
+      'use the tool again for prompt changes. do not use it for general music advice. ' +
+      'when the user requests vocal or instrumental separation, use separate_stems with the available audio url. ' +
+      'separation runs locally without a paid model call. after success, keep the reply to one short sentence; the stems appear separately.',
     printer: false,
   });
 

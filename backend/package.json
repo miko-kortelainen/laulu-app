@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "test:music": "tsx --test tests/music.test.ts",
+    "test:stems": "tsx --test tests/stems.test.ts",
     "test:tracing": "node --import tsx tests/tracing.test.ts",
     "start": "node dist/index.js"
   },
