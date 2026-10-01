@@ -1,4 +1,5 @@
-import { tool } from '@strands-agents/sdk';
+import { tool, type ToolContext } from '@strands-agents/sdk';
+import { traceable } from 'langsmith/traceable';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -46,14 +47,21 @@ export const generateMusicTool = tool({
     required: ['prompt'],
     additionalProperties: false,
   },
-  callback: (input, context) => {
+  callback: traceable(async (input: unknown, context: ToolContext) => {
     const prompt = validateMusicPrompt(record(input).prompt);
     context.invocationState.musicPrompt = prompt;
     return { status: 'awaiting_confirmation', prompt };
-  },
+  }, {
+    name: 'generate_music',
+    run_type: 'tool',
+    processInputs: ({ args }) => record(args[0]),
+  }),
 });
 
-export async function generateMusic(prompt: string): Promise<MusicTrack> {
+export const generateMusic = traceable(async (
+  prompt: string,
+  _traceConfig?: { metadata: { thread_id: string } },
+): Promise<MusicTrack> => {
   const input = validateMusicPrompt(prompt);
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || apiKey === 'your_gemini_api_key_here') {
@@ -108,4 +116,9 @@ export async function generateMusic(prompt: string): Promise<MusicTrack> {
     .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n')
     .trim();
   return { url: `/api/music/${filename}`, lyrics: text };
-}
+}, {
+  name: 'generate_audio',
+  run_type: 'tool',
+  argsConfigPath: [1],
+  metadata: { ls_provider: 'google', ls_model_name: 'lyria-3.5' },
+});

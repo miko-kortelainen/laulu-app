@@ -74,7 +74,7 @@ app.post('/api/music', async (req: Request, res: Response) => {
     return;
   }
 
-  const track = await generateMusic(prompt).catch((error: unknown) => {
+  const track = await generateMusic(prompt, { metadata: { thread_id: sessionId } }).catch((error: unknown) => {
     res.status(502).json({ error: error instanceof Error ? error.message : 'music generation failed.' });
   });
   busySessions.delete(sessionId);

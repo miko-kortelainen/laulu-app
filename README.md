@@ -108,6 +108,25 @@ generation cannot overlap within the same conversation.
 
 Offline backend check: `npm --prefix backend run test:music`.
 
+## LangSmith tracing
+
+Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `backend/.env`, then
+restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.
+`LANGSMITH_ENDPOINT` defaults to `https://api.smith.langchain.com`; use
+`https://eu.api.smith.langchain.com` for an EU workspace.
+
+Each agent invocation records its input, reply, errors, and duration. Model calls
+and `generate_music` appear as child runs, including model token usage and tool
+inputs and results. Conversation session IDs group runs into LangSmith threads.
+Confirmed audio generation records a separate `generate_audio` run in the same
+thread, with the prompt, download URL, and lyrics. Audio bytes and API keys are
+excluded. Prompt preparation still requires user approval before generation.
+
+Tracing sends conversation and music prompt text to LangSmith. Set
+`LANGSMITH_TRACING=false` to disable it.
+
+Offline tracing check: `npm --prefix backend run test:tracing`.
+
 Frontend chat E2E check: start `npm run dev:frontend`, then run
 `npm --prefix frontend run test:e2e`. It requires the `agent-browser` CLI and
 mocks all API calls. Set `E2E_URL` to test another local frontend URL.

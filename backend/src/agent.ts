@@ -1,6 +1,9 @@
 import { Agent } from '@strands-agents/sdk';
 import { OpenAIModel } from '@strands-agents/sdk/models/openai';
 import dotenv from 'dotenv';
+import { traceable } from 'langsmith/traceable';
+import { wrapOpenAI } from 'langsmith/wrappers/openai';
+import OpenAI from 'openai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { generateMusicTool } from './music.js';
@@ -49,10 +52,10 @@ export function createNebiusModel() {
   return new OpenAIModel({
     api: 'chat',
     modelId: getModelId(),
-    apiKey: apiKey,
-    clientConfig: {
+    client: wrapOpenAI(new OpenAI({
+      apiKey,
       baseURL: getBaseUrl(),
-    },
+    })),
   });
 }
 
@@ -82,6 +85,12 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
       'keep that reply to one short sentence; the prompt is already shown separately, so do not repeat it or its lyrics in your reply. ' +
       'use the tool again for prompt changes. do not use it for general music advice.',
     printer: false,
+  });
+
+  agent.invoke = traceable(agent.invoke.bind(agent), {
+    name: 'musical-copilot',
+    run_type: 'chain',
+    metadata: { thread_id: sessionId },
   });
 
   agents.set(sessionId, agent);
