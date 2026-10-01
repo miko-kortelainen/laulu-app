@@ -1,0 +1,14 @@
+{
+  "name": "nebius-nemotron-chatbot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Simple AI chatbot using Nebius Token Factory, NVIDIA Nemotron Super, and Strands Agents SDK",
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "build": "npm run build:backend && npm run build:frontend"
+  }
+}
