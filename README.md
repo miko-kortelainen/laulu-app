@@ -109,8 +109,8 @@ Restart the backend after changing this key.
 
 The music form stays beside the chat, or below it on small screens.
 Ask the agent to create music. It fills editable fields for genre/style, mood,
-key, BPM, duration, vocals/language, instruments, production, song structure,
-and lyrics. Edit these fields directly before you approve the song.
+key, BPM, duration, vocals/language, instruments, production, and lyrics.
+Edit these fields directly before you approve the song.
 Use **music model** to select **Lyria 3.5** (the default) or **Lyria 3 Clip Preview**.
 Clip Preview always generates a 30-second clip.
 Chat revisions and failed generation keep the selection. Clearing the conversation resets it.
@@ -143,6 +143,7 @@ Lyric calls have a two-minute timeout and an 8,192-token completion
 limit, including reasoning and lyric text. Reasoning effort is set to `low`.
 The lyrics field has a 3,000-character limit, including section tags and line breaks.
 Supplied lyrics and edits to other song fields do not trigger a lyric call.
+Empty or whitespace-only lyric requests do not trigger a lyric call.
 Lyric generation uses paid Nebius inference during chat, before the separate
 Generate music action. Failed lyric calls preserve the current form.
 Each chat request allows at most six main-agent model turns and one lyric-agent

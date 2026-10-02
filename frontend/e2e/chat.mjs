@@ -23,6 +23,7 @@ try {
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("aside fieldset") !== null && document.querySelector("main fieldset") === null'), "true");
   assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
+  assert.equal(run("eval", 'document.querySelector("[name=structure]")'), "null");
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
   assert.deepEqual(JSON.parse(run("eval", 'Array.from(document.querySelector("select[name=musicModel]").options, option => option.text)')), ["Lyria 3.5", "Lyria 3 Clip Preview (30 seconds)"]);
   run("find", "label", "music model", "click");
@@ -78,7 +79,7 @@ try {
     reply: "review the prompt and click generate music.", musicPrompt: {
       genre: "indie folk", mood: "warm", key: "G major", bpm: "82", duration: "2 minutes",
       instruments: "acoustic guitar", vocals: "alto vocals in English", production: "natural",
-      structure: "[Intro] -> [Verse] -> [Chorus] -> [Outro]", lyrics: "a song about tiny paws",
+      lyrics: "a song about tiny paws",
     },
   }));
   const lyrics = "Tiny paws in the morning dew,\nA world of green and a sky of blue.";
@@ -103,7 +104,7 @@ try {
   const revisedPrompt = {
     genre: "indie pop", mood: "hopeful", key: "D minor", bpm: "110 with a swung feel", duration: "2 minutes",
     instruments: "acoustic guitar", vocals: "alto vocals in English", production: "natural",
-    structure: "[Intro] -> [Verse] -> [Chorus] -> [Outro]", lyrics,
+    lyrics,
   };
   run("network", "unroute", "**/api/chat");
   run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "changed the genre.", musicPrompt: revisedPrompt }));
@@ -139,7 +140,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3-clip-preview"');
   assert.equal(run("eval", 'window.musicRequests.at(-1).model'), '"lyria-3-clip-preview"');
   assert.equal(run("eval", 'window.musicRequests.at(-1).prompt'), JSON.stringify(
-    "genre / style: indie pop\n\nmood: hopeful\n\nkey: E minor\n\nBPM: 110 with a swung feel\n\nduration: 2 minutes\n\nvocals / language: alto vocals in English\n\ninstruments: acoustic guitar\n\nproduction: natural\n\nsong structure: [Intro] -> [Verse] -> [Chorus] -> [Outro]\n\nLyrics:\n" + lyrics,
+    "genre / style: indie pop\n\nmood: hopeful\n\nkey: E minor\n\nBPM: 110 with a swung feel\n\nduration: 2 minutes\n\nvocals / language: alto vocals in English\n\ninstruments: acoustic guitar\n\nproduction: natural\n\nLyrics:\n" + lyrics,
   ));
   run("network", "unroute", "**/api/music");
   run("network", "route", "**/api/music", "--body", JSON.stringify({

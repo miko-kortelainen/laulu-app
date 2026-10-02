@@ -37,7 +37,7 @@ export function validateMusicPrompt(value: unknown): string {
 }
 
 const musicPromptProperties = {
-  genre: { type: 'string', description: 'Primary genre, era or regional style.' },
+  genre: { type: 'string', description: 'Primary genre, era or regional style only. No artist or band names, parenthetical artist references, or artist-inspired labels.' },
   mood: { type: 'string', description: 'Emotion, energy and groove.' },
   key: { type: 'string', description: 'Musical key, for example G major.' },
   bpm: { type: 'string', description: 'Tempo in BPM, with feel or tempo changes when useful.' },
@@ -45,7 +45,6 @@ const musicPromptProperties = {
   instruments: { type: 'string', description: 'Instrument roles and textures.' },
   vocals: { type: 'string', description: 'Lyric language, timbre, delivery, harmonies, and story or hook when Lyria should write lyrics; or instrumental only, no vocals.' },
   production: { type: 'string', description: 'Production character and sound.' },
-  structure: { type: 'string', description: 'Song sections, progression and energy changes.' },
   lyrics: { type: 'string', maxLength: 3_000, description: 'Current or supplied lyrics, preserved exactly, up to 3,000 characters including section tags and line breaks. To write or revise lyrics, set lyricRequest instead of composing text in this field. Empty when Lyria should write lyrics or for instrumental music.' },
 } as const;
 
@@ -70,7 +69,8 @@ export const updateMusicFormTool = tool({
     }
     if (prompt.lyrics.length > 3_000) throw new Error('lyrics must contain at most 3,000 characters.');
     validateMusicPrompt(Object.values(prompt).join('\n\n'));
-    if (fields.lyricRequest !== undefined) {
+    if (fields.lyricRequest !== undefined &&
+        (typeof fields.lyricRequest !== 'string' || fields.lyricRequest.trim())) {
       const request = validateMusicPrompt(fields.lyricRequest);
       if (context.invocationState.lyricGenerationAttempted) {
         throw new Error('only one lyric generation attempt is allowed per message. send a new message to try again.');

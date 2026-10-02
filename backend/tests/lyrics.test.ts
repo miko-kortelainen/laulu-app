@@ -18,7 +18,7 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
   const brief = {
     genre: 'pop', mood: 'hopeful', key: 'D minor', bpm: '120', duration: '',
     instruments: 'piano', vocals: 'english vocals', production: 'dry',
-    structure: '[verse] -> [chorus]', lyrics: '',
+    lyrics: '',
   };
   const lyrics = '[verse]\n' + Array(8).fill('you left your coat beside the door.').join('\n') +
     '\n[chorus]\n' + Array(4).fill('i keep a seat for you.').join('\n');
@@ -89,11 +89,13 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
 
     // Musical changes preserve manually edited lyrics without calling the lyric model.
     currentBrief = { ...brief, bpm: '140', lyrics: lyrics.replace('your coat', 'your jacket') };
-    lyricRequest = undefined;
-    const before = requests.length;
-    const tempo = await agent.invoke('change only the BPM to 140');
-    assert.deepEqual(tempo.invocationState.musicPrompt, currentBrief);
-    assert.deepEqual(requests.slice(before).map(({ model }) => model), [getModelId(), getModelId()]);
+    for (lyricRequest of [undefined, '', ' \n\t ']) {
+      const before = requests.length;
+      const tempo = await agent.invoke('change only the BPM to 140');
+      assert.deepEqual(tempo.invocationState.musicPrompt, currentBrief);
+      assert.equal(tempo.invocationState.lyricGenerationAttempted, undefined);
+      assert.deepEqual(requests.slice(before).map(({ model }) => model), [getModelId(), getModelId()]);
+    }
 
     lyricRequest = 'change only the chorus, preserve the verse';
     revisedLyrics = currentBrief.lyrics.replaceAll('i keep a seat for you.', 'i move the chair away.');

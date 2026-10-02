@@ -7,7 +7,6 @@ export const musicPromptFields = [
   { name: "vocals", label: "vocals / language" },
   { name: "instruments", label: "instruments", multiline: true },
   { name: "production", label: "production", multiline: true },
-  { name: "structure", label: "song structure", multiline: true },
   { name: "lyrics", label: "lyrics", multiline: true },
 ] as const;
 
@@ -15,7 +14,7 @@ export type MusicPrompt = Record<(typeof musicPromptFields)[number]["name"], str
 
 export const emptyMusicPrompt: MusicPrompt = {
   genre: "", mood: "", key: "", bpm: "", duration: "", vocals: "",
-  instruments: "", production: "", structure: "", lyrics: "",
+  instruments: "", production: "", lyrics: "",
 };
 
 export function isMusicPrompt(value: unknown): value is MusicPrompt {

@@ -15,7 +15,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
   const fields = {
     genre: 'Indie folk', mood: 'warm and relaxed', key: 'G major', bpm: '82', duration: '2 minutes',
     instruments: 'warm acoustic guitar and soft brushed drums', vocals: 'intimate alto vocals in English',
-    production: 'natural acoustic sound', structure: '[Intro] -> [Verse 1] -> [Chorus] -> [Outro]',
+    production: 'natural acoustic sound',
     lyrics: '[Verse 1]\nTiny paws in the morning dew,\nA world of green and a sky of blue.\n\n[Chorus]\nStay with me (stay with me)',
   };
   const originalKey = process.env.GEMINI_API_KEY;
@@ -62,6 +62,9 @@ test('music waits for confirmation, validates responses, and saves only valid au
     assert.equal(calls, 0);
     assert.equal(tokenCalls, 0);
     await assert.rejects(updateMusicFormTool.invoke({ ...fields, bpm: 82 }, context), /music prompt field bpm/);
+    for (const lyricRequest of [null, 0, false, {}, 'a'.repeat(10_001)]) {
+      await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyricRequest }, context), /music prompt/);
+    }
     await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyrics: 'a'.repeat(3_001) }, context), /3,000/);
     await assert.rejects(updateMusicFormTool.invoke(Object.fromEntries(Object.keys(fields).map((key) => [key, ''])), context), /music prompt/);
     assert.deepEqual(invocationState.musicPrompt, fields);

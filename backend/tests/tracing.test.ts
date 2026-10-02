@@ -15,7 +15,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
   const prompt = {
     genre: 'folk', mood: 'gentle', key: 'G major', bpm: '80', duration: '',
     instruments: 'acoustic guitar', vocals: 'instrumental only, no vocals',
-    production: 'natural', structure: 'intro, main theme, outro', lyrics: '',
+    production: 'natural', lyrics: '',
   };
   let modelCalls = 0;
   let fail = false;

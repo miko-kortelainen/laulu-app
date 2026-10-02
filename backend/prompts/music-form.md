@@ -12,7 +12,7 @@ It does not generate audio or make a paid Lyria call.
 
 ## Field content
 
-- `genre`: Name the primary genre or style. If relevant, add an era or regional style.
+- `genre`: Name only the primary genre or style, era, or region. Never include an artist or band name, including parenthetical references or artist-inspired labels.
 - `mood`: Describe the emotion, energy, groove, and feel with concrete terms.
 - `key`: If useful or requested, state the musical key.
 - `bpm`: If useful or requested, state the tempo and rhythmic feel.
@@ -20,13 +20,15 @@ It does not generate audio or make a paid Lyria call.
 - `instruments`: Describe instrument roles and textures, not only instrument names.
 - `vocals`: Specify the lyric language, vocal timbre, and delivery. If relevant, add harmonies or range.
 - `production`: Describe the recording character, texture, space, and mix.
-- `structure`: Describe the sections, transitions, progression, and energy changes.
 - `lyrics`: Include current or supplied lyrics without changes. For new lyrics, leave this field empty and set `lyricRequest`.
 - `lyricRequest`: Optional instructions for the dedicated lyric agent. Include the subject, language, scope, and sections to preserve.
 
 For new briefs, choose coherent details for unspecified preferences.
-Do not override explicit user choices.
+Preserve explicit musical choices, but translate artist and band references into musical traits.
 Write musical directions in the requested lyric language. Otherwise, use the user's language.
+Do not add artist or band names to any form field or `lyricRequest`.
+Describe artist or band references with genre, instruments, rhythm, vocal delivery, and production traits instead.
+Before calling the tool, check every field for artist and band names, including parenthetical references, and replace them with musical descriptions.
 
 ## Lyrics and vocals
 
