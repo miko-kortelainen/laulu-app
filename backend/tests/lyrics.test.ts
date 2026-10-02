@@ -28,6 +28,7 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
   let failure: 'http' | 'empty' | 'truncated' | 'truncatedEmpty' | 'long' | undefined;
   let currentBrief = brief;
   let mainCalls = 0;
+  let mainTurnCycle = 2;
   let looping = false;
   let mainInputTokens = 10;
   let mainFailure = false;
@@ -42,7 +43,7 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
     requests.push(request);
     const isLyrics = request.model === 'zai-org/GLM-5.3-Flash';
     assert.equal(request.max_completion_tokens, isLyrics ? 8192 : 4096);
-    const toolCall = !isLyrics && (looping || ++mainCalls % 2 === 1);
+    const toolCall = !isLyrics && (looping || ++mainCalls % mainTurnCycle !== 0);
     if (isLyrics) {
       assert.equal(request.reasoning_effort, 'low');
       assert.equal(request.tools?.length ?? 0, 0);
@@ -130,12 +131,26 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
     const loop = await agent.invoke('generate lyrics');
     assert.equal(loop.stopReason, 'limitTurns');
     assert.deepEqual(loop.invocationState.musicPrompt, { ...currentBrief, lyrics: 'a'.repeat(3_000) });
-    assert.equal(requests.slice(loopStart).filter(({ model }) => model === getModelId()).length, 4);
+    assert.equal(requests.slice(loopStart).filter(({ model }) => model === getModelId()).length, 6);
     assert.equal(requests.slice(loopStart).filter(({ model }) => model === 'zai-org/GLM-5.3-Flash').length, 1);
 
-    // Token spend stops another main turn, and the next user message has a fresh budget.
-    mainInputTokens = 20_000;
+    // A longer request completes within the increased turn and total-token budgets.
+    looping = false;
     failure = undefined;
+    mainCalls = 0;
+    mainTurnCycle = 6;
+    mainInputTokens = 4_000;
+    const extendedStart = requests.length;
+    const extended = await agent.invoke('revise the song and finish the response');
+    assert.equal(extended.stopReason, 'endTurn');
+    assert.deepEqual(extended.invocationState.musicPrompt, { ...currentBrief, lyrics: revisedLyrics });
+    assert.equal(requests.slice(extendedStart).filter(({ model }) => model === getModelId()).length, 6);
+    assert.equal(requests.slice(extendedStart).filter(({ model }) => model === 'zai-org/GLM-5.3-Flash').length, 1);
+
+    // Token spend stops another main turn, and the next user message has a fresh budget.
+    mainInputTokens = 30_000;
+    mainTurnCycle = 2;
+    looping = true;
     const budgetStart = requests.length;
     const budget = await agent.invoke('try again');
     assert.equal(budget.stopReason, 'limitTotalTokens');

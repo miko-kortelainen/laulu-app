@@ -27,7 +27,7 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   const invoke = agent.invoke.bind(agent);
   agent.invoke = traceable((...args: Parameters<Agent['invoke']>) => invoke(args[0], {
     ...args[1],
-    limits: { turns: 4, outputTokens: 8192, totalTokens: 20_000 },
+    limits: { turns: 6, outputTokens: 12_288, totalTokens: 30_000 },
   }), {
     name: 'musical-copilot',
     run_type: 'chain',

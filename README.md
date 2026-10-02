@@ -145,9 +145,9 @@ The lyrics field has a 3,000-character limit, including section tags and line br
 Supplied lyrics and edits to other song fields do not trigger a lyric call.
 Lyric generation uses paid Nebius inference during chat, before the separate
 Generate music action. Failed lyric calls preserve the current form.
-Each chat request allows at most four main-agent model turns and one lyric-agent
+Each chat request allows at most six main-agent model turns and one lyric-agent
 call, including failed attempts. Each main-model response is capped at 4,096 output
-tokens. Main-agent requests also stop at 8,192 cumulative output tokens or 20,000
+tokens. Main-agent requests also stop at 12,288 cumulative output tokens or 30,000
 total tokens. These token budgets are checked between turns, can overshoot by one
 response, and exclude the separate lyric call. SDK and HTTP model retries are
 disabled. A limit returns a clear stop message; a new user message gets a fresh
