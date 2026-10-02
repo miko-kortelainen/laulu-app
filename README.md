@@ -20,6 +20,7 @@ A simple full-stack AI chatbot built with:
 │   │   ├── dereverb.ts    # Local echo/reverb removal tool
 │   │   └── index.ts       # Express server with /api/chat and /api/health endpoints
 │   ├── audio-processing/ # Shared Python runtime, model runners, and local weights
+│   │   └── models/        # Local model weights and checkpoints (.ckpt, .cpt, .pth; ignored by Git)
 │   ├── .env.example       # Sample environment variables
 │   ├── .env               # Active environment file (put your NEBIUS_API_KEY here)
 │   ├── package.json
@@ -69,6 +70,15 @@ In a second terminal:
 npm run dev:frontend
 ```
 The frontend dev server runs on `http://localhost:5173`. Open your browser at `http://localhost:5173` to chat with the agent!
+
+### 4. Audio Processing Checkpoints (Optional)
+
+Stem separation and reverb removal require local model checkpoints placed under `backend/audio-processing/models/`. Checkpoint files (`*.ckpt`, `*.cpt`, `*.pth`) are excluded from Git via `.gitignore`:
+
+- **Stem separation:** `backend/audio-processing/models/stems/vocals_mel_band_roformer.ckpt`
+- **Reverb removal:** `backend/audio-processing/models/dereverb/UVR-DeEcho-DeReverb.pth`
+
+See [Stem separation](#stem-separation) and [Echo and reverb removal](#echo-and-reverb-removal) below for setup instructions and download details.
 
 ---
 
