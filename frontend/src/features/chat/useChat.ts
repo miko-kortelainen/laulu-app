@@ -22,7 +22,8 @@ export function useChat() {
       text: "Hello! I am your AI assistant powered by NVIDIA Nemotron Super on Nebius Token Factory. How can I help you?",
     },
   ]);
-  const [loading, setLoading] = useState(false);
+  const [activity, setActivity] = useState<string>();
+  const loading = activity !== undefined;
   const [musicPrompt, setMusicPrompt] = useState<MusicPrompt>(emptyMusicPrompt);
   const [musicModel, setMusicModel] = useState("lyria-3.5");
   const [musicError, setMusicError] = useState<string>();
@@ -34,11 +35,11 @@ export function useChat() {
     if (!message || busy.current) return;
 
     busy.current = true;
-    setLoading(true);
+    setActivity('thinking...');
     setMessages((previous) => [...previous, { role: "user", text: message }]);
 
     if (audioUrl) currentAudio.current = audioUrl;
-    const result = await sendMessage(message, currentAudio.current, musicPrompt).catch(
+    const result = await sendMessage(message, currentAudio.current, musicPrompt, setActivity).catch(
       (error: unknown) => ({ reply: `Error: ${errorMessage(error)}` }),
     );
 
@@ -51,20 +52,20 @@ export function useChat() {
       stems: "stems" in result ? result.stems : undefined,
       cleanedAudio: "cleanedAudio" in result ? result.cleanedAudio : undefined }]);
     busy.current = false;
-    setLoading(false);
+    setActivity(undefined);
   }
 
   async function upload(file: File): Promise<void> {
     if (busy.current) return;
     busy.current = true;
-    setLoading(true);
+    setActivity('uploading audio...');
     const result = await uploadAudio(file).catch((error: unknown) => new Error(errorMessage(error)));
     if (!(result instanceof Error)) currentAudio.current = result.url;
     setMessages((previous) => [...previous, result instanceof Error
       ? { role: "agent", text: `Error: ${result.message}` }
       : { role: "user", text: result.name, audio: result }]);
     busy.current = false;
-    setLoading(false);
+    setActivity(undefined);
   }
 
   function editMusicPrompt(field: keyof MusicPrompt, value: string): void {
@@ -83,7 +84,7 @@ export function useChat() {
     if (busy.current || !isMusicPrompt(musicPrompt)) return;
 
     busy.current = true;
-    setLoading(true);
+    setActivity('generating track...');
     const result = await generateMusic(musicPrompt, musicModel).catch(
       (error: unknown) => new Error(errorMessage(error)),
     );
@@ -95,14 +96,14 @@ export function useChat() {
       setMessages((previous) => [...previous, { role: "agent", text: "your track is ready.", track: result }]);
     }
     busy.current = false;
-    setLoading(false);
+    setActivity(undefined);
   }
 
   async function clear(): Promise<void> {
     if (busy.current) return;
 
     busy.current = true;
-    setLoading(true);
+    setActivity('clearing conversation...');
 
     const error = await resetChat().catch(
       (cause: unknown) => new Error(errorMessage(cause)),
@@ -124,8 +125,8 @@ export function useChat() {
     }
 
     busy.current = false;
-    setLoading(false);
+    setActivity(undefined);
   }
 
-  return { messages, loading, musicPrompt, musicModel, musicError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload };
+  return { messages, loading, activity, musicPrompt, musicModel, musicError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload };
 }

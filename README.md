@@ -124,6 +124,9 @@ Service failures show Google's error message so request errors can be diagnosed.
 You can also tell the agent what to change. Each chat request includes the current
 form, including manual edits, so revisions can preserve the other fields.
 Music advice and prompt preparation do not call Lyria.
+The chat spinner shows the current action: thinking, editing fields or lyrics,
+generating a track, uploading audio, separating stems, or removing echo and reverb.
+Chat requests stream tool activity before the final reply.
 
 Prompt preparation follows Google's [Lyria prompt guide](https://ai.google.dev/gemini-api/docs/lyria-prompt-guide)
 for Lyria 3.5 batch generation. The agent leads with genre, describes the sound

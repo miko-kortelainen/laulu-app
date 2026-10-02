@@ -22,13 +22,43 @@ export interface MusicTrack {
   lyrics: string;
 }
 
-export async function sendMessage(message: string, audioUrl?: string, musicPrompt?: MusicPrompt): Promise<ChatReply> {
+async function readChatResponse(response: Response, onStatus: (status: string) => void): Promise<unknown> {
+  if (!response.headers.get('content-type')?.includes('application/x-ndjson')) return response.json();
+  if (!response.body) throw new Error('Invalid chat response.');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let result: unknown;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done }) + (done ? '\n' : '');
+      const lines = buffer.split('\n');
+      buffer = lines.pop()!;
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const data: unknown = JSON.parse(line);
+        if (data && typeof data === 'object' && 'status' in data && typeof data.status === 'string') {
+          onStatus(data.status);
+        } else {
+          result = data;
+        }
+      }
+      if (done) return result;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+export async function sendMessage(message: string, audioUrl: string | undefined, musicPrompt: MusicPrompt, onStatus: (status: string) => void): Promise<ChatReply> {
   const response = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, audioUrl, musicPrompt: musicPrompt ? JSON.stringify(musicPrompt) : undefined }),
+    headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+    body: JSON.stringify({ message, audioUrl, musicPrompt: JSON.stringify(musicPrompt) }),
   });
-  const data: unknown = await response.json();
+  const data = await readChatResponse(response, onStatus);
 
   if (!data || typeof data !== "object") {
     throw new Error("Invalid chat response.");
@@ -37,7 +67,7 @@ export async function sendMessage(message: string, audioUrl?: string, musicPromp
   const reply = "reply" in data && typeof data.reply === "string" ? data.reply : "";
   const error = "error" in data && typeof data.error === "string" ? data.error : "";
 
-  if (!response.ok) {
+  if (!response.ok || error) {
     throw new Error(error || reply || "Chat request failed.");
   }
 

@@ -74,6 +74,38 @@ try {
   run("click", send);
   run("wait", "--text", "recovered reply");
 
+  // Progress follows streamed activity, even when a record is split across chunks.
+  run("eval", `window.fetchBeforeProgress = window.fetch;
+    window.fetch = (input, options) => input === "/api/chat"
+      ? Promise.resolve(new Response(new ReadableStream({ start(controller) {
+          window.chatProgress = controller;
+        } }), { headers: { "content-type": "application/x-ndjson" } }))
+      : window.fetchBeforeProgress(input, options);`);
+  openInput();
+  run("fill", "textarea:not([name])", "edit the fields and lyrics");
+  run("click", send);
+  run("wait", "--text", "thinking...");
+  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'{"status":"editing fi\'))');
+  assert.equal(run("eval", 'document.querySelector("[role=status]").textContent.trim()'), '"thinking..."');
+  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'elds..."}\\n\'))');
+  run("wait", "--text", "editing fields...");
+  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'{"status":"editing lyrics..."}\\n\'))');
+  run("wait", "--text", "editing lyrics...");
+  assert.equal(run("eval", 'document.querySelector("fieldset").disabled'), "true");
+  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'{"reply":"progress complete."}\\n\')); window.chatProgress.close()');
+  run("wait", "--text", "progress complete.");
+  run("wait", "--fn", 'document.querySelector("[role=status]") === null');
+
+  // A streamed error clears progress and lets the user retry.
+  openInput();
+  run("fill", "textarea:not([name])", "try another edit");
+  run("click", send);
+  run("wait", "--text", "thinking...");
+  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'{"status":"editing lyrics..."}\\n{"error":"lyric service failed"}\\n\')); window.chatProgress.close()');
+  run("wait", "--text", "Error: lyric service failed");
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled && document.querySelector("[role=status]") === null');
+  run("eval", 'window.fetch = window.fetchBeforeProgress');
+
   run("network", "unroute", "**/api/**");
   run("network", "route", "**/api/chat", "--body", JSON.stringify({
     reply: "review the prompt and click generate music.", musicPrompt: {
@@ -132,7 +164,14 @@ try {
   run("set", "viewport", "1280", "900");
   run("network", "unroute", "**/api/music");
   run("network", "route", "**/api/music", "--abort");
+  run("eval", `window.fetchBeforeGeneration = window.fetch;
+    window.fetch = (input, options) => input === "/api/music"
+      ? new Promise(resolve => { window.finishGeneration = () => resolve(window.fetchBeforeGeneration(input, options)); })
+      : window.fetchBeforeGeneration(input, options);`);
   run("find", "role", "button", "click", "--name", "generate music");
+  run("wait", "--text", "generating track...");
+  assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
+  run("eval", 'window.finishGeneration(); window.fetch = window.fetchBeforeGeneration');
   run("wait", "--text", "Failed to fetch");
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", 'document.querySelector("input[name=key]").value'), '"E minor"');

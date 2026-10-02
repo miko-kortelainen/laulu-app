@@ -9,7 +9,7 @@ import { isMusicPrompt } from "./musicPrompt";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage() {
-  const { messages, loading, musicPrompt, musicModel, musicError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload } = useChat();
+  const { messages, loading, activity, musicPrompt, musicModel, musicError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,8 +66,8 @@ export function ChatPage() {
                     "bg-zinc-900/80 px-4 py-2.5 text-sm text-zinc-400",
                   )}
                 >
-                  <span className="size-3 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" aria-label="Thinking" />
-                  <span>Thinking...</span>
+                  <span className="size-3 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent" aria-hidden="true" />
+                  <span>{activity}</span>
                 </div>
               </div>
             )}

@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
 import { getOrCreateAgent, resetAgentSession } from './agent.js';
 import { getModelConfig } from './model.js';
 import { generateMusic, musicDirectory, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
@@ -55,6 +56,13 @@ app.get('/api/health', (_req: Request, res: Response) => {
 app.post('/api/chat', async (req: Request, res: Response) => {
   const message: unknown = req.body?.message;
   const sessionId: string = res.locals.sessionId;
+  const streamProgress = req.get('accept') === 'application/x-ndjson';
+  const removeHooks: (() => void)[] = [];
+  const send = (data: unknown): void => {
+    if (res.destroyed) return;
+    if (streamProgress) res.write(`${JSON.stringify(data)}\n`);
+    else res.json(data);
+  };
 
   if (!message || typeof message !== 'string' || message.trim() === '') {
     busySessions.delete(sessionId);
@@ -67,19 +75,36 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     if (audioUrl !== undefined) audioPath(audioUrl);
     const musicPrompt = req.body?.musicPrompt === undefined ? '' : validateMusicPrompt(req.body.musicPrompt);
     const agent = getOrCreateAgent(sessionId);
+    if (streamProgress) {
+      res.set({ 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
+      res.flushHeaders();
+      removeHooks.push(agent.addHook(BeforeModelCallEvent, () => send({ status: 'thinking...' })));
+      removeHooks.push(agent.addHook(BeforeToolCallEvent, ({ toolUse }) => {
+        const input = toolUse.input;
+        const lyricRequest = input && typeof input === 'object' && 'lyricRequest' in input ? input.lyricRequest : undefined;
+        const status = toolUse.name === 'update_music_form'
+          ? typeof lyricRequest === 'string' && lyricRequest.trim() ? 'editing lyrics...' : 'editing fields...'
+          : toolUse.name === 'separate_stems' ? 'separating stems...'
+          : toolUse.name === 'remove_echo_reverb' ? 'removing echo and reverb...' : 'working...';
+        send({ status });
+      }));
+    }
     const result = await agent.invoke(message.trim() + (musicPrompt ? `\n\ncurrent music form:\n${musicPrompt}` : '') + (audioUrl ? `\n\navailable audio: ${audioUrl}` : ''));
     const reply = result.stopReason.startsWith('limit')
       ? 'stopped at the request limit. send a new message to continue.'
       : result.toString();
-    res.json({ reply, musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems, cleanedAudio: result.invocationState.cleanedAudio });
+    send({ reply, musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems, cleanedAudio: result.invocationState.cleanedAudio });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process message with agent';
     console.error('Agent invocation error:', error);
-    res.status(500).json({
+    if (!res.headersSent) res.status(500);
+    send({
       error: message,
       reply: `Agent Error: ${message}`,
     });
   } finally {
+    for (const removeHook of removeHooks) removeHook();
+    if (streamProgress) res.end();
     busySessions.delete(sessionId);
   }
 });
