@@ -9,7 +9,7 @@ import { isMusicPrompt } from "./musicPrompt";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage() {
-  const { messages, loading, activity, musicPrompt, musicModel, musicError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload } = useChat();
+  const { messages, loading, activity, musicPrompt, musicModel, musicError, context, contextError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -111,6 +111,16 @@ export function ChatPage() {
             generate music
           </button>
           {musicError && <p role="alert" className="text-xs text-red-400">{musicError}</p>}
+          <div className="space-y-2 border-t border-white/10 pt-4 text-xs text-zinc-400">
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="chat-context">conversation context</label>
+              <span className="tabular-nums">{context ? `${context.messages} / ${context.limit} messages` : contextError ? "unavailable" : "loading..."}</span>
+            </div>
+            {context && <meter id="chat-context" min={0} max={context.limit} value={context.messages}
+              className="block h-2 w-full" aria-describedby="chat-context-description" />}
+            <p id="chat-context-description">recent chat and tool messages. older messages are trimmed; Clear resets the history.</p>
+            {contextError && <p className="text-red-400">{contextError}</p>}
+          </div>
         </aside>
       </div>
     </div>

@@ -18,7 +18,11 @@ function openInput() {
 }
 
 try {
+  run("open", "about:blank");
+  run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
   run("open", url);
+  run("wait", "--text", "0 / 40 messages");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   run("set", "viewport", "1280", "900");
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("aside fieldset") !== null && document.querySelector("main fieldset") === null'), "true");
@@ -33,8 +37,9 @@ try {
   assert.equal(run("eval", 'document.activeElement.name'), '"genre"');
   assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().left >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().right'), "true");
   run("network", "route", "**/api/**", "--body", '{"reply":"e2e reply"}');
-  run("eval", `window.chatRequests = []; window.musicRequests = []; const originalFetch = window.fetch;
+  run("eval", `window.chatRequests = []; window.musicRequests = []; window.contextMessages = 6; const originalFetch = window.fetch;
     window.fetch = (input, options) => {
+      if (input === "/api/context") return Promise.resolve(Response.json({ messages: window.contextMessages, limit: 40 }));
       if (input === "/api/chat") window.chatRequests.push(JSON.parse(options.body));
       if (input === "/api/music") window.musicRequests.push(JSON.parse(options.body));
       return originalFetch(input, options);
@@ -50,6 +55,8 @@ try {
   run("fill", "textarea:not([name])", "mouse message");
   run("click", send);
   run("wait", "--text", "e2e reply");
+  run("wait", "--text", "6 / 40 messages");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "6");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
   openInput();
@@ -59,20 +66,28 @@ try {
   run("press", "Enter");
   run("wait", "--fn", 'document.querySelector("main").innerText.split("e2e reply").length === 3');
 
+  // A failed context refresh preserves the last known count and reports the failure.
+  run("eval", 'window.contextMessages = -1');
+
   run("network", "unroute", "**/api/**");
   run("network", "route", "**/api/**", "--abort");
   openInput();
   run("fill", "textarea:not([name])", "failed message");
   run("click", send);
   run("wait", "--text", "Error: Failed to fetch");
+  run("wait", "--text", "invalid conversation context response.");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "6");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
   run("network", "unroute", "**/api/**");
   run("network", "route", "**/api/**", "--body", '{"reply":"recovered reply"}');
+  run("eval", 'window.contextMessages = 40');
   openInput();
   run("fill", "textarea:not([name])", "retry message");
   run("click", send);
   run("wait", "--text", "recovered reply");
+  run("wait", "--text", "40 / 40 messages");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
 
   // Progress follows streamed activity, even when a record is split across chunks.
   run("eval", `window.fetchBeforeProgress = window.fetch;
@@ -264,9 +279,16 @@ try {
   run("wait", "--fn", 'document.querySelectorAll("audio").length === 12');
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(cleanedAudio.url));
   // Failed resets preserve the draft and tracks; successful resets clear both.
+  run("network", "route", "**/api/reset", "--body", '{"status":"failed"}');
+  run("find", "role", "button", "click", "--name", "Clear", "--exact");
+  run("wait", "--text", "Error: Conversation reset failed.");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "12");
+  run("network", "unroute", "**/api/reset");
   run("network", "route", "**/api/reset", "--abort");
   run("find", "role", "button", "click", "--name", "Clear", "--exact");
   run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 5');
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
   assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3-clip-preview"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "12");
@@ -274,6 +296,8 @@ try {
   run("network", "route", "**/api/reset", "--body", '{"status":"ok"}');
   run("find", "role", "button", "click", "--name", "Clear", "--exact");
   run("wait", "--text", "Conversation cleared.");
+  run("wait", "--text", "0 / 40 messages");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.value === "")'), "true");
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "0");

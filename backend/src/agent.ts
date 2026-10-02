@@ -1,4 +1,4 @@
-import { Agent } from '@strands-agents/sdk';
+import { Agent, SlidingWindowConversationManager } from '@strands-agents/sdk';
 import { traceable } from 'langsmith/traceable';
 import { readFileSync } from 'node:fs';
 import { createNebiusModel } from './model.js';
@@ -8,6 +8,11 @@ import { removeEchoTool } from './dereverb.js';
 
 // Map of sessionId -> Agent instance
 const agents = new Map<string, Agent>();
+const contextWindowSize = 40;
+
+export function getChatContext(sessionId: string = 'default'): { messages: number; limit: number } {
+  return { messages: agents.get(sessionId)?.messages.length ?? 0, limit: contextWindowSize };
+}
 
 export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   if (agents.has(sessionId)) {
@@ -22,6 +27,7 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
     systemPrompt: readFileSync(new URL('../prompts/system.md', import.meta.url), 'utf8').trim(),
     printer: false,
     retryStrategy: null,
+    conversationManager: new SlidingWindowConversationManager({ windowSize: contextWindowSize }),
   });
 
   const invoke = agent.invoke.bind(agent);

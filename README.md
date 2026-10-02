@@ -167,6 +167,11 @@ Tracks are saved in `backend/generated-music/`, which Git ignores.
 Downloads survive backend restarts. Chat messages remain in the current browser
 session; keep the download URL or download the file before reloading.
 Clear resets the conversation and music form and leaves saved tracks in place.
+The conversation context bar below the music form shows the backend's retained
+chat and tool message count against its 40-message sliding window. The count
+loads when the page opens and updates after each chat request, including failures.
+Clear discards the backend agent and resets the bar only after reset succeeds.
+Tool pairs stay together, so the retained count can briefly exceed the window.
 
 The backend uses the Interactions REST API with `store: false`, reads audio from
 `model_output` steps, and allows five minutes for generation. Failed requests

@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { generateMusic, resetChat, sendMessage, uploadAudio, type AudioTrack, type MusicTrack, type SeparatedStems } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { generateMusic, getChatContext, resetChat, sendMessage, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack, type SeparatedStems } from "./api";
 import { emptyMusicPrompt, isMusicPrompt, type MusicPrompt } from "./musicPrompt";
 
 export interface Message {
@@ -27,8 +27,28 @@ export function useChat() {
   const [musicPrompt, setMusicPrompt] = useState<MusicPrompt>(emptyMusicPrompt);
   const [musicModel, setMusicModel] = useState("lyria-3.5");
   const [musicError, setMusicError] = useState<string>();
+  const [context, setContext] = useState<ChatContext>();
+  const [contextError, setContextError] = useState<string>();
+  const contextRequest = useRef(0);
   const busy = useRef(false);
   const currentAudio = useRef<string | undefined>(undefined);
+
+  const refreshContext = useCallback(async (): Promise<void> => {
+    const request = ++contextRequest.current;
+    const result = await getChatContext().catch((error: unknown) => new Error(errorMessage(error)));
+    if (request !== contextRequest.current) return;
+    if (result instanceof Error) {
+      setContextError(result.message);
+    } else {
+      setContext(result);
+      setContextError(undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- state updates only after the context fetch resolves.
+    void refreshContext();
+  }, [refreshContext]);
 
   async function send(text: string, audioUrl?: string): Promise<void> {
     const message = text.trim();
@@ -51,6 +71,7 @@ export function useChat() {
     setMessages((previous) => [...previous, { role: "agent", text: result.reply,
       stems: "stems" in result ? result.stems : undefined,
       cleanedAudio: "cleanedAudio" in result ? result.cleanedAudio : undefined }]);
+    await refreshContext();
     busy.current = false;
     setActivity(undefined);
   }
@@ -115,6 +136,9 @@ export function useChat() {
         { role: "agent", text: `Error: ${error.message}` },
       ]);
     } else {
+      contextRequest.current++;
+      setContext({ messages: 0, limit: context?.limit ?? 40 });
+      setContextError(undefined);
       currentAudio.current = undefined;
       setMusicPrompt(emptyMusicPrompt);
       setMusicModel("lyria-3.5");
@@ -128,5 +152,5 @@ export function useChat() {
     setActivity(undefined);
   }
 
-  return { messages, loading, activity, musicPrompt, musicModel, musicError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload };
+  return { messages, loading, activity, musicPrompt, musicModel, musicError, context, contextError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload };
 }

@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
-import { getOrCreateAgent, resetAgentSession } from './agent.js';
+import { getChatContext, getOrCreateAgent, resetAgentSession } from './agent.js';
 import { getModelConfig } from './model.js';
 import { generateMusic, musicDirectory, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
@@ -53,6 +53,10 @@ app.get('/api/health', (_req: Request, res: Response) => {
 });
 
 // Chat endpoint
+app.get('/api/context', (_req: Request, res: Response) => {
+  res.json(getChatContext());
+});
+
 app.post('/api/chat', async (req: Request, res: Response) => {
   const message: unknown = req.body?.message;
   const sessionId: string = res.locals.sessionId;

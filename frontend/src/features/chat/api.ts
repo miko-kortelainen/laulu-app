@@ -7,6 +7,23 @@ export interface ChatReply {
   cleanedAudio?: AudioTrack;
 }
 
+export interface ChatContext {
+  messages: number;
+  limit: number;
+}
+
+export async function getChatContext(): Promise<ChatContext> {
+  const response = await fetch("/api/context");
+  if (!response.ok) throw new Error("could not load conversation context.");
+  const data: unknown = await response.json();
+  if (!data || typeof data !== "object" ||
+      !("messages" in data) || typeof data.messages !== "number" || !Number.isSafeInteger(data.messages) || data.messages < 0 ||
+      !("limit" in data) || typeof data.limit !== "number" || !Number.isSafeInteger(data.limit) || data.limit <= 0) {
+    throw new Error("invalid conversation context response.");
+  }
+  return { messages: data.messages, limit: data.limit };
+}
+
 export interface AudioTrack {
   url: string;
   name: string;
@@ -159,7 +176,8 @@ export async function resetChat(): Promise<void> {
     body: JSON.stringify({ sessionId: "default" }),
   });
 
-  if (!response.ok) {
+  const data: unknown = response.ok ? await response.json() : undefined;
+  if (!data || typeof data !== "object" || !("status" in data) || data.status !== "ok") {
     throw new Error("Conversation reset failed.");
   }
 }

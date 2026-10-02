@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { ToolContext } from '@strands-agents/sdk';
 import { Client } from 'langsmith';
-import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
+import { getChatContext, getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { getModelId } from '../src/model.js';
 import { updateMusicFormTool } from '../src/music.js';
 
@@ -170,6 +170,15 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
     const failureStart = requests.length;
     await assert.rejects(agent.invoke('trigger throttling'), /offline throttling/);
     assert.equal(requests.length - failureStart, 1);
+
+    // The frontend reset route discards the agent and all retained messages.
+    assert.ok(agent.messages.length > 0);
+    assert.equal(getChatContext(sessionId).messages, agent.messages.length);
+    resetAgentSession(sessionId);
+    assert.deepEqual(getChatContext(sessionId), { messages: 0, limit: 40 });
+    const freshAgent = getOrCreateAgent(sessionId);
+    assert.notEqual(freshAgent, agent);
+    assert.equal(freshAgent.messages.length, 0);
   } finally {
     resetAgentSession(sessionId);
     globalThis.fetch = originalFetch;
