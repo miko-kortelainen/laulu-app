@@ -19,6 +19,11 @@ function openInput() {
 
 try {
   run("open", url);
+  run("set", "viewport", "1280", "900");
+  assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
+  assert.equal(run("eval", 'document.querySelector("aside fieldset") !== null && document.querySelector("main fieldset") === null'), "true");
+  assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
+  assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().left >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().right'), "true");
   run("network", "route", "**/api/**", "--body", '{"reply":"e2e reply"}');
   run("eval", `window.chatRequests = []; window.musicRequests = []; const originalFetch = window.fetch;
     window.fetch = (input, options) => {
@@ -87,19 +92,44 @@ try {
   run("find", "label", "BPM", "fill", "110 with a swung feel");
   run("find", "label", "mood", "fill", "hopeful");
   run("find", "label", "lyrics", "fill", lyrics);
+  // Agent revisions use the current manually edited draft, and keep one form.
+  const revisedPrompt = {
+    genre: "indie pop", mood: "hopeful", key: "D minor", bpm: "110 with a swung feel", duration: "2 minutes",
+    instruments: "acoustic guitar", vocals: "alto vocals in English", production: "natural",
+    structure: "[Intro] -> [Verse] -> [Chorus] -> [Outro]", lyrics,
+  };
+  run("network", "unroute", "**/api/chat");
+  run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "changed the genre.", musicPrompt: revisedPrompt }));
+  openInput();
+  run("fill", "textarea:not([name])", "change only the genre to indie pop");
+  run("click", send);
+  run("wait", "--text", "changed the genre.");
+  assert.deepEqual(JSON.parse(JSON.parse(run("eval", 'window.chatRequests.at(-1).musicPrompt'))), { ...revisedPrompt, genre: "indie folk" });
+  revisedPrompt.key = "E minor";
+  run("network", "unroute", "**/api/chat");
+  run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "changed the key.", musicPrompt: revisedPrompt }));
+  openInput();
+  run("fill", "textarea:not([name])", "now change only the key to E minor");
+  run("click", send);
+  run("wait", "--text", "changed the key.");
+  assert.deepEqual(JSON.parse(JSON.parse(run("eval", 'window.chatRequests.at(-1).musicPrompt'))), { ...revisedPrompt, key: "D minor" });
+  assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
+  assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
+  assert.equal(run("eval", 'window.musicRequests.length'), "0");
   run("set", "viewport", "390", "844");
   assert.equal(run("eval", 'document.documentElement.scrollWidth <= window.innerWidth'), "true");
   assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().right <= window.innerWidth)'), "true");
+  assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().top >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().bottom'), "true");
   run("set", "viewport", "1280", "900");
   run("network", "unroute", "**/api/music");
   run("network", "route", "**/api/music", "--abort");
   run("find", "role", "button", "click", "--name", "generate music");
   run("wait", "--text", "Failed to fetch");
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
-  assert.equal(run("eval", 'document.querySelector("input[name=key]").value'), '"D minor"');
+  assert.equal(run("eval", 'document.querySelector("input[name=key]").value'), '"E minor"');
   assert.equal(run("eval", 'document.querySelector("textarea[name=lyrics]").value'), JSON.stringify(lyrics));
   assert.equal(run("eval", 'window.musicRequests.at(-1).prompt'), JSON.stringify(
-    "genre / style: indie folk\n\nmood: hopeful\n\nkey: D minor\n\nBPM: 110 with a swung feel\n\nduration: 2 minutes\n\nvocals / language: alto vocals in English\n\ninstruments: acoustic guitar\n\nproduction: natural\n\nsong structure: [Intro] -> [Verse] -> [Chorus] -> [Outro]\n\nLyrics:\n" + lyrics,
+    "genre / style: indie pop\n\nmood: hopeful\n\nkey: E minor\n\nBPM: 110 with a swung feel\n\nduration: 2 minutes\n\nvocals / language: alto vocals in English\n\ninstruments: acoustic guitar\n\nproduction: natural\n\nsong structure: [Intro] -> [Verse] -> [Chorus] -> [Outro]\n\nLyrics:\n" + lyrics,
   ));
   run("network", "unroute", "**/api/music");
   run("network", "route", "**/api/music", "--body", JSON.stringify({
@@ -107,7 +137,7 @@ try {
   }));
   run("find", "role", "button", "click", "--name", "generate music");
   run("wait", "--fn", 'document.querySelector("audio") !== null');
-  assert.equal(run("eval", 'document.querySelector("fieldset").disabled'), "true");
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", 'window.musicRequests.length'), "2");
   assert.equal(run("eval", 'document.querySelector("summary").textContent.trim()'), '"lyrics"');
   run("click", "summary");
@@ -180,6 +210,19 @@ try {
   run("click", send);
   run("wait", "--fn", 'document.querySelectorAll("audio").length === 12');
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(cleanedAudio.url));
+  // Failed resets preserve the draft and tracks; successful resets clear both.
+  run("network", "route", "**/api/reset", "--abort");
+  run("find", "role", "button", "click", "--name", "Clear", "--exact");
+  run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 5');
+  assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "12");
+  run("network", "unroute", "**/api/reset");
+  run("network", "route", "**/api/reset", "--body", '{"status":"ok"}');
+  run("find", "role", "button", "click", "--name", "Clear", "--exact");
+  run("wait", "--text", "Conversation cleared.");
+  assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.value === "")'), "true");
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "0");
+  assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
   console.log("Chat E2E passed: chat recovery, music confirmation, uploads, stem separation, and echo removal recovery.");
 } finally {
   try { unlinkSync(uploadPath); } catch { /* No upload fixture to remove. */ }

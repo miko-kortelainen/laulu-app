@@ -1,13 +1,11 @@
 import { useRef, useState } from "react";
 import { generateMusic, resetChat, sendMessage, uploadAudio, type AudioTrack, type MusicTrack, type SeparatedStems } from "./api";
-import type { MusicPrompt } from "./musicPrompt";
+import { emptyMusicPrompt, isMusicPrompt, type MusicPrompt } from "./musicPrompt";
 
 export interface Message {
   role: "user" | "agent";
   text: string;
-  musicPrompt?: MusicPrompt;
   track?: MusicTrack;
-  musicError?: string;
   audio?: AudioTrack;
   stems?: SeparatedStems;
   cleanedAudio?: AudioTrack;
@@ -25,6 +23,8 @@ export function useChat() {
     },
   ]);
   const [loading, setLoading] = useState(false);
+  const [musicPrompt, setMusicPrompt] = useState<MusicPrompt>(emptyMusicPrompt);
+  const [musicError, setMusicError] = useState<string>();
   const busy = useRef(false);
   const currentAudio = useRef<string | undefined>(undefined);
 
@@ -37,13 +37,16 @@ export function useChat() {
     setMessages((previous) => [...previous, { role: "user", text: message }]);
 
     if (audioUrl) currentAudio.current = audioUrl;
-    const result = await sendMessage(message, currentAudio.current).catch(
+    const result = await sendMessage(message, currentAudio.current, musicPrompt).catch(
       (error: unknown) => ({ reply: `Error: ${errorMessage(error)}` }),
     );
 
     if ("cleanedAudio" in result && result.cleanedAudio) currentAudio.current = result.cleanedAudio.url;
+    if ("musicPrompt" in result && result.musicPrompt) {
+      setMusicPrompt(result.musicPrompt);
+      setMusicError(undefined);
+    }
     setMessages((previous) => [...previous, { role: "agent", text: result.reply,
-      musicPrompt: "musicPrompt" in result ? result.musicPrompt : undefined,
       stems: "stems" in result ? result.stems : undefined,
       cleanedAudio: "cleanedAudio" in result ? result.cleanedAudio : undefined }]);
     busy.current = false;
@@ -63,28 +66,27 @@ export function useChat() {
     setLoading(false);
   }
 
-  function editMusicPrompt(index: number, field: keyof MusicPrompt, value: string): void {
+  function editMusicPrompt(field: keyof MusicPrompt, value: string): void {
     if (busy.current) return;
-    setMessages((previous) => previous.map((message, itemIndex) =>
-      itemIndex === index && message.musicPrompt && !message.track
-        ? { ...message, musicPrompt: { ...message.musicPrompt, [field]: value }, musicError: undefined }
-        : message));
+    setMusicPrompt((previous) => ({ ...previous, [field]: value }));
+    setMusicError(undefined);
   }
 
-  async function confirmMusic(index: number): Promise<void> {
-    const message = messages[index];
-    if (busy.current || !message?.musicPrompt || message.track) return;
+  async function confirmMusic(): Promise<void> {
+    if (busy.current || !isMusicPrompt(musicPrompt)) return;
 
     busy.current = true;
     setLoading(true);
-    const result = await generateMusic(message.musicPrompt).catch(
+    const result = await generateMusic(musicPrompt).catch(
       (error: unknown) => new Error(errorMessage(error)),
     );
-    if (!(result instanceof Error)) currentAudio.current = result.url;
-    setMessages((previous) => previous.map((item, itemIndex) => itemIndex !== index ? item :
-      result instanceof Error
-        ? { ...item, musicError: result.message }
-        : { ...item, track: result, musicError: undefined }));
+    if (result instanceof Error) {
+      setMusicError(result.message);
+    } else {
+      currentAudio.current = result.url;
+      setMusicError(undefined);
+      setMessages((previous) => [...previous, { role: "agent", text: "your track is ready.", track: result }]);
+    }
     busy.current = false;
     setLoading(false);
   }
@@ -106,6 +108,8 @@ export function useChat() {
       ]);
     } else {
       currentAudio.current = undefined;
+      setMusicPrompt(emptyMusicPrompt);
+      setMusicError(undefined);
       setMessages([
         { role: "agent", text: "Conversation cleared. How can I help you?" },
       ]);
@@ -115,5 +119,5 @@ export function useChat() {
     setLoading(false);
   }
 
-  return { messages, loading, send, clear, confirmMusic, editMusicPrompt, upload };
+  return { messages, loading, musicPrompt, musicError, send, clear, confirmMusic, editMusicPrompt, upload };
 }

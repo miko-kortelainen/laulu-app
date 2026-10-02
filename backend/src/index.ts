@@ -64,8 +64,9 @@ app.post('/api/chat', async (req: Request, res: Response) => {
   try {
     const audioUrl: unknown = req.body?.audioUrl;
     if (audioUrl !== undefined) audioPath(audioUrl);
+    const musicPrompt = req.body?.musicPrompt === undefined ? '' : validateMusicPrompt(req.body.musicPrompt);
     const agent = getOrCreateAgent(sessionId);
-    const result = await agent.invoke(message.trim() + (audioUrl ? `\n\navailable audio: ${audioUrl}` : ''));
+    const result = await agent.invoke(message.trim() + (musicPrompt ? `\n\ncurrent music form:\n${musicPrompt}` : '') + (audioUrl ? `\n\navailable audio: ${audioUrl}` : ''));
     res.json({ reply: result.toString(), musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems, cleanedAudio: result.invocationState.cleanedAudio });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process message with agent';

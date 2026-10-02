@@ -19,19 +19,22 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
   };
   let modelCalls = 0;
   let fail = false;
+  const revisedPrompt = { ...prompt, key: 'D minor', bpm: '140' };
 
   Client.prototype.createRun = async function (run) { runs.push(run); };
   Client.prototype.updateRun = async function (id, run) {
     updates.set(id, JSON.parse(JSON.stringify(run)) as typeof run);
   };
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
     assert.match(String(url), /\/chat\/completions$/);
+    const request = JSON.parse(String(options?.body));
+    assert.ok(request.tools.some((entry: { function: { name: string } }) => entry.function.name === 'update_music_form'));
     modelCalls++;
     if (fail) return Response.json({ error: { message: 'offline model failure' } }, { status: 400 });
-    const toolCall = modelCalls === 1;
+    const toolCall = modelCalls === 1 || modelCalls === 3;
     const delta = toolCall
       ? { role: 'assistant', tool_calls: [{ index: 0, id: 'music-1', type: 'function',
-          function: { name: 'generate_music', arguments: JSON.stringify(prompt) } }] }
+          function: { name: 'update_music_form', arguments: JSON.stringify(modelCalls === 3 ? revisedPrompt : prompt) } }] }
       : { role: 'assistant', content: 'review the prompt and click generate music.' };
     const base = { id: `completion-${modelCalls}`, object: 'chat.completion.chunk',
       created: 0, model: 'offline-model' };
@@ -55,7 +58,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     assert.equal(root.extra?.metadata?.thread_id, sessionId);
     const children = runs.filter((run) => run.parent_run_id === root.id);
     assert.equal(children.filter((run) => run.run_type === 'llm').length, 2);
-    const tool = children.find((run) => run.name === 'generate_music');
+    const tool = children.find((run) => run.name === 'update_music_form');
     assert.ok(tool?.id);
     assert.deepEqual(tool.inputs, prompt);
     assert.equal(tool.extra?.metadata?.thread_id, sessionId);
@@ -66,6 +69,10 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
       assert.equal(model.extra?.metadata?.thread_id, sessionId);
       assert.equal(updates.get(model.id!)?.outputs?.usage_metadata?.total_tokens, 15);
     }
+
+    const revision = await agent.invoke('change only the BPM to 140\n\ncurrent music form:\n' + JSON.stringify({ ...prompt, key: 'D minor' }));
+    assert.deepEqual(revision.invocationState.musicPrompt, revisedPrompt);
+    assert.equal(modelCalls, 4);
 
     await assert.rejects(generateMusic('', { metadata: { thread_id: sessionId } }), /music prompt/);
     const audio = runs.find((run) => run.name === 'generate_audio');
@@ -82,7 +89,9 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     process.env.LANGSMITH_TRACING = 'false';
     fail = false;
     const runCount = runs.length;
-    assert.equal((await agent.invoke('continue')).toString(), result.toString());
+    const advice = await agent.invoke('continue');
+    assert.equal(advice.toString(), result.toString());
+    assert.equal(advice.invocationState.musicPrompt, undefined);
     assert.equal(runs.length, runCount);
   } finally {
     resetAgentSession(sessionId);

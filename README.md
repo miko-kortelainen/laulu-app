@@ -94,11 +94,13 @@ Set `GEMINI_API_KEY` in `backend/.env` to a Gemini API key with access to
 [`lyria-3.5`](https://ai.google.dev/gemini-api/docs/music-generation).
 Restart the backend after changing this key.
 
+The music form stays beside the chat, or below it on small screens.
 Ask the agent to create music. It fills editable fields for genre/style, mood,
 key, BPM, duration, vocals/language, instruments, production, song structure,
 and lyrics. Edit these fields directly before you approve the song.
 Click **generate music** to send the edited fields as one prompt and start the paid API call.
-You can also tell the agent what to change before you approve it.
+You can also tell the agent what to change. Each chat request includes the current
+form, including manual edits, so revisions can preserve the other fields.
 Music advice and prompt preparation do not call Lyria.
 
 Prompt preparation follows Google's [Lyria prompt guide](https://ai.google.dev/gemini-api/docs/lyria-prompt-guide)
@@ -115,12 +117,12 @@ The agent uses plain text and does not repeat the music prompt in its reply.
 Tracks are saved in `backend/generated-music/`, which Git ignores.
 Downloads survive backend restarts. Chat messages remain in the current browser
 session; keep the download URL or download the file before reloading.
-Clear resets the conversation and leaves saved tracks in place.
+Clear resets the conversation and music form and leaves saved tracks in place.
 
 The backend uses the Interactions REST API with `store: false`, reads audio from
 `model_output` steps, and allows five minutes for generation. Failed requests
-show an error and keep your edits available for retry. After success, the fields
-are locked to show the prompt used for that track. Chat, reset, and music
+show an error and keep your edits available for retry. After success, the form
+stays editable for the next track, and previous tracks remain in chat. Chat, reset, and music
 generation cannot overlap within the same conversation.
 
 Offline backend check: `npm --prefix backend run test:music`.
@@ -229,7 +231,7 @@ restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.
 `https://eu.api.smith.langchain.com` for an EU workspace.
 
 Each agent invocation records its input, reply, errors, and duration. Model calls,
-`generate_music`, `separate_stems`, and `remove_echo_reverb` appear as child runs, including model token
+`update_music_form`, `separate_stems`, and `remove_echo_reverb` appear as child runs, including model token
 usage and tool inputs and results. Conversation session IDs group runs into LangSmith threads.
 Confirmed audio generation records a separate `generate_audio` run in the same
 thread, with the prompt, download URL, and lyrics. Audio bytes and API keys are

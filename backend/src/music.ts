@@ -37,9 +37,12 @@ const musicPromptProperties = {
   lyrics: { type: 'string', description: 'Exact supplied or explicitly requested lyrics with section tags. Empty when Lyria should write lyrics or for instrumental music.' },
 } as const;
 
-export const generateMusicTool = tool({
-  name: 'generate_music',
+export const updateMusicFormTool = tool({
+  name: 'update_music_form',
   description:
+    'Fill or revise the music generation form displayed beside the chat. ' +
+    'You MUST call this tool whenever the user requests a song draft or changes to the music form. ' +
+    'Writing field values in a chat reply does not update the form. This tool does not generate audio or make a paid Lyria call. ' +
     'Prepare one self-contained song brief as editable fields for Lyria 3.5 batch generation. ' +
     'Lead with the primary genre, adding an era or regional style when relevant. ' +
     'Describe mood, groove, instrument roles and textures, and production character with concrete musical terms. ' +
@@ -72,7 +75,7 @@ export const generateMusicTool = tool({
     context.invocationState.musicPrompt = prompt;
     return { status: 'awaiting_confirmation', prompt };
   }, {
-    name: 'generate_music',
+    name: 'update_music_form',
     run_type: 'tool',
     processInputs: ({ args }) => record(args[0]),
   }),

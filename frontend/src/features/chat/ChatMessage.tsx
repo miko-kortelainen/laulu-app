@@ -1,7 +1,5 @@
 import { cn } from "@/lib/utils";
 import type { Message } from "./useChat";
-import { MusicPromptFields } from "./MusicPromptFields";
-import type { MusicPrompt } from "./musicPrompt";
 
 function MessageContent({ text }: { text: string }) {
   const parts = [];
@@ -38,11 +36,9 @@ function MessageContent({ text }: { text: string }) {
   return <>{parts}</>;
 }
 
-export function ChatMessage({ message, loading, onConfirmMusic, onEditMusicPrompt, onSeparate, onRemoveEcho }: {
+export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
   message: Message;
   loading: boolean;
-  onConfirmMusic: () => void;
-  onEditMusicPrompt: (field: keyof MusicPrompt, value: string) => void;
   onSeparate: (url: string) => void;
   onRemoveEcho: (url: string) => void;
 }) {
@@ -69,22 +65,6 @@ export function ChatMessage({ message, loading, onConfirmMusic, onEditMusicPromp
         )}
       >
         <MessageContent text={isUser ? message.text : message.text.trim()} />
-        {message.musicPrompt && (
-          <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
-            <MusicPromptFields prompt={message.musicPrompt} disabled={loading || Boolean(message.track)} onChange={onEditMusicPrompt} />
-            {!message.track && (
-              <button
-                type="button"
-                onClick={onConfirmMusic}
-                disabled={loading}
-                className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                generate music
-              </button>
-            )}
-            {message.musicError && <p role="alert" className="text-xs text-red-400">{message.musicError}</p>}
-          </div>
-        )}
         {message.track && (
           <div className="mt-3 space-y-3">
             <audio controls preload="none" src={message.track.url}

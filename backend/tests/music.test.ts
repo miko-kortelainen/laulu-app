@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, unlink } from 'node:fs/promises';
 import test from 'node:test';
 import type { ToolContext } from '@strands-agents/sdk';
-import { generateMusic, generateMusicTool, musicDirectory } from '../src/music.js';
+import { generateMusic, updateMusicFormTool, musicDirectory } from '../src/music.js';
 
 test('music waits for confirmation, validates responses, and saves only valid audio', async () => {
   const prompt = 'Indie folk, warm acoustic guitar and soft brushed drums, relaxed at 82 BPM in G major. ' +
@@ -34,14 +34,14 @@ test('music waits for confirmation, validates responses, and saves only valid au
     process.env.GEMINI_API_KEY = 'offline-test-key';
     const invocationState: Record<string, unknown> = {};
     const context = { invocationState } as ToolContext;
-    assert.deepEqual(await generateMusicTool.invoke(fields, context), {
+    assert.deepEqual(await updateMusicFormTool.invoke(fields, context), {
       status: 'awaiting_confirmation', prompt: fields,
     });
     assert.deepEqual(invocationState.musicPrompt, fields);
     assert.equal(calls, 0);
-    await assert.rejects(generateMusicTool.invoke({ ...fields, bpm: 82 }, context), /music prompt field bpm/);
-    await assert.rejects(generateMusicTool.invoke({ ...fields, lyrics: 'a'.repeat(10_001) }, context), /music prompt/);
-    await assert.rejects(generateMusicTool.invoke(Object.fromEntries(Object.keys(fields).map((key) => [key, ''])), context), /music prompt/);
+    await assert.rejects(updateMusicFormTool.invoke({ ...fields, bpm: 82 }, context), /music prompt field bpm/);
+    await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyrics: 'a'.repeat(10_001) }, context), /music prompt/);
+    await assert.rejects(updateMusicFormTool.invoke(Object.fromEntries(Object.keys(fields).map((key) => [key, ''])), context), /music prompt/);
     assert.deepEqual(invocationState.musicPrompt, fields);
     assert.equal(calls, 0);
     await assert.rejects(generateMusic(' '.repeat(2)), /music prompt/);

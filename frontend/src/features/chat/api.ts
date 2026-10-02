@@ -22,11 +22,11 @@ export interface MusicTrack {
   lyrics: string;
 }
 
-export async function sendMessage(message: string, audioUrl?: string): Promise<ChatReply> {
+export async function sendMessage(message: string, audioUrl?: string, musicPrompt?: MusicPrompt): Promise<ChatReply> {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, audioUrl }),
+    body: JSON.stringify({ message, audioUrl, musicPrompt: musicPrompt ? JSON.stringify(musicPrompt) : undefined }),
   });
   const data: unknown = await response.json();
 

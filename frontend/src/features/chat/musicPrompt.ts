@@ -13,6 +13,11 @@ export const musicPromptFields = [
 
 export type MusicPrompt = Record<(typeof musicPromptFields)[number]["name"], string>;
 
+export const emptyMusicPrompt: MusicPrompt = {
+  genre: "", mood: "", key: "", bpm: "", duration: "", vocals: "",
+  instruments: "", production: "", structure: "", lyrics: "",
+};
+
 export function isMusicPrompt(value: unknown): value is MusicPrompt {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const fields = value as Record<string, unknown>;

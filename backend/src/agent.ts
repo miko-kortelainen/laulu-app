@@ -6,7 +6,7 @@ import { wrapOpenAI } from 'langsmith/wrappers/openai';
 import OpenAI from 'openai';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { generateMusicTool } from './music.js';
+import { updateMusicFormTool } from './music.js';
 import { separateStemsTool } from './stems.js';
 import { removeEchoTool } from './dereverb.js';
 
@@ -69,7 +69,7 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   const model = createNebiusModel();
   const agent = new Agent({
     model: model,
-    tools: [generateMusicTool, separateStemsTool, removeEchoTool],
+    tools: [updateMusicFormTool, separateStemsTool, removeEchoTool],
     systemPrompt:
       'you are a helpful ai assistant powered by nvidia nemotron super on nebius token factory. ' +
       'answer directly in the user\'s language, with a relaxed, natural tone and everyday words. ' +
@@ -81,11 +81,15 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
       'always write conversational text in lowercase, including sentence starts, names, acronyms, headings, and list items. ' +
       'preserve required casing in code, commands, file paths, urls, exact quotations, supplied lyrics, and lyria section tags and the Lyrics: label. ' +
       'be honest about uncertainty and never pretend to be human. ' +
-      'when the user asks to create music, follow the generate_music tool instructions to fill the editable lyria 3.5 song prompt fields. ' +
+      'when the user asks to create or draft music, or revise any song field, you MUST call update_music_form with the complete song brief. ' +
+      'only that tool can fill the visible music form. writing genre, mood, key, bpm, duration, instruments, vocals, production, structure, or lyrics in chat does not fill it. ' +
+      'update_music_form only edits the form; call it immediately without asking for generation approval. ' +
       'the user must approve it with the generate music button before audio is generated. ' +
       'tell them to review the prompt and click the button; never claim the track is already generated. ' +
       'keep that reply to one short sentence; the prompt is already shown separately, so do not repeat it or its lyrics in your reply. ' +
-      'use the tool again for prompt changes. do not use it for general music advice. ' +
+      'call update_music_form again for prompt changes, including changes to a single field. do not use it for general music advice. ' +
+      'the current music form is supplied with each request when filled; it includes the user\'s manual edits and takes precedence over older briefs. ' +
+      'for revisions, change only the requested fields and preserve the other current values, including supplied lyrics. ' +
       'when the user requests vocal or instrumental separation, use separate_stems with the available audio url. ' +
       'when the user requests echo or reverb removal, use remove_echo_reverb with the requested track or stem url. ' +
       'if they request isolated clean vocals, separate first, then pass the returned vocalsUrl to remove_echo_reverb. ' +
