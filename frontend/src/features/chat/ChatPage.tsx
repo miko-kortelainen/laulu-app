@@ -9,7 +9,7 @@ import { isMusicPrompt } from "./musicPrompt";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage() {
-  const { messages, loading, musicPrompt, musicError, send, clear, confirmMusic, editMusicPrompt, upload } = useChat();
+  const { messages, loading, musicPrompt, musicModel, musicError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,7 +104,8 @@ export function ChatPage() {
         </section>
         <aside aria-labelledby="music-heading" className="min-h-0 min-w-0 space-y-4 border-t border-white/10 pt-4 lg:w-[26rem] lg:shrink-0 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pl-6">
           <h2 id="music-heading" className="text-sm font-semibold">music generation</h2>
-          <MusicPromptFields prompt={musicPrompt} disabled={loading} onChange={editMusicPrompt} />
+          <MusicPromptFields prompt={musicPrompt} model={musicModel} disabled={loading}
+            onChange={editMusicPrompt} onModelChange={changeMusicModel} />
           <button type="button" onClick={() => void confirmMusic()} disabled={loading || !isMusicPrompt(musicPrompt)}
             className="rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50">
             generate music

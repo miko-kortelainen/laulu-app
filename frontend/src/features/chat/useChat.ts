@@ -24,6 +24,7 @@ export function useChat() {
   ]);
   const [loading, setLoading] = useState(false);
   const [musicPrompt, setMusicPrompt] = useState<MusicPrompt>(emptyMusicPrompt);
+  const [musicModel, setMusicModel] = useState("lyria-3.5");
   const [musicError, setMusicError] = useState<string>();
   const busy = useRef(false);
   const currentAudio = useRef<string | undefined>(undefined);
@@ -72,12 +73,18 @@ export function useChat() {
     setMusicError(undefined);
   }
 
+  function changeMusicModel(model: string): void {
+    if (busy.current) return;
+    setMusicModel(model);
+    setMusicError(undefined);
+  }
+
   async function confirmMusic(): Promise<void> {
     if (busy.current || !isMusicPrompt(musicPrompt)) return;
 
     busy.current = true;
     setLoading(true);
-    const result = await generateMusic(musicPrompt).catch(
+    const result = await generateMusic(musicPrompt, musicModel).catch(
       (error: unknown) => new Error(errorMessage(error)),
     );
     if (result instanceof Error) {
@@ -109,6 +116,7 @@ export function useChat() {
     } else {
       currentAudio.current = undefined;
       setMusicPrompt(emptyMusicPrompt);
+      setMusicModel("lyria-3.5");
       setMusicError(undefined);
       setMessages([
         { role: "agent", text: "Conversation cleared. How can I help you?" },
@@ -119,5 +127,5 @@ export function useChat() {
     setLoading(false);
   }
 
-  return { messages, loading, musicPrompt, musicError, send, clear, confirmMusic, editMusicPrompt, upload };
+  return { messages, loading, musicPrompt, musicModel, musicError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload };
 }

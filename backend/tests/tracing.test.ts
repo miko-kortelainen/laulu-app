@@ -74,7 +74,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     assert.deepEqual(revision.invocationState.musicPrompt, revisedPrompt);
     assert.equal(modelCalls, 4);
 
-    await assert.rejects(generateMusic('', { metadata: { thread_id: sessionId } }), /music prompt/);
+    await assert.rejects(generateMusic('', 'lyria-3.5', { metadata: { thread_id: sessionId } }), /music prompt/);
     const audio = runs.find((run) => run.name === 'generate_audio');
     assert.ok(audio?.id);
     assert.equal(audio.extra?.metadata?.thread_id, sessionId);

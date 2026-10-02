@@ -23,6 +23,13 @@ try {
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("aside fieldset") !== null && document.querySelector("main fieldset") === null'), "true");
   assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
+  assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
+  assert.deepEqual(JSON.parse(run("eval", 'Array.from(document.querySelector("select[name=musicModel]").options, option => option.text)')), ["Lyria 3.5", "Lyria 3 Clip Preview (30 seconds)"]);
+  run("find", "label", "music model", "click");
+  run("select", "select[name=musicModel]", "lyria-3-clip-preview");
+  run("press", "Escape");
+  run("press", "Tab");
+  assert.equal(run("eval", 'document.activeElement.name'), '"genre"');
   assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().left >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().right'), "true");
   run("network", "route", "**/api/**", "--body", '{"reply":"e2e reply"}');
   run("eval", `window.chatRequests = []; window.musicRequests = []; const originalFetch = window.fetch;
@@ -115,10 +122,11 @@ try {
   assert.deepEqual(JSON.parse(JSON.parse(run("eval", 'window.chatRequests.at(-1).musicPrompt'))), { ...revisedPrompt, key: "D minor" });
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
+  assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3-clip-preview"');
   assert.equal(run("eval", 'window.musicRequests.length'), "0");
   run("set", "viewport", "390", "844");
   assert.equal(run("eval", 'document.documentElement.scrollWidth <= window.innerWidth'), "true");
-  assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().right <= window.innerWidth)'), "true");
+  assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea, fieldset select")).every(el => el.getBoundingClientRect().left >= 0 && el.getBoundingClientRect().right <= window.innerWidth)'), "true");
   assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().top >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().bottom'), "true");
   run("set", "viewport", "1280", "900");
   run("network", "unroute", "**/api/music");
@@ -128,6 +136,8 @@ try {
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", 'document.querySelector("input[name=key]").value'), '"E minor"');
   assert.equal(run("eval", 'document.querySelector("textarea[name=lyrics]").value'), JSON.stringify(lyrics));
+  assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3-clip-preview"');
+  assert.equal(run("eval", 'window.musicRequests.at(-1).model'), '"lyria-3-clip-preview"');
   assert.equal(run("eval", 'window.musicRequests.at(-1).prompt'), JSON.stringify(
     "genre / style: indie pop\n\nmood: hopeful\n\nkey: E minor\n\nBPM: 110 with a swung feel\n\nduration: 2 minutes\n\nvocals / language: alto vocals in English\n\ninstruments: acoustic guitar\n\nproduction: natural\n\nsong structure: [Intro] -> [Verse] -> [Chorus] -> [Outro]\n\nLyrics:\n" + lyrics,
   ));
@@ -135,10 +145,13 @@ try {
   run("network", "route", "**/api/music", "--body", JSON.stringify({
     track: { url: generatedAudioUrl, lyrics },
   }));
+  run("select", "select[name=musicModel]", "lyria-3.5");
   run("find", "role", "button", "click", "--name", "generate music");
   run("wait", "--fn", 'document.querySelector("audio") !== null');
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", 'window.musicRequests.length'), "2");
+  assert.equal(run("eval", 'window.musicRequests.at(-1).model'), '"lyria-3.5"');
+  run("select", "select[name=musicModel]", "lyria-3-clip-preview");
   assert.equal(run("eval", 'document.querySelector("summary").textContent.trim()'), '"lyrics"');
   run("click", "summary");
   assert.equal(run("eval", 'document.querySelector("details > div").textContent.trim()'), JSON.stringify(lyrics));
@@ -215,12 +228,14 @@ try {
   run("find", "role", "button", "click", "--name", "Clear", "--exact");
   run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 5');
   assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
+  assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3-clip-preview"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "12");
   run("network", "unroute", "**/api/reset");
   run("network", "route", "**/api/reset", "--body", '{"status":"ok"}');
   run("find", "role", "button", "click", "--name", "Clear", "--exact");
   run("wait", "--text", "Conversation cleared.");
   assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.value === "")'), "true");
+  assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "0");
   assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
   console.log("Chat E2E passed: chat recovery, music confirmation, uploads, stem separation, and echo removal recovery.");

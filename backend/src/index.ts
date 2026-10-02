@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { getOrCreateAgent, resetAgentSession } from './agent.js';
 import { getModelConfig } from './model.js';
-import { generateMusic, musicDirectory, MusicPromptTokenLimitError, validateMusicPrompt } from './music.js';
+import { generateMusic, musicDirectory, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
 
 const app = express();
@@ -88,15 +88,17 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 app.post('/api/music', async (req: Request, res: Response) => {
   const sessionId: string = res.locals.sessionId;
   let prompt: string;
+  let model: ReturnType<typeof validateMusicModel>;
   try {
     prompt = validateMusicPrompt(req.body?.prompt);
+    model = validateMusicModel(req.body?.model);
   } catch (error: unknown) {
     busySessions.delete(sessionId);
     res.status(400).json({ error: error instanceof Error ? error.message : 'invalid music prompt.' });
     return;
   }
 
-  const track = await generateMusic(prompt, { metadata: { thread_id: sessionId } }).catch((error: unknown) => {
+  const track = await generateMusic(prompt, model, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
       .json({ error: error instanceof Error ? error.message : 'music generation failed.' });
   });

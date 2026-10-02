@@ -104,17 +104,20 @@ Restart the backend after editing these files. The backend loads them directly;
 include `backend/prompts/` alongside `backend/dist/` when deploying a build.
 
 Set `GEMINI_API_KEY` in `backend/.env` to a Gemini API key with access to
-[`lyria-3.5`](https://ai.google.dev/gemini-api/docs/music-generation).
+[`lyria-3.5` or `lyria-3-clip-preview`](https://ai.google.dev/gemini-api/docs/music-generation).
 Restart the backend after changing this key.
 
 The music form stays beside the chat, or below it on small screens.
 Ask the agent to create music. It fills editable fields for genre/style, mood,
 key, BPM, duration, vocals/language, instruments, production, song structure,
 and lyrics. Edit these fields directly before you approve the song.
+Use **music model** to select **Lyria 3.5** (the default) or **Lyria 3 Clip Preview**.
+Clip Preview always generates a 30-second clip.
+Chat revisions and failed generation keep the selection. Clearing the conversation resets it.
 Click **generate music** to send the edited fields as one prompt and start the paid API call.
 The backend uses the official `@google/genai` SDK for token counting and generation.
 Before generation, it calls Google's [token counting API](https://ai.google.dev/gemini-api/docs/tokens)
-with the final prompt and `lyria-3.5`. Prompts above 131,072 input tokens return
+with the final prompt and selected model. Prompts above 131,072 input tokens return
 HTTP 400 without starting generation. If counting fails, generation does not start.
 The separate 10,000-character prompt limit still applies.
 Service failures show Google's error message so request errors can be diagnosed.

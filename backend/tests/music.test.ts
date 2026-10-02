@@ -21,6 +21,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
   const originalKey = process.env.GEMINI_API_KEY;
   let calls = 0;
   let tokenCalls = 0;
+  let expectedModel = 'lyria-3.5';
   let tokenResponse = async () => Response.json({ totalTokens: 100 });
   let response = new Response();
   globalThis.fetch = async (url, options) => {
@@ -29,7 +30,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
     const headers = request.headers;
     assert.equal(headers.get('content-type'), 'application/json');
     assert.equal(headers.get('x-goog-api-key'), 'offline-test-key');
-    if (request.url === 'https://generativelanguage.googleapis.com/v1beta/models/lyria-3.5:countTokens') {
+    if (request.url === `https://generativelanguage.googleapis.com/v1beta/models/${expectedModel}:countTokens`) {
       tokenCalls++;
       assert.deepEqual(JSON.parse(await request.text()), {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -39,7 +40,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
     calls++;
     assert.equal(request.url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
     assert.deepEqual(JSON.parse(await request.text()), {
-      model: 'lyria-3.5', input: prompt, store: false,
+      model: expectedModel, input: prompt, store: false,
     });
     return response;
   };
@@ -67,6 +68,10 @@ test('music waits for confirmation, validates responses, and saves only valid au
     assert.equal(calls, 0);
     await assert.rejects(generateMusic(' '.repeat(2)), /music prompt/);
     await assert.rejects(generateMusic('a'.repeat(10_001)), /music prompt/);
+    for (const model of ['unsupported-model', '', null, 35]) {
+      await assert.rejects(generateMusic(prompt, model), /choose Lyria/);
+    }
+    assert.equal(tokenCalls, 0);
     delete process.env.GEMINI_API_KEY;
     await assert.rejects(generateMusic(prompt), /GEMINI_API_KEY/);
     assert.equal(calls, 0);
@@ -122,15 +127,22 @@ test('music waits for confirmation, validates responses, and saves only valid au
       ] },
     ] });
     tokenResponse = async () => Response.json({ totalTokens: 131_072 });
-    const previousTokenCalls = tokenCalls;
-    const previousCalls = calls;
-    const track = await generateMusic(`  ${prompt}  `);
-    assert.equal(tokenCalls, previousTokenCalls + 1);
-    assert.equal(calls, previousCalls + 1);
-    assert.match(track.url, /^\/api\/music\/[0-9a-f-]{36}\.mp3$/);
-    savedPath = `${musicDirectory}${track.url.split('/').at(-1)}`;
-    assert.deepEqual(await readFile(savedPath), bytes);
-    assert.equal(track.lyrics, 'Tiny paws in the morning dew,\nA world of green and a sky of blue.\n\nchorus');
+    const completedResponse = response;
+    for (const model of [undefined, 'lyria-3-clip-preview']) {
+      expectedModel = model ?? 'lyria-3.5';
+      response = completedResponse.clone();
+      const previousTokenCalls = tokenCalls;
+      const previousCalls = calls;
+      const track = await generateMusic(`  ${prompt}  `, model);
+      assert.equal(tokenCalls, previousTokenCalls + 1);
+      assert.equal(calls, previousCalls + 1);
+      assert.match(track.url, /^\/api\/music\/[0-9a-f-]{36}\.mp3$/);
+      savedPath = `${musicDirectory}${track.url.split('/').at(-1)}`;
+      assert.deepEqual(await readFile(savedPath), bytes);
+      assert.equal(track.lyrics, 'Tiny paws in the morning dew,\nA world of green and a sky of blue.\n\nchorus');
+      await unlink(savedPath);
+      savedPath = undefined;
+    }
   } finally {
     globalThis.fetch = originalFetch;
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;

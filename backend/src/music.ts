@@ -16,6 +16,13 @@ export interface MusicTrack {
 
 export class MusicPromptTokenLimitError extends Error {}
 
+export function validateMusicModel(value: unknown = 'lyria-3.5'): 'lyria-3.5' | 'lyria-3-clip-preview' {
+  if (value !== 'lyria-3.5' && value !== 'lyria-3-clip-preview') {
+    throw new Error('choose Lyria 3.5 or Lyria 3 Clip Preview.');
+  }
+  return value;
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -83,9 +90,11 @@ export const updateMusicFormTool = tool({
 
 export const generateMusic = traceable(async (
   prompt: string,
-  _traceConfig?: { metadata: { thread_id: string } },
+  modelId: unknown = 'lyria-3.5',
+  _traceConfig?: { metadata: { thread_id: string; ls_model_name?: string } },
 ): Promise<MusicTrack> => {
   const input = validateMusicPrompt(prompt);
+  const model = validateMusicModel(modelId);
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey || apiKey === 'your_gemini_api_key_here') {
     throw new Error('set GEMINI_API_KEY in backend/.env to generate music.');
@@ -93,7 +102,7 @@ export const generateMusic = traceable(async (
 
   const client = new GoogleGenAI({ apiKey });
   const tokenData = await client.models.countTokens({
-    model: 'lyria-3.5',
+    model,
     contents: input,
     config: { httpOptions: { timeout: 30_000, retryOptions: { attempts: 1 } } },
   }).catch((error: unknown) => {
@@ -104,11 +113,11 @@ export const generateMusic = traceable(async (
     throw new Error('music token counting returned an invalid count. generation was not started.');
   }
   if (totalTokens > 131_072) {
-    throw new MusicPromptTokenLimitError(`music prompt contains ${totalTokens.toLocaleString('en-US')} tokens; the Lyria 3.5 input limit is 131,072. shorten the prompt and try again.`);
+    throw new MusicPromptTokenLimitError(`music prompt contains ${totalTokens.toLocaleString('en-US')} tokens; the ${model} input limit is 131,072. shorten the prompt and try again.`);
   }
 
   const data = await client.interactions.create({
-    model: 'lyria-3.5', input, store: false,
+    model, input, store: false,
   }, { timeout: 300_000, maxRetries: 0 }).catch((error: unknown) => {
     throw new Error(`music generation failed. ${error instanceof Error ? error.message : 'unknown service error.'}`);
   });
@@ -148,6 +157,6 @@ export const generateMusic = traceable(async (
 }, {
   name: 'generate_audio',
   run_type: 'tool',
-  argsConfigPath: [1],
-  metadata: { ls_provider: 'google', ls_model_name: 'lyria-3.5' },
+  argsConfigPath: [2],
+  metadata: { ls_provider: 'google' },
 });

@@ -96,7 +96,7 @@ export async function uploadAudio(file: File): Promise<AudioTrack> {
   return { url: audio.url, name: audio.name };
 }
 
-export async function generateMusic(fields: MusicPrompt): Promise<MusicTrack> {
+export async function generateMusic(fields: MusicPrompt, model: string): Promise<MusicTrack> {
   const prompt = formatMusicPrompt(fields);
   if (!prompt.trim() || prompt.length > 10_000) {
     throw new Error("Music prompt must contain 1–10,000 characters.");
@@ -104,7 +104,7 @@ export async function generateMusic(fields: MusicPrompt): Promise<MusicTrack> {
   const response = await fetch("/api/music", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, model }),
   });
   const data: unknown = await response.json();
   if (!data || typeof data !== "object") throw new Error("Invalid music response.");
