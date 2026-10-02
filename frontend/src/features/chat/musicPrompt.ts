@@ -21,7 +21,8 @@ export const emptyMusicPrompt: MusicPrompt = {
 export function isMusicPrompt(value: unknown): value is MusicPrompt {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const fields = value as Record<string, unknown>;
-  return musicPromptFields.every(({ name }) => typeof fields[name] === "string") &&
+  return typeof fields.lyrics === "string" && fields.lyrics.length <= 3000 &&
+    musicPromptFields.every(({ name }) => typeof fields[name] === "string") &&
     musicPromptFields.some(({ name }) => typeof fields[name] === "string" && fields[name].trim());
 }
 

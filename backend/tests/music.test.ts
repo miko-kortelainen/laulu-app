@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, unlink } from 'node:fs/promises';
 import test from 'node:test';
 import type { ToolContext } from '@strands-agents/sdk';
-import { generateMusic, updateMusicFormTool, musicDirectory } from '../src/music.js';
+import { generateMusic, updateMusicFormTool, musicDirectory, MusicPromptTokenLimitError } from '../src/music.js';
 
 test('music waits for confirmation, validates responses, and saves only valid audio', async () => {
   const prompt = 'Indie folk, warm acoustic guitar and soft brushed drums, relaxed at 82 BPM in G major. ' +
@@ -11,6 +11,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
     'Lyrics:\n[Verse 1]\nTiny paws in the morning dew,\nA world of green and a sky of blue.\n\n' +
     '[Chorus]\nStay with me (stay with me)';
   const originalFetch = globalThis.fetch;
+  const originalTracing = process.env.LANGSMITH_TRACING;
   const fields = {
     genre: 'Indie folk', mood: 'warm and relaxed', key: 'G major', bpm: '82', duration: '2 minutes',
     instruments: 'warm acoustic guitar and soft brushed drums', vocals: 'intimate alto vocals in English',
@@ -19,11 +20,25 @@ test('music waits for confirmation, validates responses, and saves only valid au
   };
   const originalKey = process.env.GEMINI_API_KEY;
   let calls = 0;
+  let tokenCalls = 0;
+  let tokenResponse = async () => Response.json({ totalTokens: 100 });
   let response = new Response();
   globalThis.fetch = async (url, options) => {
+    const request = new Request(url, options);
+    assert.equal(request.method, 'POST');
+    const headers = request.headers;
+    assert.equal(headers.get('content-type'), 'application/json');
+    assert.equal(headers.get('x-goog-api-key'), 'offline-test-key');
+    if (request.url === 'https://generativelanguage.googleapis.com/v1beta/models/lyria-3.5:countTokens') {
+      tokenCalls++;
+      assert.deepEqual(JSON.parse(await request.text()), {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      });
+      return tokenResponse();
+    }
     calls++;
-    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
-    assert.deepEqual(JSON.parse(String(options?.body)), {
+    assert.equal(request.url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
+    assert.deepEqual(JSON.parse(await request.text()), {
       model: 'lyria-3.5', input: prompt, store: false,
     });
     return response;
@@ -31,16 +46,22 @@ test('music waits for confirmation, validates responses, and saves only valid au
   let savedPath: string | undefined;
 
   try {
+    process.env.LANGSMITH_TRACING = 'false';
     process.env.GEMINI_API_KEY = 'offline-test-key';
     const invocationState: Record<string, unknown> = {};
     const context = { invocationState } as ToolContext;
+    const maximumLyrics = { ...fields, lyrics: 'a'.repeat(3_000) };
+    assert.deepEqual(await updateMusicFormTool.invoke(maximumLyrics, context), {
+      status: 'awaiting_confirmation', prompt: maximumLyrics,
+    });
     assert.deepEqual(await updateMusicFormTool.invoke(fields, context), {
       status: 'awaiting_confirmation', prompt: fields,
     });
     assert.deepEqual(invocationState.musicPrompt, fields);
     assert.equal(calls, 0);
+    assert.equal(tokenCalls, 0);
     await assert.rejects(updateMusicFormTool.invoke({ ...fields, bpm: 82 }, context), /music prompt field bpm/);
-    await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyrics: 'a'.repeat(10_001) }, context), /music prompt/);
+    await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyrics: 'a'.repeat(3_001) }, context), /3,000/);
     await assert.rejects(updateMusicFormTool.invoke(Object.fromEntries(Object.keys(fields).map((key) => [key, ''])), context), /music prompt/);
     assert.deepEqual(invocationState.musicPrompt, fields);
     assert.equal(calls, 0);
@@ -49,10 +70,37 @@ test('music waits for confirmation, validates responses, and saves only valid au
     delete process.env.GEMINI_API_KEY;
     await assert.rejects(generateMusic(prompt), /GEMINI_API_KEY/);
     assert.equal(calls, 0);
+    assert.equal(tokenCalls, 0);
     process.env.GEMINI_API_KEY = 'offline-test-key';
 
-    response = new Response('{}', { status: 429 });
-    await assert.rejects(generateMusic(prompt), /HTTP 429/);
+    tokenResponse = async () => Response.json({ totalTokens: 131_073 });
+    await assert.rejects(generateMusic(prompt), (error: unknown) => {
+      assert.ok(error instanceof MusicPromptTokenLimitError, String(error));
+      assert.match(error.message, /131,073.*131,072/);
+      return true;
+    });
+    assert.equal(tokenCalls, 1);
+    assert.equal(calls, 0);
+
+    tokenResponse = async () => new Response('{}', { status: 429 });
+    await assert.rejects(generateMusic(prompt), /token counting failed.*429/);
+    tokenResponse = async () => new Response('invalid JSON');
+    await assert.rejects(generateMusic(prompt), /token counting failed/);
+    for (const totalTokens of [undefined, null, '100', -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      tokenResponse = async () => Response.json({ totalTokens });
+      await assert.rejects(generateMusic(prompt), /invalid count/);
+    }
+    tokenResponse = async () => { throw new TypeError('offline'); };
+    await assert.rejects(generateMusic(prompt), /generation was not started.*offline/);
+    tokenResponse = async () => { throw new DOMException('timeout', 'TimeoutError'); };
+    await assert.rejects(generateMusic(prompt), /generation was not started.*timeout/);
+    assert.equal(calls, 0);
+    tokenResponse = async () => Response.json({ totalTokens: 100 });
+
+    response = Response.json({ error: { code: 400, message: 'Prompt rejected by music service.', status: 'INVALID_ARGUMENT' } }, { status: 400 });
+    const previousErrorCalls = calls;
+    await assert.rejects(generateMusic(prompt), /music generation failed.*Prompt rejected by music service/);
+    assert.equal(calls, previousErrorCalls + 1);
     response = Response.json({ status: 'failed', steps: [] });
     await assert.rejects(generateMusic(prompt), /completed track/);
     response = Response.json({ status: 'completed', steps: [] });
@@ -73,13 +121,20 @@ test('music waits for confirmation, validates responses, and saves only valid au
         { type: 'audio', mime_type: 'audio/mpeg', data: bytes.toString('base64') },
       ] },
     ] });
-    const track = await generateMusic(prompt);
+    tokenResponse = async () => Response.json({ totalTokens: 131_072 });
+    const previousTokenCalls = tokenCalls;
+    const previousCalls = calls;
+    const track = await generateMusic(`  ${prompt}  `);
+    assert.equal(tokenCalls, previousTokenCalls + 1);
+    assert.equal(calls, previousCalls + 1);
     assert.match(track.url, /^\/api\/music\/[0-9a-f-]{36}\.mp3$/);
     savedPath = `${musicDirectory}${track.url.split('/').at(-1)}`;
     assert.deepEqual(await readFile(savedPath), bytes);
     assert.equal(track.lyrics, 'Tiny paws in the morning dew,\nA world of green and a sky of blue.\n\nchorus');
   } finally {
     globalThis.fetch = originalFetch;
+    if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
+    else process.env.LANGSMITH_TRACING = originalTracing;
     if (originalKey === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = originalKey;
     if (savedPath) await unlink(savedPath);

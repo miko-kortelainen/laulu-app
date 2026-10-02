@@ -15,6 +15,7 @@ export function MusicPromptFields({ prompt, disabled, onChange }: {
           <span className="text-xs text-zinc-400">{field.label}</span>
           {"multiline" in field ? (
             <textarea name={field.name} value={prompt[field.name]} rows={field.name === "lyrics" ? 6 : 2}
+              maxLength={field.name === "lyrics" ? 3000 : undefined}
               onChange={(event) => onChange(field.name, event.target.value)}
               className={`${controlClass} resize-y`} />
           ) : (

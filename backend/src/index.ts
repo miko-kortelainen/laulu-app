@@ -1,7 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { getOrCreateAgent, resetAgentSession, getModelConfig } from './agent.js';
-import { generateMusic, musicDirectory, validateMusicPrompt } from './music.js';
+import { getOrCreateAgent, resetAgentSession } from './agent.js';
+import { getModelConfig } from './model.js';
+import { generateMusic, musicDirectory, MusicPromptTokenLimitError, validateMusicPrompt } from './music.js';
 import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
 
 const app = express();
@@ -67,7 +68,10 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     const musicPrompt = req.body?.musicPrompt === undefined ? '' : validateMusicPrompt(req.body.musicPrompt);
     const agent = getOrCreateAgent(sessionId);
     const result = await agent.invoke(message.trim() + (musicPrompt ? `\n\ncurrent music form:\n${musicPrompt}` : '') + (audioUrl ? `\n\navailable audio: ${audioUrl}` : ''));
-    res.json({ reply: result.toString(), musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems, cleanedAudio: result.invocationState.cleanedAudio });
+    const reply = result.stopReason.startsWith('limit')
+      ? 'stopped at the request limit. send a new message to continue.'
+      : result.toString();
+    res.json({ reply, musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems, cleanedAudio: result.invocationState.cleanedAudio });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to process message with agent';
     console.error('Agent invocation error:', error);
@@ -93,7 +97,8 @@ app.post('/api/music', async (req: Request, res: Response) => {
   }
 
   const track = await generateMusic(prompt, { metadata: { thread_id: sessionId } }).catch((error: unknown) => {
-    res.status(502).json({ error: error instanceof Error ? error.message : 'music generation failed.' });
+    res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
+      .json({ error: error instanceof Error ? error.message : 'music generation failed.' });
   });
   busySessions.delete(sessionId);
   if (track) res.json({ track });

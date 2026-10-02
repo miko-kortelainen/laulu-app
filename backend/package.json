@@ -8,11 +8,13 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "test:music": "tsx --test tests/music.test.ts",
+    "test:lyrics": "node --import tsx tests/lyrics.test.ts",
     "test:stems": "tsx --test tests/stems.test.ts",
     "test:tracing": "node --import tsx tests/tracing.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@google/genai": "^2.26.0",
     "@strands-agents/sdk": "^1.19.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

@@ -15,9 +15,11 @@ A simple full-stack AI chatbot built with:
 │   ├── prompts/
 │   │   ├── system.md      # Agent behavior and reply style
 │   │   ├── music-form.md  # Music form tool instructions
-│   │   └── lyrics.md      # Lyric writing and revision guidance
+│   │   └── lyrics.md      # Dedicated lyric agent instructions
 │   ├── src/
 │   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
+│   │   ├── model.ts       # Shared Nebius configuration and model setup
+│   │   ├── lyrics.ts      # Dedicated GLM lyric agent
 │   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
 │   │   ├── audio.ts       # Audio storage, validation, and shared processing jobs
 │   │   ├── stems.ts       # Local vocal/instrumental separation tool
@@ -54,6 +56,7 @@ Open `backend/.env` and insert your Nebius Token Factory API key:
 NEBIUS_API_KEY=your_actual_nebius_api_key
 NEBIUS_BASE_URL=https://api.tokenfactory.nebius.com/v1
 NEBIUS_MODEL=nvidia/nemotron-3-super-120b-a12b
+LYRICS_MODEL=zai-org/GLM-5.3-Flash
 PORT=3001
 ```
 
@@ -96,8 +99,7 @@ See [Stem separation](#stem-separation) and [Echo and reverb removal](#echo-and-
 
 Edit agent behavior in [backend/prompts/system.md](backend/prompts/system.md)
 and music form instructions in [backend/prompts/music-form.md](backend/prompts/music-form.md).
-[backend/prompts/lyrics.md](backend/prompts/lyrics.md) guides original lyrics and
-lyric revisions. Its text is included in the music form tool instructions.
+[backend/prompts/lyrics.md](backend/prompts/lyrics.md) guides the dedicated lyric agent.
 Restart the backend after editing these files. The backend loads them directly;
 include `backend/prompts/` alongside `backend/dist/` when deploying a build.
 
@@ -110,6 +112,12 @@ Ask the agent to create music. It fills editable fields for genre/style, mood,
 key, BPM, duration, vocals/language, instruments, production, song structure,
 and lyrics. Edit these fields directly before you approve the song.
 Click **generate music** to send the edited fields as one prompt and start the paid API call.
+The backend uses the official `@google/genai` SDK for token counting and generation.
+Before generation, it calls Google's [token counting API](https://ai.google.dev/gemini-api/docs/tokens)
+with the final prompt and `lyria-3.5`. Prompts above 131,072 input tokens return
+HTTP 400 without starting generation. If counting fails, generation does not start.
+The separate 10,000-character prompt limit still applies.
+Service failures show Google's error message so request errors can be diagnosed.
 You can also tell the agent what to change. Each chat request includes the current
 form, including manual edits, so revisions can preserve the other fields.
 Music advice and prompt preparation do not call Lyria.
@@ -119,7 +127,28 @@ for Lyria 3.5 batch generation. The agent leads with genre, describes the sound
 and song progression, and specifies vocal delivery and lyric language or an
 instrumental arrangement. It adds tempo, key, and duration when appropriate.
 Supplied lyrics keep their original text under `Lyrics:` with section tags.
-The agent can write original lyrics for the brief or revise them on request.
+The main agent handles chat and form changes. For lyric writing or revision, it
+sets `lyricRequest` in `update_music_form`. The tool passes the complete brief,
+current lyrics, and requested changes to a fresh lyric agent that uses
+`zai-org/GLM-5.3-Flash` through the same Nebius API key and base URL.
+Set `LYRICS_MODEL` to override the lyric model. `NEBIUS_MODEL` still controls chat.
+The lyric agent reads `lyrics.md` and returns the complete lyric text.
+The tool adds nonempty lyric text to the form, keeping its first 3,000 characters.
+If the model hits its token limit after producing lyric text, that text is also
+accepted and capped. Reasoning-only responses are rejected.
+Lyric calls have a two-minute timeout and an 8,192-token completion
+limit, including reasoning and lyric text. Reasoning effort is set to `low`.
+The lyrics field has a 3,000-character limit, including section tags and line breaks.
+Supplied lyrics and edits to other song fields do not trigger a lyric call.
+Lyric generation uses paid Nebius inference during chat, before the separate
+Generate music action. Failed lyric calls preserve the current form.
+Each chat request allows at most four main-agent model turns and one lyric-agent
+call, including failed attempts. Each main-model response is capped at 4,096 output
+tokens. Main-agent requests also stop at 8,192 cumulative output tokens or 20,000
+total tokens. These token budgets are checked between turns, can overshoot by one
+response, and exclude the separate lyric call. SDK and HTTP model retries are
+disabled. A limit returns a clear stop message; a new user message gets a fresh
+budget. Successful form updates remain available when a turn limit is reached.
 When the lyrics field is empty, Lyria writes lyrics from the requested story, emotion, and hook.
 Each revised prompt includes the full song brief for review.
 
@@ -139,6 +168,7 @@ stays editable for the next track, and previous tracks remain in chat. Chat, res
 generation cannot overlap within the same conversation.
 
 Offline backend check: `npm --prefix backend run test:music`.
+Offline lyric routing and failure recovery check: `npm --prefix backend run test:lyrics`.
 
 ## Stem separation
 
@@ -249,6 +279,7 @@ usage and tool inputs and results. Conversation session IDs group runs into Lang
 Confirmed audio generation records a separate `generate_audio` run in the same
 thread, with the prompt, download URL, and lyrics. Audio bytes and API keys are
 excluded. Prompt preparation still requires user approval before generation.
+Delegated lyric calls appear as `generate_lyrics` child chains with their GLM model runs.
 
 Tracing sends conversation and music prompt text to LangSmith. Set
 `LANGSMITH_TRACING=false` to disable it.
