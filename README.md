@@ -12,6 +12,10 @@ A simple full-stack AI chatbot built with:
 
 ```
 ├── backend/
+│   ├── prompts/
+│   │   ├── system.md      # Agent behavior and reply style
+│   │   ├── music-form.md  # Music form tool instructions
+│   │   └── lyrics.md      # Lyric writing and revision guidance
 │   ├── src/
 │   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
 │   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
@@ -90,6 +94,13 @@ See [Stem separation](#stem-separation) and [Echo and reverb removal](#echo-and-
 
 ## Music generation
 
+Edit agent behavior in [backend/prompts/system.md](backend/prompts/system.md)
+and music form instructions in [backend/prompts/music-form.md](backend/prompts/music-form.md).
+[backend/prompts/lyrics.md](backend/prompts/lyrics.md) guides original lyrics and
+lyric revisions. Its text is included in the music form tool instructions.
+Restart the backend after editing these files. The backend loads them directly;
+include `backend/prompts/` alongside `backend/dist/` when deploying a build.
+
 Set `GEMINI_API_KEY` in `backend/.env` to a Gemini API key with access to
 [`lyria-3.5`](https://ai.google.dev/gemini-api/docs/music-generation).
 Restart the backend after changing this key.
@@ -108,12 +119,14 @@ for Lyria 3.5 batch generation. The agent leads with genre, describes the sound
 and song progression, and specifies vocal delivery and lyric language or an
 instrumental arrangement. It adds tempo, key, and duration when appropriate.
 Supplied lyrics keep their original text under `Lyrics:` with section tags.
-Otherwise Lyria writes lyrics from the requested story, emotion, and hook.
+The agent can write original lyrics for the brief or revise them on request.
+When the lyrics field is empty, Lyria writes lyrics from the requested story, emotion, and hook.
 Each revised prompt includes the full song brief for review.
 
 The result includes an audio player, an MP3 download, and a lyrics dropdown when
 lyrics are returned. Structure markers are removed from the displayed lyrics.
-The agent uses plain text and does not repeat the music prompt in its reply.
+The agent acknowledges form changes briefly and conversationally, without follow-up
+questions or repeated button reminders. It does not repeat the music prompt in chat.
 Tracks are saved in `backend/generated-music/`, which Git ignores.
 Downloads survive backend restarts. Chat messages remain in the current browser
 session; keep the download URL or download the file before reloading.
