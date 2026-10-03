@@ -102,7 +102,7 @@ export function ChatPage() {
             />
           </footer>
         </section>
-        <aside aria-labelledby="music-heading" className="min-h-0 min-w-0 space-y-4 border-t border-white/10 pt-4 lg:w-[26rem] lg:shrink-0 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pl-6">
+        <aside aria-labelledby="music-heading" className="min-h-0 min-w-0 space-y-4 border-t border-white/10 pt-4 lg:w-[26rem] lg:shrink-0 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pl-6 lg:pr-2">
           <h2 id="music-heading" className="text-sm font-semibold">music generation</h2>
           <MusicPromptFields prompt={musicPrompt} model={musicModel} disabled={loading}
             onChange={editMusicPrompt} onModelChange={changeMusicModel} />
