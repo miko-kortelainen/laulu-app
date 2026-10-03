@@ -15,13 +15,15 @@ A simple full-stack AI chatbot built with:
 │   ├── prompts/
 │   │   ├── system.md      # Agent behavior and reply style
 │   │   ├── music-form.md  # Music form tool instructions
-│   │   └── lyrics.md      # Dedicated lyric agent instructions
+│   │   ├── lyrics.md      # Dedicated lyric agent instructions
+│   │   └── analysis.md    # Detailed Qwen listening analysis instructions
 │   ├── src/
 │   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
 │   │   ├── model.ts       # Shared Nebius configuration and model setup
 │   │   ├── lyrics.ts      # Dedicated GLM lyric agent
 │   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
 │   │   ├── audio.ts       # Audio storage, validation, and shared processing jobs
+│   │   ├── analysis.ts    # QwenCloud listening analysis tool
 │   │   ├── stems.ts       # Local vocal/instrumental separation tool
 │   │   ├── dereverb.ts    # Local echo/reverb removal tool
 │   │   └── index.ts       # Express server with /api/chat and /api/health endpoints
@@ -184,6 +186,41 @@ generation cannot overlap within the same conversation.
 Offline backend check: `npm --prefix backend run test:music`.
 Offline lyric routing and failure recovery check: `npm --prefix backend run test:lyrics`.
 
+## Audio analysis
+
+Set `DASHSCOPE_API_KEY` in `backend/.env` to a QwenCloud API key, then restart
+the backend. Analysis uses `qwen3.8-omni-flash` through
+`https://maas.qwencloudapi.com/compatible-mode/v1` with the installed OpenAI SDK.
+Nebius still runs the producer agent and lyric agent. Google still generates music.
+
+Upload or generate a track, then ask the copilot to analyze it or give production
+feedback. You can also ask about an available stem or cleaned result. The agent
+calls `analyze_audio`, shows **analyzing audio...**, and uses the returned
+observations in its chat reply. Uploading or generating audio does not start analysis.
+Analysis sends audio to QwenCloud and makes a paid inference call.
+
+Small MP3 and WAV files are sent directly. Larger files and FLAC/OGG inputs need
+the existing Python audio environment (`uv sync --frozen --project backend/audio-processing`).
+They are converted to a temporary compressed stereo or mono MP3 without changing
+the saved source. Conversion supports up to 10 minutes and checks the provider's
+10 MB base64 limit. Temporary files are removed after preparation.
+No checkpoints are needed for this conversion.
+
+Edit the listening analysis instructions in `backend/prompts/analysis.md`, then
+restart the backend. General analysis covers mood, instrument roles and timbres,
+rhythm, melody and harmony, vocals, arrangement, and production. It aims for
+400–700 words when the recording supports that detail, with approximate timestamps
+and prioritized suggestions when relevant. Focused questions get focused answers.
+The producer agent preserves the detailed breakdown in chat.
+It is an interpretation, not a calibrated assessment of mix quality or a measurement
+of BPM, key, loudness, peaks, or clipping. Failed analysis leaves the music form
+and source files intact. Each message allows one analysis attempt, with no HTTP
+retries, a two-minute inference timeout, and a 2,048-token output limit.
+
+Offline analysis and failure recovery check: `npm --prefix backend run test:analysis`.
+It mocks inference and makes no paid calls. Its format-conversion checks require
+the Python audio environment.
+
 ## Stem separation
 
 The agent's `separate_stems` tool uses **MelBand Roformer | Vocals by Kimberley
@@ -288,12 +325,15 @@ restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.
 `https://eu.api.smith.langchain.com` for an EU workspace.
 
 Each agent invocation records its input, reply, errors, and duration. Model calls,
-`update_music_form`, `separate_stems`, and `remove_echo_reverb` appear as child runs, including model token
+`update_music_form`, `separate_stems`, `remove_echo_reverb`, and `analyze_audio` appear as child runs, including model token
 usage and tool inputs and results. Conversation session IDs group runs into LangSmith threads.
 Confirmed audio generation records a separate `generate_audio` run in the same
 thread, with the prompt, download URL, and lyrics. Audio bytes and API keys are
 excluded. Prompt preparation still requires user approval before generation.
 Delegated lyric calls appear as `generate_lyrics` child chains with their GLM model runs.
+Qwen analysis records a `QwenOmni` model run under `analyze_audio`, including
+token usage. Analysis traces contain the source URL, question, instructions,
+and response. Audio bytes and API keys are excluded.
 
 Tracing sends conversation and music prompt text to LangSmith. Set
 `LANGSMITH_TRACING=false` to disable it.

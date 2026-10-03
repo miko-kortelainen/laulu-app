@@ -89,6 +89,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
         const status = toolUse.name === 'update_music_form'
           ? typeof lyricRequest === 'string' && lyricRequest.trim() ? 'editing lyrics...' : 'editing fields...'
           : toolUse.name === 'separate_stems' ? 'separating stems...'
+          : toolUse.name === 'analyze_audio' ? 'analyzing audio...'
           : toolUse.name === 'remove_echo_reverb' ? 'removing echo and reverb...' : 'working...';
         send({ status });
       }));

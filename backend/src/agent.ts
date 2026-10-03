@@ -5,6 +5,7 @@ import { createNebiusModel } from './model.js';
 import { updateMusicFormTool } from './music.js';
 import { separateStemsTool } from './stems.js';
 import { removeEchoTool } from './dereverb.js';
+import { analyzeAudioTool } from './analysis.js';
 
 // Map of sessionId -> Agent instance
 const agents = new Map<string, Agent>();
@@ -23,7 +24,7 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   model.updateConfig({ maxTokens: 4096 });
   const agent = new Agent({
     model: model,
-    tools: [updateMusicFormTool, separateStemsTool, removeEchoTool],
+    tools: [updateMusicFormTool, separateStemsTool, removeEchoTool, analyzeAudioTool],
     systemPrompt: readFileSync(new URL('../prompts/system.md', import.meta.url), 'utf8').trim(),
     printer: false,
     retryStrategy: null,

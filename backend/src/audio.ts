@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, mkdtemp, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -50,6 +51,26 @@ async function runProcessor(script: string, args: string[], timeout: number): Pr
       ? error.stderr.trim().split('\n').at(-1) : undefined;
     throw new Error(detail || 'local audio processing failed.');
   });
+}
+
+export async function prepareAnalysisAudio(audioUrl: unknown): Promise<{ data: string; format: 'mp3' | 'wav' }> {
+  const source = audioPath(audioUrl);
+  const file = await stat(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
+  const extension = path.extname(source);
+  // Leave room for the data URI prefix under the provider's 10 MB base64 limit.
+  if ((extension === '.mp3' || extension === '.wav') && file.size > 0 && file.size < 7_499_000) {
+    return { data: (await readFile(source)).toString('base64'), format: extension === '.mp3' ? 'mp3' : 'wav' };
+  }
+  const directory = await mkdtemp(path.join(tmpdir(), 'music-analysis-'));
+  try {
+    const output = path.join(directory, 'analysis.mp3');
+    await runProcessor('prepare_analysis.py', [source, output], 60_000);
+    const data = (await readFile(output)).toString('base64');
+    if (!data || data.length + 13 >= 10_000_000) throw new Error('audio is too large to analyze. try a shorter track.');
+    return { data, format: 'mp3' };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 export async function uploadAudio(name: unknown, data: unknown): Promise<AudioTrack> {
