@@ -47,7 +47,7 @@ export function ChatPage() {
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
         <section aria-label="chat" className="flex h-[70dvh] min-h-0 min-w-0 flex-col lg:h-auto lg:flex-1">
-          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto py-4 space-y-4">
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto py-4 space-y-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {messages.map((message, index) => (
               <ChatMessage key={index} message={message} loading={loading}
                 onSeparate={(url) => send("separate the vocals and instrumental from this track.", url)}
