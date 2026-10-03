@@ -38,6 +38,24 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+.music-field-updated {
+  border-color: #a5b4fc;
+  box-shadow: 0 0 0 1px #a5b4fc60, 0 0 12px #a5b4fc40;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .music-field-updated {
+    animation: music-field-update 2.5s ease-out forwards;
+  }
+}
+
+@keyframes music-field-update {
+  to {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 0 1px transparent, 0 0 12px transparent;
+  }
+}
+
 /* Subtle scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

@@ -123,6 +123,8 @@ The separate 10,000-character prompt limit still applies.
 Service failures show Google's error message so request errors can be diagnosed.
 You can also tell the agent what to change. Each chat request includes the current
 form, including manual edits, so revisions can preserve the other fields.
+Fields changed by the agent glow briefly. Manual edits do not trigger the glow.
+With reduced motion enabled, changed fields show a steady highlight for the same time.
 Music advice and prompt preparation do not call Lyria.
 The chat spinner shows the current action: thinking, editing fields or lyrics,
 generating a track, uploading audio, separating stems, or removing echo and reverb.

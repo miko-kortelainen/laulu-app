@@ -1,8 +1,9 @@
 import { cn } from "@/lib/utils";
 import { musicPromptFields, type MusicPrompt } from "./musicPrompt";
 
-export function MusicPromptFields({ prompt, model, disabled, onChange, onModelChange }: {
+export function MusicPromptFields({ prompt, updatedFields, model, disabled, onChange, onModelChange }: {
   prompt: MusicPrompt;
+  updatedFields: (keyof MusicPrompt)[];
   model: string;
   disabled: boolean;
   onChange: (field: keyof MusicPrompt, value: string) => void;
@@ -12,6 +13,9 @@ export function MusicPromptFields({ prompt, model, disabled, onChange, onModelCh
 
   return (
     <fieldset disabled={disabled} aria-label="song prompt" className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+      <p aria-live="polite" className="sr-only">
+        {updatedFields.length > 0 && `updated: ${musicPromptFields.filter(({ name }) => updatedFields.includes(name)).map(({ label }) => label).join(", ")}`}
+      </p>
       <label className="flex min-w-0 flex-col gap-1 sm:col-span-2">
         <span className="text-xs text-zinc-400">music model</span>
         <select name="musicModel" value={model} onChange={(event) => onModelChange(event.target.value)} className={controlClass}>
@@ -26,10 +30,11 @@ export function MusicPromptFields({ prompt, model, disabled, onChange, onModelCh
             <textarea name={field.name} value={prompt[field.name]} rows={field.name === "lyrics" ? 6 : 2}
               maxLength={field.name === "lyrics" ? 3000 : undefined}
               onChange={(event) => onChange(field.name, event.target.value)}
-              className={`${controlClass} resize-y`} />
+              className={cn(controlClass, "resize-y", updatedFields.includes(field.name) && "music-field-updated")} />
           ) : (
             <input name={field.name} type="text" value={prompt[field.name]}
-              onChange={(event) => onChange(field.name, event.target.value)} className={controlClass} />
+              onChange={(event) => onChange(field.name, event.target.value)}
+              className={cn(controlClass, updatedFields.includes(field.name) && "music-field-updated")} />
           )}
         </label>
       ))}

@@ -138,6 +138,7 @@ try {
   run("fill", "textarea:not([name])", "create a song about cats");
   run("click", send);
   run("wait", "--text", "review the prompt and click generate music.");
+  assert.equal(run("eval", 'document.querySelector("textarea[name=lyrics]").classList.contains("music-field-updated")'), "true");
   assert.equal(run("eval", 'document.querySelector("audio") === null'), "true");
   assert.equal(run("eval", 'document.querySelector("input[name=key]").value'), '"G major"');
   assert.equal(run("eval", 'window.musicRequests.length'), "0");
@@ -147,6 +148,7 @@ try {
   run("find", "label", "BPM", "fill", "110 with a swung feel");
   run("find", "label", "mood", "fill", "hopeful");
   run("find", "label", "lyrics", "fill", lyrics);
+  assert.equal(run("eval", 'document.querySelector(".music-field-updated") === null'), "true");
   // Agent revisions use the current manually edited draft, and keep one form.
   const revisedPrompt = {
     genre: "indie pop", mood: "hopeful", key: "D minor", bpm: "110 with a swung feel", duration: "2 minutes",
@@ -159,14 +161,21 @@ try {
   run("fill", "textarea:not([name])", "change only the genre to indie pop");
   run("click", send);
   run("wait", "--text", "changed the genre.");
+  assert.deepEqual(JSON.parse(run("eval", 'Array.from(document.querySelectorAll(".music-field-updated"), field => field.name)')), ["genre"]);
+  run("wait", "--fn", 'document.querySelector(".music-field-updated") === null');
   assert.deepEqual(JSON.parse(JSON.parse(run("eval", 'window.chatRequests.at(-1).musicPrompt'))), { ...revisedPrompt, genre: "indie folk" });
   revisedPrompt.key = "E minor";
+  run("set", "media", "dark", "reduced-motion");
   run("network", "unroute", "**/api/chat");
   run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "changed the key.", musicPrompt: revisedPrompt }));
   openInput();
   run("fill", "textarea:not([name])", "now change only the key to E minor");
   run("click", send);
   run("wait", "--text", "changed the key.");
+  assert.deepEqual(JSON.parse(run("eval", 'Array.from(document.querySelectorAll(".music-field-updated"), field => field.name)')), ["key"]);
+  assert.equal(run("eval", 'getComputedStyle(document.querySelector("input[name=key]")).animationName'), '"none"');
+  run("wait", "--fn", 'document.querySelector(".music-field-updated") === null');
+  run("set", "media", "dark");
   assert.deepEqual(JSON.parse(JSON.parse(run("eval", 'window.chatRequests.at(-1).musicPrompt'))), { ...revisedPrompt, key: "D minor" });
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');

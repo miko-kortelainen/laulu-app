@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { generateMusic, getChatContext, resetChat, sendMessage, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack, type SeparatedStems } from "./api";
-import { emptyMusicPrompt, isMusicPrompt, type MusicPrompt } from "./musicPrompt";
+import { emptyMusicPrompt, isMusicPrompt, musicPromptFields, type MusicPrompt } from "./musicPrompt";
 
 export interface Message {
   role: "user" | "agent";
@@ -25,6 +25,7 @@ export function useChat() {
   const [activity, setActivity] = useState<string>();
   const loading = activity !== undefined;
   const [musicPrompt, setMusicPrompt] = useState<MusicPrompt>(emptyMusicPrompt);
+  const [updatedMusicFields, setUpdatedMusicFields] = useState<(keyof MusicPrompt)[]>([]);
   const [musicModel, setMusicModel] = useState("lyria-3.5");
   const [musicError, setMusicError] = useState<string>();
   const [context, setContext] = useState<ChatContext>();
@@ -50,11 +51,18 @@ export function useChat() {
     void refreshContext();
   }, [refreshContext]);
 
+  useEffect(() => {
+    if (!updatedMusicFields.length) return;
+    const timeout = window.setTimeout(() => setUpdatedMusicFields([]), 2500);
+    return () => window.clearTimeout(timeout);
+  }, [updatedMusicFields]);
+
   async function send(text: string, audioUrl?: string): Promise<void> {
     const message = text.trim();
     if (!message || busy.current) return;
 
     busy.current = true;
+    setUpdatedMusicFields([]);
     setActivity('thinking...');
     setMessages((previous) => [...previous, { role: "user", text: message }]);
 
@@ -65,7 +73,11 @@ export function useChat() {
 
     if ("cleanedAudio" in result && result.cleanedAudio) currentAudio.current = result.cleanedAudio.url;
     if ("musicPrompt" in result && result.musicPrompt) {
-      setMusicPrompt(result.musicPrompt);
+      const nextPrompt = result.musicPrompt;
+      setUpdatedMusicFields(musicPromptFields
+        .filter(({ name }) => nextPrompt[name] !== musicPrompt[name])
+        .map(({ name }) => name));
+      setMusicPrompt(nextPrompt);
       setMusicError(undefined);
     }
     setMessages((previous) => [...previous, { role: "agent", text: result.reply,
@@ -91,6 +103,7 @@ export function useChat() {
 
   function editMusicPrompt(field: keyof MusicPrompt, value: string): void {
     if (busy.current) return;
+    setUpdatedMusicFields([]);
     setMusicPrompt((previous) => ({ ...previous, [field]: value }));
     setMusicError(undefined);
   }
@@ -141,6 +154,7 @@ export function useChat() {
       setContextError(undefined);
       currentAudio.current = undefined;
       setMusicPrompt(emptyMusicPrompt);
+      setUpdatedMusicFields([]);
       setMusicModel("lyria-3.5");
       setMusicError(undefined);
       setMessages([
@@ -152,5 +166,5 @@ export function useChat() {
     setActivity(undefined);
   }
 
-  return { messages, loading, activity, musicPrompt, musicModel, musicError, context, contextError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload };
+  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, context, contextError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload };
 }
