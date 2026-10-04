@@ -32,9 +32,12 @@ const server = createServer(async (req, res) => {
   }
   const path = resolve(directory, pathname === "/" ? "index.html" : `.${pathname}`);
   if (!path.startsWith(`${directory}/`)) { res.writeHead(404); return res.end(); }
-  const content = await readFile(path).catch(() => undefined);
+  let content = await readFile(path).catch(() => undefined);
+  if (!content && req.method === "GET" && !extname(pathname) && !/^\/(api|auth)\//.test(pathname)) {
+    content = await readFile(join(directory, "index.html"));
+  }
   if (!content) { res.writeHead(404); return res.end(); }
-  res.setHeader("Content-Type", { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" }[extname(path)] ?? "application/octet-stream");
+  res.setHeader("Content-Type", { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" }[extname(path) || ".html"] ?? "application/octet-stream");
   res.end(content);
 });
 

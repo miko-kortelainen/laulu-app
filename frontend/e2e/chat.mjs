@@ -62,6 +62,13 @@ try {
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "6");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
+  run("find", "role", "link", "click", "--name", "profile", "--exact");
+  run("wait", "--text", "member since");
+  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("wait", "--text", "6 / 40 messages");
+  assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
+  assert.equal(run("eval", 'document.querySelector("main").innerText.includes("e2e reply")'), "true");
+
   openInput();
   run("fill", "textarea:not([name])", "keyboard message");
   run("press", "Shift+Enter");

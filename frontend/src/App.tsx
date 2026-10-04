@@ -1,8 +1,8 @@
-import { ChatPage } from "@/features/chat/ChatPage";
 import { AuthGate } from "@/features/auth/AuthGate";
+import { AuthenticatedApp } from "./AuthenticatedApp";
 
 export default function App() {
   return <AuthGate>{({ user, logout, busy, error }) => (
-    <ChatPage key={user.id} email={user.email} onLogout={logout} signingOut={busy} authError={error} />
+    <AuthenticatedApp key={user.id} user={user} onLogout={logout} signingOut={busy} authError={error} />
   )}</AuthGate>;
 }

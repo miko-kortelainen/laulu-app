@@ -90,6 +90,9 @@ Protected backend endpoints reject requests if server authentication is not conf
 
 Each user has a separate in-memory conversation and separate local audio directories.
 Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
+Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
+React Router serves chat at `/` and the signed-in profile at `/profile`. Navigation preserves the current conversation and music form.
+Configure production hosting to serve `index.html` for frontend routes such as `/profile`, while keeping `/api/` requests on the backend.
 Local audio playback and downloads use authenticated requests.
 Existing audio without an owner remains on disk but has no public route.
 R2 storage, audio metadata, and usage quotas remain in [the next implementation phase](AUTHENTICATION_PLAN.md).

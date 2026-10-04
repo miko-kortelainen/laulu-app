@@ -8,6 +8,9 @@ const session = `musical-auth-e2e-${process.pid}`;
 const run = async (...args) => (await exec("agent-browser", ["--session", session, ...args], { timeout: 30000 })).stdout.trim();
 const url = process.env.E2E_URL;
 const first = authSession();
+first.user.email_confirmed_at = "2026-01-15T12:00:00Z";
+first.user.created_at = "2026-01-15T12:00:00Z";
+first.user.last_sign_in_at = "2026-10-05T12:00:00Z";
 const second = authSession("20000000-0000-4000-8000-000000000002", "second@example.com");
 
 async function submit(email = first.user.email, password = "offline-password") {
@@ -20,7 +23,7 @@ try {
   await run("open", "about:blank");
   await run("network", "route", `${authOrigin}/auth/v1/user`, "--body", JSON.stringify(first.user));
   await run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
-  await run("open", url);
+  await run("open", `${url}/profile`);
   await run("wait", "--text", "log in");
   assert.equal(await run("eval", 'document.querySelector("section[aria-label=chat]")'), "null");
   await run("set", "viewport", "320", "760");
@@ -64,6 +67,28 @@ try {
   await run("eval", "location.reload()");
   await run("wait", "--text", "0 / 40 messages");
 
+  // Profile routing uses the current user and preserves the song form on return.
+  await run("fill", 'input[name="genre"]', "retained song style");
+  await run("find", "role", "link", "click", "--name", "profile", "--exact");
+  await run("wait", "--text", "member since");
+  assert.equal(await run("eval", "location.pathname"), '"/profile"');
+  assert.equal(await run("eval", "document.querySelector('a[aria-current=page]').textContent.trim()"), '"profile"');
+  assert.deepEqual(JSON.parse(await run("eval", "Array.from(document.querySelectorAll('dd'), element => element.textContent)")), [
+    first.user.email, "confirmed",
+    JSON.parse(await run("eval", `new Date(${JSON.stringify(first.user.created_at)}).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })`)),
+    JSON.parse(await run("eval", `new Date(${JSON.stringify(first.user.last_sign_in_at)}).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })`)),
+  ]);
+  assert.equal(await run("eval", "document.documentElement.scrollWidth <= innerWidth"), "true");
+  await run("back");
+  await run("wait", "--text", "0 / 40 messages");
+  assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
+  await run("find", "role", "link", "click", "--name", "profile", "--exact");
+  await run("eval", "location.reload()");
+  await run("wait", "--text", "member since");
+  assert.equal(await run("eval", "location.pathname"), '"/profile"');
+  await run("find", "role", "link", "click", "--name", "chat", "--exact");
+  await run("wait", "--text", "0 / 40 messages");
+
   // The real SDK refreshes an expired saved session through the mocked token endpoint.
   const expired = authSession(first.user.id, first.user.email, -5);
   await run("eval", `localStorage.setItem(${JSON.stringify(storageKey)}, ${JSON.stringify(JSON.stringify(expired))}); location.reload();`);
@@ -90,7 +115,25 @@ try {
   await submit(second.user.email);
   await run("wait", "--text", second.user.email);
   assert.equal(await run("eval", 'document.body.innerText.includes("private pending message")'), "false");
+  await run("find", "role", "link", "click", "--name", "profile", "--exact");
+  await run("wait", "--text", "member since");
+  assert.equal(await run("eval", "document.querySelector('dd').textContent"), JSON.stringify(second.user.email));
+  assert.equal(await run("eval", "document.querySelectorAll('dd')[1].textContent"), '"not confirmed"');
+  assert.equal(await run("eval", "document.querySelectorAll('dd')[3].textContent"), '"not available"');
+  await run("eval", `const beforeLogout = window.fetch; window.failLogout = true;
+    window.fetch = (input, options) => String(input).includes('/auth/v1/logout') && window.failLogout
+      ? Promise.resolve(Response.json({ msg: 'logout unavailable' }, { status: 400 })) : beforeLogout(input, options);`);
   await run("find", "role", "button", "click", "--name", "log out", "--exact");
+  await run("wait", "--text", "logout unavailable");
+  assert.equal(await run("eval", 'document.querySelector("#profile-title")'), "null");
+  await run("eval", "window.failLogout = false");
+  await submit(second.user.email);
+  await run("wait", "--text", "member since");
+  assert.equal(await run("eval", "document.querySelector('dd').textContent"), JSON.stringify(second.user.email));
+  await run("find", "role", "button", "click", "--name", "log out", "--exact");
+  await run("wait", "--text", "log in");
+  assert.equal(await run("eval", 'document.querySelector("#profile-title")'), "null");
+  await run("open", url);
   await run("wait", "--text", "log in");
 
   // Recovery email failures preserve the form. The recovery callback gates chat.
@@ -113,13 +156,14 @@ try {
   await run("fill", "#auth-password", "new-offline-password");
   await run("click", 'button[type="submit"]');
   await run("wait", "--text", "0 / 40 messages");
-  await run("find", "role", "button", "click", "--name", "log out", "--exact");
+  await run("wait", "--fn", "document.querySelector('header button')?.disabled === false");
+  await run("click", "header button");
   await run("wait", "--text", "log in");
   await run("open", `${url}/#error=access_denied&error_description=link%20expired&type=recovery`);
   await run("wait", "--text", "link expired");
   assert.equal(await run("eval", "location.hash"), '""');
   assert.equal(await run("eval", 'document.querySelector("h1").innerText'), '"log in"');
-  console.log("Auth E2E passed: registration, confirmation, resend, login recovery, reload, logout cancellation, account isolation, password recovery, and expired links.");
+  console.log("Auth E2E passed: registration, confirmation, resend, login recovery, profile navigation and reload, retained song form, logout cancellation, account isolation, password recovery, and expired links.");
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);
   throw error;
