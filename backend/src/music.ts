@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { generateLyrics } from './lyrics.js';
+import { getAiGateway } from './gateway.js';
 
 export const musicDirectory = fileURLToPath(new URL('../generated-music/', import.meta.url));
 
@@ -96,11 +97,15 @@ export const generateMusic = traceable(async (
   const input = validateMusicPrompt(prompt);
   const model = validateMusicModel(modelId);
   const apiKey = process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+  const gateway = getAiGateway('google-ai-studio');
+  if (!gateway && (!apiKey || apiKey === 'your_gemini_api_key_here')) {
     throw new Error('set GEMINI_API_KEY in backend/.env to generate music.');
   }
 
-  const client = new GoogleGenAI({ apiKey });
+  const client = new GoogleGenAI({
+    apiKey: gateway ? 'byok' : apiKey,
+    httpOptions: gateway ? { baseUrl: gateway.baseURL, fetch: gateway.fetch } : undefined,
+  });
   const tokenData = await client.models.countTokens({
     model,
     contents: input,
