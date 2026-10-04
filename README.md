@@ -225,6 +225,11 @@ Each revised prompt includes the full song brief for review.
 
 The result includes an audio player, an MP3 download, and a lyrics dropdown when
 lyrics are returned. Structure markers are removed from the displayed lyrics.
+All audio players show a waveform and playhead with play/pause, stop, volume,
+and elapsed/total time. Click or drag the waveform to seek, or focus it and use
+the arrow keys, Home, or End. Stop returns to the beginning.
+The browser decodes the waveform with the Web Audio API; no player library or
+model call is used. If decoding fails, playback keeps a plain seek timeline.
 The agent acknowledges form changes briefly and conversationally, without follow-up
 questions or repeated button reminders. It does not repeat the music prompt in chat.
 Tracks are saved in `backend/generated-music/`, which Git ignores.
@@ -405,3 +410,8 @@ Offline tracing check: `npm --prefix backend run test:tracing`.
 Frontend chat E2E check: start `npm run dev:frontend`, then run
 `npm --prefix frontend run test:e2e`. It requires the `agent-browser` CLI and
 mocks all API calls. Set `E2E_URL` to test another local frontend URL.
+
+Audio player E2E check: run `npm run build:frontend`, then
+`npm --prefix frontend run test:audio`. It uses the same browser CLI and a local
+test server with real WAV audio. It checks waveform rendering, playback controls,
+seeking, volume, attachment sending, mobile layout, and load failure recovery.

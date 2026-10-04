@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { AudioPlayer } from "@/components/ui/audio-player";
 import type { Message } from "./useChat";
 
 function MessageContent({ text }: { text: string }) {
@@ -44,11 +45,12 @@ export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
 }) {
   const isUser = message.role === "user";
   const sourceUrl = message.audio?.url ?? message.track?.url;
+  const hasAudio = Boolean(message.track || message.audio || message.stems || message.cleanedAudio);
 
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-col gap-1 max-w-[90%] sm:max-w-[85%]",
+        "flex min-w-0 flex-col gap-1 max-w-[95%] sm:max-w-[90%]",
         isUser ? "ml-auto items-end" : "mr-auto items-start",
       )}
     >
@@ -59,16 +61,15 @@ export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
         className={cn(
           "min-w-0 max-w-full rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
           "[overflow-wrap:anywhere] border",
-          isUser && "border-transparent bg-zinc-100 font-medium text-zinc-950",
-          isUser && "dark:bg-white dark:text-zinc-950",
+          hasAudio && "w-full",
+          isUser && "border-white/15 bg-zinc-700/70 font-medium text-zinc-100",
           !isUser && "border-white/10 bg-zinc-900/80 text-zinc-100 shadow-xs",
         )}
       >
         <MessageContent text={isUser ? message.text : message.text.trim()} />
         {message.track && (
           <div className="mt-3 space-y-3">
-            <audio controls preload="none" src={message.track.url}
-              aria-label="generated music" className="max-w-full" />
+            <AudioPlayer src={message.track.url} label="generated music" className="w-full" />
             <div>
               <a
                 href={message.track.url}
@@ -93,8 +94,7 @@ export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
         {message.audio && (
           <div className="mt-3 space-y-2">
             <p className="text-xs opacity-70">{message.audio.name}</p>
-            <audio controls preload="none" src={message.audio.url}
-              aria-label={`uploaded audio: ${message.audio.name}`} className="max-w-full" />
+            <AudioPlayer src={message.audio.url} label={`uploaded audio: ${message.audio.name}`} className="w-full" />
           </div>
         )}
         {sourceUrl && (
@@ -120,7 +120,7 @@ export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
             ].map((stem) => (
               <div key={stem.name} className="space-y-1">
                 <p className="text-xs">{stem.name}</p>
-                <audio controls preload="none" src={stem.url} aria-label={stem.name} className="max-w-full" />
+                <AudioPlayer src={stem.url} label={stem.name} className="w-full" />
                 <a href={stem.url} download className="text-xs underline underline-offset-4 hover:text-white">
                   download {stem.name} WAV
                 </a>

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { AiInput } from "@/components/ui/ai-input";
+import { AudioPlayer } from "@/components/ui/audio-player";
 import { cn } from "@/lib/utils";
 import { ChatMessage } from "./ChatMessage";
 import { useChat } from "./useChat";
@@ -103,8 +104,7 @@ export function ChatPage() {
                       remove
                     </button>
                   </div>
-                  <audio controls preload="none" src={pendingAudio.url}
-                    aria-label={`attached audio: ${pendingAudio.name}`} className="h-10 w-full" />
+                  <AudioPlayer src={pendingAudio.url} label={`attached audio: ${pendingAudio.name}`} className="w-full" />
                 </div>
               )}
               {uploadError && <p role="alert" className="text-xs text-red-400">{uploadError}</p>}
