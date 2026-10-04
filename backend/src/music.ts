@@ -96,15 +96,11 @@ export const generateMusic = traceable(async (
 ): Promise<MusicTrack> => {
   const input = validateMusicPrompt(prompt);
   const model = validateMusicModel(modelId);
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
   const gateway = getAiGateway('google-ai-studio');
-  if (!gateway && (!apiKey || apiKey === 'your_gemini_api_key_here')) {
-    throw new Error('set GEMINI_API_KEY in backend/.env to generate music.');
-  }
 
   const client = new GoogleGenAI({
-    apiKey: gateway ? 'byok' : apiKey,
-    httpOptions: gateway ? { baseUrl: gateway.baseURL, fetch: gateway.fetch } : undefined,
+    apiKey: 'byok',
+    httpOptions: { baseUrl: gateway.baseURL, fetch: gateway.fetch },
   });
   const tokenData = await client.models.countTokens({
     model,

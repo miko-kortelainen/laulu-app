@@ -13,6 +13,7 @@ import { analyzeAudio, analyzeAudioTool } from '../src/analysis.js';
 import { audioDirectory, prepareAnalysisAudio } from '../src/audio.js';
 import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { getModelId } from '../src/model.js';
+import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 
 const runFile = promisify(execFile);
 const python = fileURLToPath(new URL('../audio-processing/.venv/bin/python', import.meta.url));
@@ -49,7 +50,7 @@ function completion(model: string, delta: unknown, finishReason = 'stop'): Respo
 
 test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from failures', async () => {
   const originalFetch = globalThis.fetch;
-  const originalKey = process.env.DASHSCOPE_API_KEY;
+  const restoreGateway = configureTestGateway();
   const originalTracing = process.env.LANGSMITH_TRACING;
   const originalCreate = Client.prototype.createRun;
   const originalUpdate = Client.prototype.updateRun;
@@ -71,11 +72,13 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
   Client.prototype.createRun = async (run) => { runs.push(run); };
   Client.prototype.updateRun = async (id, run) => { updates.set(id, JSON.parse(JSON.stringify(run)) as typeof run); };
   globalThis.fetch = async (url, options) => {
-    const request = JSON.parse(String(options?.body));
+    const httpRequest = new Request(url, options);
+    const request = await httpRequest.json();
     if (request.model === 'qwen3.8-omni-flash') {
       qwenCalls++;
-      assert.equal(String(url), 'https://maas.qwencloudapi.com/compatible-mode/v1/chat/completions');
-      assert.equal(new Headers(options?.headers).get('authorization'), 'Bearer offline-qwen-key');
+      assert.equal(httpRequest.url, `${testGatewayURL}/custom-qwencloud/compatible-mode/v1/chat/completions`);
+      assert.equal(httpRequest.headers.has('authorization'), false);
+      assert.equal(httpRequest.headers.get('cf-aig-authorization'), 'Bearer offline-gateway-token');
       assert.equal(request.stream, true);
       assert.equal(request.stream_options.include_usage, true);
       assert.equal(request.max_tokens, 2048);
@@ -103,8 +106,6 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
   };
   try {
     const agent = getOrCreateAgent(sessionId);
-    // Agent setup reloads backend/.env; keep the mocked Qwen call on a dummy key.
-    process.env.DASHSCOPE_API_KEY = 'offline-qwen-key';
     const result = await agent.invoke(`analyze this track\n\navailable audio: ${audioUrl}`);
     assert.equal(result.toString(), observation);
     assert.equal(mainCalls, 2);
@@ -119,7 +120,7 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
     assert.equal(model.extra?.metadata?.thread_id, sessionId);
     assert.equal(updates.get(model.id)?.outputs?.usage_metadata?.total_tokens, 120);
     assert.equal(JSON.stringify(runs).includes(audio.toString('base64')), false);
-    assert.equal(JSON.stringify(runs).includes('offline-qwen-key'), false);
+    assert.equal(JSON.stringify(runs).includes('offline-gateway-token'), false);
 
     // Bad inputs and absent credentials never reach inference.
     const beforeValidation = qwenCalls;
@@ -127,10 +128,10 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
     await assert.rejects(analyzeAudio('/api/audio/../../secrets.wav', question), /choose a generated track/);
     await assert.rejects(analyzeAudio(`/api/audio/${randomUUID()}.wav`, question), /no longer exists/);
     await assert.rejects(analyzeAudio(audioUrl, ' '), /question must contain/);
-    delete process.env.DASHSCOPE_API_KEY;
-    await assert.rejects(analyzeAudio(audioUrl, question), /set DASHSCOPE_API_KEY/);
+    delete process.env.CF_AI_GATEWAY_TOKEN;
+    await assert.rejects(analyzeAudio(audioUrl, question), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     assert.equal(qwenCalls, beforeValidation);
-    process.env.DASHSCOPE_API_KEY = 'offline-qwen-key';
+    process.env.CF_AI_GATEWAY_TOKEN = 'offline-gateway-token';
 
     // Failures preserve existing feature state and cannot trigger a second Qwen attempt.
     for (mode of ['http', 'empty', 'truncated', 'reasoning', 'brokenStream']) {
@@ -153,8 +154,7 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
     globalThis.fetch = originalFetch;
     Client.prototype.createRun = originalCreate;
     Client.prototype.updateRun = originalUpdate;
-    if (originalKey === undefined) delete process.env.DASHSCOPE_API_KEY;
-    else process.env.DASHSCOPE_API_KEY = originalKey;
+    restoreGateway();
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
     else process.env.LANGSMITH_TRACING = originalTracing;
     await rm(source, { force: true });

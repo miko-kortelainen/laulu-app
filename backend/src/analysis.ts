@@ -7,18 +7,13 @@ import { prepareAnalysisAudio } from './audio.js';
 import { getAiGateway } from './gateway.js';
 
 const model = 'qwen3.8-omni-flash';
-const baseURL = 'https://maas.qwencloudapi.com/compatible-mode/v1';
 const instructions = readFileSync(new URL('../prompts/analysis.md', import.meta.url), 'utf8').trim();
 
 export async function analyzeAudio(audioUrl: unknown, question: unknown): Promise<string> {
   if (typeof question !== 'string' || !question.trim() || question.length > 2_000) {
     throw new Error('audio analysis question must contain 1–2,000 characters.');
   }
-  const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
   const gateway = getAiGateway('qwencloud', model);
-  if (!gateway && (!apiKey || apiKey === 'your_qwencloud_api_key_here')) {
-    throw new Error('set DASHSCOPE_API_KEY in backend/.env to enable audio analysis.');
-  }
   const audio = await prepareAnalysisAudio(audioUrl);
   // Trace the question and source URL, never the audio bytes or credentials.
   const tracingOptions = {
@@ -27,9 +22,9 @@ export async function analyzeAudio(audioUrl: unknown, question: unknown): Promis
     processInputs: () => ({ model, audio_url: audioUrl, question, instructions }),
   };
   const client = wrapOpenAI(new OpenAI({
-    apiKey: gateway ? 'byok' : apiKey,
-    baseURL: gateway?.baseURL ?? baseURL,
-    fetch: gateway?.fetch,
+    apiKey: 'byok',
+    baseURL: gateway.baseURL,
+    fetch: gateway.fetch,
     maxRetries: 0,
     timeout: 120_000,
   }), tracingOptions);

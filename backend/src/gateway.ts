@@ -12,11 +12,10 @@ const customPrices: Record<string, { per_token_in: number; per_token_out: number
   'qwencloud/qwen3.8-omni-flash': { per_token_in: 0.00000015, per_token_out: 0.00000047 },
 };
 
-export function getAiGateway(provider: GatewayProvider, modelId?: string): AiGateway | undefined {
+export function getAiGateway(provider: GatewayProvider, modelId?: string): AiGateway {
   const accountId = process.env.CF_AI_GATEWAY_ACCOUNT_ID?.trim();
   const gatewayId = process.env.CF_AI_GATEWAY_ID?.trim();
   const token = process.env.CF_AI_GATEWAY_TOKEN?.trim();
-  if (!accountId && !gatewayId && !token) return undefined;
   if (!accountId || !gatewayId || !token) {
     throw new Error('set CF_AI_GATEWAY_ACCOUNT_ID, CF_AI_GATEWAY_ID, and CF_AI_GATEWAY_TOKEN in backend/.env.');
   }

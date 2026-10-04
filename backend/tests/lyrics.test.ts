@@ -6,9 +6,11 @@ import { Client } from 'langsmith';
 import { getChatContext, getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { getModelId } from '../src/model.js';
 import { updateMusicFormTool } from '../src/music.js';
+import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 
 test('only lyric requests use GLM, preserve form values, and commit completed lyrics', { timeout: 15_000 }, async () => {
   const originalFetch = globalThis.fetch;
+  const restoreGateway = configureTestGateway();
   const originalCreateRun = Client.prototype.createRun;
   const originalUpdateRun = Client.prototype.updateRun;
   const originalTracing = process.env.LANGSMITH_TRACING;
@@ -38,8 +40,9 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
   process.env.LANGSMITH_TRACING = 'true';
   process.env.LYRICS_MODEL = 'zai-org/GLM-5.3-Flash';
   globalThis.fetch = async (url, options) => {
-    assert.match(String(url), /\/chat\/completions$/);
-    const request = JSON.parse(String(options?.body));
+    const httpRequest = new Request(url, options);
+    assert.equal(httpRequest.url, `${testGatewayURL}/custom-nebius/v1/chat/completions`);
+    const request = await httpRequest.json();
     requests.push(request);
     const isLyrics = request.model === 'zai-org/GLM-5.3-Flash';
     assert.equal(request.max_completion_tokens, isLyrics ? 8192 : 4096);
@@ -182,6 +185,7 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
   } finally {
     resetAgentSession(sessionId);
     globalThis.fetch = originalFetch;
+    restoreGateway();
     Client.prototype.createRun = originalCreateRun;
     Client.prototype.updateRun = originalUpdateRun;
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;

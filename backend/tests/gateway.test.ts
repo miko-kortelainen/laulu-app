@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import test from 'node:test';
-import dotenv from 'dotenv';
 import { Client } from 'langsmith';
 import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { analyzeAudio } from '../src/analysis.js';
@@ -14,9 +13,6 @@ import { generateMusic, musicDirectory } from '../src/music.js';
 
 test('BYOK routes chat, lyrics, token counting, music, and analysis without provider credentials', async () => {
   const originalFetch = globalThis.fetch;
-  const originalDotenvConfig = dotenv.config;
-  // Keep the real backend/.env from replacing offline gateway values during agent construction.
-  dotenv.config = () => ({ parsed: {} });
   const originalCreateRun = Client.prototype.createRun;
   const originalUpdateRun = Client.prototype.updateRun;
   Client.prototype.createRun = async () => {};
@@ -24,8 +20,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
   const variables = [
     'CF_AI_GATEWAY_ACCOUNT_ID', 'CF_AI_GATEWAY_ID', 'CF_AI_GATEWAY_TOKEN',
     'CF_AI_GATEWAY_NEBIUS_SLUG', 'CF_AI_GATEWAY_QWENCLOUD_SLUG',
-    'NEBIUS_API_KEY', 'NEBIUS_MODEL', 'LYRICS_MODEL',
-    'GEMINI_API_KEY', 'DASHSCOPE_API_KEY', 'LANGSMITH_TRACING',
+    'NEBIUS_MODEL', 'LYRICS_MODEL', 'LANGSMITH_TRACING',
   ];
   const originalEnv = new Map(variables.map((name) => [name, process.env[name]]));
   const root = 'https://gateway.ai.cloudflare.com/v1/offline-account/offline-gateway';
@@ -92,7 +87,12 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
 
   try {
     for (const name of variables) delete process.env[name];
-    assert.equal(getAiGateway('nebius'), undefined);
+    assert.throws(() => getAiGateway('nebius'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    await assert.rejects(generateMusic('instrumental folk'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    await assert.rejects(generateLyrics({ genre: 'folk' }, 'write a verse'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    assert.throws(() => getOrCreateAgent(session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    assert.equal(calls.length, 0);
     process.env.CF_AI_GATEWAY_ACCOUNT_ID = 'offline-account';
     assert.throws(() => getAiGateway('nebius'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     process.env.CF_AI_GATEWAY_ID = 'offline-gateway';
@@ -102,7 +102,6 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     process.env.LANGSMITH_TRACING = 'false';
 
     const config = getModelConfig();
-    assert.equal(config.apiKeyConfigured, true);
     assert.equal(config.baseURL, `${root}/custom-my-nebius/v1`);
     assert.equal(JSON.stringify(config).includes('offline-gateway-token'), false);
     assert.equal((await getOrCreateAgent(session).invoke('hello')).toString(), 'offline answer');
@@ -132,7 +131,6 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
   } finally {
     resetAgentSession(session);
     globalThis.fetch = originalFetch;
-    dotenv.config = originalDotenvConfig;
     Client.prototype.createRun = originalCreateRun;
     Client.prototype.updateRun = originalUpdateRun;
     for (const [name, value] of originalEnv) {

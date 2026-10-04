@@ -20,7 +20,7 @@ A simple full-stack AI chatbot built with:
 │   ├── src/
 │   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
 │   │   ├── model.ts       # Shared Nebius configuration and model setup
-│   │   ├── gateway.ts     # Optional Cloudflare AI Gateway BYOK routing
+│   │   ├── gateway.ts     # Required Cloudflare AI Gateway BYOK routing
 │   │   ├── lyrics.ts      # Dedicated GLM lyric agent
 │   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
 │   │   ├── audio.ts       # Audio storage, validation, and shared processing jobs
@@ -31,7 +31,7 @@ A simple full-stack AI chatbot built with:
 │   ├── audio-processing/ # Shared Python runtime, model runners, and local weights
 │   │   └── models/        # Local model weights and checkpoints (.ckpt, .cpt, .pth; ignored by Git)
 │   ├── .env.example       # Sample environment variables
-│   ├── .env               # Active environment file (put your NEBIUS_API_KEY here)
+│   ├── .env               # Active Cloudflare gateway configuration
 │   ├── package.json
 │   └── tsconfig.json
 │
@@ -51,19 +51,22 @@ A simple full-stack AI chatbot built with:
 
 ## Quick Start
 
-### 1. Configure Nebius API Key
+### 1. Configure Cloudflare AI Gateway
 
-Open `backend/.env` and insert your Nebius Token Factory API key:
+Copy `backend/.env.example` to `backend/.env` and enter your Cloudflare gateway configuration:
 
 ```env
-NEBIUS_API_KEY=your_actual_nebius_api_key
-NEBIUS_BASE_URL=https://api.tokenfactory.nebius.com/v1
+CF_AI_GATEWAY_ACCOUNT_ID=your_cloudflare_account_id
+CF_AI_GATEWAY_ID=your_gateway_id
+CF_AI_GATEWAY_TOKEN=your_gateway_api_token
+CF_AI_GATEWAY_NEBIUS_SLUG=nebius
+CF_AI_GATEWAY_QWENCLOUD_SLUG=qwencloud
 NEBIUS_MODEL=nvidia/nemotron-3-super-120b-a12b
 LYRICS_MODEL=zai-org/GLM-5.3-Flash
 PORT=3001
 ```
 
-Alternatively, configure Cloudflare BYOK as described below.
+Store the provider keys in Cloudflare as described below. All hosted AI calls require this gateway.
 
 ### 2. Start the Backend
 
@@ -122,10 +125,10 @@ Local audio processing continues to run on this machine.
    If your custom providers have different slugs, change the two slug values.
 5. Restart the backend.
 
-With all three gateway values set, provider keys are no longer required in `backend/.env`.
+All three gateway values are required. Store provider keys only in Cloudflare.
 The backend removes provider authorization headers before each request so Cloudflare can use its stored keys.
 It bypasses caching, permits one gateway attempt, and requires provider credentials instead of Cloudflare Unified Billing.
-Incomplete gateway configuration causes an error. Gateway failures do not switch to direct provider calls.
+Missing or incomplete gateway configuration causes an error before any hosted AI call.
 
 The backend sends `cf-aig-custom-cost` for these custom-provider models. Rates are USD per million tokens:
 
@@ -141,7 +144,6 @@ Other models receive no custom-cost header.
 Cloudflare calculates costs only for responses that include token usage.
 See [Cloudflare custom costs](https://developers.cloudflare.com/ai-gateway/configuration/custom-costs/).
 
-To restore direct provider calls, clear all three gateway values and set `NEBIUS_API_KEY`, `GEMINI_API_KEY`, and `DASHSCOPE_API_KEY`.
 Restart the backend after configuration changes.
 
 Offline routing check: run `node --import tsx tests/gateway.test.ts` from `backend/`.
@@ -164,10 +166,8 @@ and music form instructions in [backend/prompts/music-form.md](backend/prompts/m
 Restart the backend after editing these files. The backend loads them directly;
 include `backend/prompts/` alongside `backend/dist/` when deploying a build.
 
-Set `GEMINI_API_KEY` in `backend/.env` to a Gemini API key with access to
+Store a Gemini API key in your gateway's **Provider Keys** under `google-ai-studio`, with access to
 [`lyria-3.5` or `lyria-3-clip-preview`](https://ai.google.dev/gemini-api/docs/music-generation).
-With Cloudflare BYOK enabled, store this key in your gateway instead.
-Restart the backend after changing this key.
 
 The music form stays beside the chat, or below it on small screens.
 Ask the agent to create music. It fills editable fields for genre/style, mood,
@@ -248,10 +248,8 @@ Offline lyric routing and failure recovery check: `npm --prefix backend run test
 
 ## Audio analysis
 
-Set `DASHSCOPE_API_KEY` in `backend/.env` to a QwenCloud API key, then restart
-the backend. With Cloudflare BYOK enabled, store this key in your gateway instead.
-Analysis uses `qwen3.8-omni-flash` through
-`https://maas.qwencloudapi.com/compatible-mode/v1` with the installed OpenAI SDK.
+Store a QwenCloud API key in your gateway's **Provider Keys** for the QwenCloud custom provider.
+Analysis uses `qwen3.8-omni-flash` through Cloudflare AI Gateway with the installed OpenAI SDK.
 Nebius still runs the producer agent and lyric agent. Google still generates music.
 
 Upload or generate a track, then ask the copilot to analyze it or give production

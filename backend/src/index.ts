@@ -148,5 +148,5 @@ app.listen(PORT, () => {
   const config = getModelConfig();
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(`Nebius Model: ${config.model}`);
-  console.log(`API key configured: ${config.apiKeyConfigured ? 'Yes' : 'No'}`);
+  console.log(`AI Gateway: ${config.baseURL}`);
 });

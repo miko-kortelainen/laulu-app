@@ -3,6 +3,7 @@ import { readFile, unlink } from 'node:fs/promises';
 import test from 'node:test';
 import type { ToolContext } from '@strands-agents/sdk';
 import { generateMusic, updateMusicFormTool, musicDirectory, MusicPromptTokenLimitError } from '../src/music.js';
+import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 
 test('music waits for confirmation, validates responses, and saves only valid audio', async () => {
   const prompt = 'Indie folk, warm acoustic guitar and soft brushed drums, relaxed at 82 BPM in G major. ' +
@@ -18,7 +19,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
     production: 'natural acoustic sound',
     lyrics: '[Verse 1]\nTiny paws in the morning dew,\nA world of green and a sky of blue.\n\n[Chorus]\nStay with me (stay with me)',
   };
-  const originalKey = process.env.GEMINI_API_KEY;
+  const restoreGateway = configureTestGateway();
   let calls = 0;
   let tokenCalls = 0;
   let expectedModel = 'lyria-3.5';
@@ -29,8 +30,9 @@ test('music waits for confirmation, validates responses, and saves only valid au
     assert.equal(request.method, 'POST');
     const headers = request.headers;
     assert.equal(headers.get('content-type'), 'application/json');
-    assert.equal(headers.get('x-goog-api-key'), 'offline-test-key');
-    if (request.url === `https://generativelanguage.googleapis.com/v1beta/models/${expectedModel}:countTokens`) {
+    assert.equal(headers.has('x-goog-api-key'), false);
+    assert.equal(headers.get('cf-aig-authorization'), 'Bearer offline-gateway-token');
+    if (request.url === `${testGatewayURL}/google-ai-studio/v1beta/models/${expectedModel}:countTokens`) {
       tokenCalls++;
       assert.deepEqual(JSON.parse(await request.text()), {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -38,7 +40,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
       return tokenResponse();
     }
     calls++;
-    assert.equal(request.url, 'https://generativelanguage.googleapis.com/v1beta/interactions');
+    assert.equal(request.url, `${testGatewayURL}/google-ai-studio/v1beta/interactions`);
     assert.deepEqual(JSON.parse(await request.text()), {
       model: expectedModel, input: prompt, store: false,
     });
@@ -48,7 +50,6 @@ test('music waits for confirmation, validates responses, and saves only valid au
 
   try {
     process.env.LANGSMITH_TRACING = 'false';
-    process.env.GEMINI_API_KEY = 'offline-test-key';
     const invocationState: Record<string, unknown> = {};
     const context = { invocationState } as ToolContext;
     const maximumLyrics = { ...fields, lyrics: 'a'.repeat(3_000) };
@@ -75,11 +76,11 @@ test('music waits for confirmation, validates responses, and saves only valid au
       await assert.rejects(generateMusic(prompt, model), /choose Lyria/);
     }
     assert.equal(tokenCalls, 0);
-    delete process.env.GEMINI_API_KEY;
-    await assert.rejects(generateMusic(prompt), /GEMINI_API_KEY/);
+    delete process.env.CF_AI_GATEWAY_TOKEN;
+    await assert.rejects(generateMusic(prompt), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     assert.equal(calls, 0);
     assert.equal(tokenCalls, 0);
-    process.env.GEMINI_API_KEY = 'offline-test-key';
+    process.env.CF_AI_GATEWAY_TOKEN = 'offline-gateway-token';
 
     tokenResponse = async () => Response.json({ totalTokens: 131_073 });
     await assert.rejects(generateMusic(prompt), (error: unknown) => {
@@ -150,8 +151,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
     globalThis.fetch = originalFetch;
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
     else process.env.LANGSMITH_TRACING = originalTracing;
-    if (originalKey === undefined) delete process.env.GEMINI_API_KEY;
-    else process.env.GEMINI_API_KEY = originalKey;
+    restoreGateway();
     if (savedPath) await unlink(savedPath);
   }
 });

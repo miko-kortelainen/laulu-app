@@ -3,9 +3,11 @@ import test from 'node:test';
 import { Client } from 'langsmith';
 import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { generateMusic } from '../src/music.js';
+import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 
 test('agent traces contain model and tool runs, errors, and conversation metadata', async () => {
   const originalFetch = globalThis.fetch;
+  const restoreGateway = configureTestGateway();
   const originalCreateRun = Client.prototype.createRun;
   const originalUpdateRun = Client.prototype.updateRun;
   const originalTracing = process.env.LANGSMITH_TRACING;
@@ -26,8 +28,9 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     updates.set(id, JSON.parse(JSON.stringify(run)) as typeof run);
   };
   globalThis.fetch = async (url, options) => {
-    assert.match(String(url), /\/chat\/completions$/);
-    const request = JSON.parse(String(options?.body));
+    const httpRequest = new Request(url, options);
+    assert.equal(httpRequest.url, `${testGatewayURL}/custom-nebius/v1/chat/completions`);
+    const request = await httpRequest.json();
     assert.ok(request.tools.some((entry: { function: { name: string } }) => entry.function.name === 'update_music_form'));
     modelCalls++;
     if (fail) return Response.json({ error: { message: 'offline model failure' } }, { status: 400 });
@@ -96,6 +99,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
   } finally {
     resetAgentSession(sessionId);
     globalThis.fetch = originalFetch;
+    restoreGateway();
     Client.prototype.createRun = originalCreateRun;
     Client.prototype.updateRun = originalUpdateRun;
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
