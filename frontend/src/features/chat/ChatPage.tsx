@@ -37,14 +37,6 @@ export function ChatPage() {
             Powered by Nebius Token Factory & Strands Agents SDK
           </p>
         </div>
-        <button
-          type="button"
-          onClick={clear}
-          disabled={loading}
-          className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Clear
-        </button>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
@@ -124,7 +116,13 @@ export function ChatPage() {
           </footer>
         </section>
         <aside aria-labelledby="music-heading" className="min-h-0 min-w-0 space-y-4 border-t border-white/10 pt-4 lg:w-[26rem] lg:shrink-0 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pl-6 lg:pr-2">
-          <h2 id="music-heading" className="text-sm font-semibold">music generation</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="music-heading" className="text-sm font-semibold">music generation</h2>
+            <button type="button" onClick={clear} disabled={loading}
+              className="shrink-0 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50">
+              new session
+            </button>
+          </div>
           <MusicPromptFields prompt={musicPrompt} updatedFields={updatedMusicFields} model={musicModel} disabled={loading}
             onChange={editMusicPrompt} onModelChange={changeMusicModel} />
           <button type="button" onClick={() => void confirmMusic()} disabled={loading || !isMusicPrompt(musicPrompt)}
@@ -139,7 +137,7 @@ export function ChatPage() {
             </div>
             {context && <meter id="chat-context" min={0} max={context.limit} value={context.messages}
               className="block h-2 w-full" aria-describedby="chat-context-description" />}
-            <p id="chat-context-description">recent chat and tool messages. older messages are trimmed; Clear resets the history.</p>
+            <p id="chat-context-description">recent chat and tool messages. older messages are trimmed; new session resets the history.</p>
             {contextError && <p className="text-red-400">{contextError}</p>}
           </div>
         </aside>

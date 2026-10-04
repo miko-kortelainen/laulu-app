@@ -156,7 +156,7 @@ Cloudflare's documentation covers [BYOK](https://developers.cloudflare.com/ai-ga
 - **User sends message:** Interactive chat bar with Enter key submission.
 - **Agent answers:** Strands Agents SDK loop powered by Nebius Token Factory + Nemotron Super.
 - **Live Health & Status Indicator:** Visual badge displaying backend connection and model state.
-- **Clear & Reset:** Button to reset conversation history.
+- **new session:** Button beside music generation to reset conversation history.
 
 ## Music generation
 
@@ -235,11 +235,11 @@ questions or repeated button reminders. It does not repeat the music prompt in c
 Tracks are saved in `backend/generated-music/`, which Git ignores.
 Downloads survive backend restarts. Chat messages remain in the current browser
 session; keep the download URL or download the file before reloading.
-Clear resets the conversation and music form and leaves saved tracks in place.
+The **new session** button resets the conversation and music form and leaves saved tracks in place.
 The conversation context bar below the music form shows the backend's retained
 chat and tool message count against its 40-message sliding window. The count
 loads when the page opens and updates after each chat request, including failures.
-Clear discards the backend agent and resets the bar only after reset succeeds.
+The **new session** button discards the backend agent and resets the bar only after reset succeeds.
 Tool pairs stay together, so the retained count can briefly exceed the window.
 
 The backend uses the Interactions REST API with `store: false`, reads audio from
@@ -336,7 +336,7 @@ Each result has two audio players and WAV download links. Sources stay intact
 when separation fails. One audio processing job runs at a time, with a 20-minute
 timeout. CPU processing can be slow. Uploads are saved in `backend/uploaded-audio/`
 and completed stems in `backend/separated-audio/`; Git ignores both directories.
-Clear resets chat and leaves audio files in place.
+The **new session** button resets chat and leaves audio files in place.
 
 Local integration check: `npm --prefix backend run test:stems`. This requires
 the installed Python environment and model files. It separates synthetic audio

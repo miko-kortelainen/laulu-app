@@ -26,7 +26,7 @@ try {
   run("set", "viewport", "1280", "900");
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("aside fieldset") !== null && document.querySelector("main fieldset") === null'), "true");
-  assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
+  assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
   assert.equal(run("eval", 'document.querySelector("[name=structure]")'), "null");
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
   assert.deepEqual(JSON.parse(run("eval", 'Array.from(document.querySelector("select[name=musicModel]").options, option => option.text)')), ["Lyria 3.5", "Lyria 3 Clip Preview (30 seconds)"]);
@@ -194,7 +194,7 @@ try {
       : window.fetchBeforeGeneration(input, options);`);
   run("find", "role", "button", "click", "--name", "generate music");
   run("wait", "--text", "generating track...");
-  assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
+  assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
   run("eval", 'window.finishGeneration(); window.fetch = window.fetchBeforeGeneration');
   run("wait", "--text", "Failed to fetch");
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
@@ -339,13 +339,13 @@ try {
   assert.equal(run("eval", 'document.querySelector("footer audio").getAttribute("src")'), JSON.stringify(audioUrl));
   // Failed resets preserve the draft and tracks; successful resets clear both.
   run("network", "route", "**/api/reset", "--body", '{"status":"failed"}');
-  run("find", "role", "button", "click", "--name", "Clear", "--exact");
+  run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("wait", "--text", "Error: Conversation reset failed.");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "14");
   run("network", "unroute", "**/api/reset");
   run("network", "route", "**/api/reset", "--abort");
-  run("find", "role", "button", "click", "--name", "Clear", "--exact");
+  run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 5');
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
   assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
@@ -353,14 +353,14 @@ try {
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "14");
   run("network", "unroute", "**/api/reset");
   run("network", "route", "**/api/reset", "--body", '{"status":"ok"}');
-  run("find", "role", "button", "click", "--name", "Clear", "--exact");
+  run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("wait", "--text", "Conversation cleared.");
   run("wait", "--text", "0 / 40 messages");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.value === "")'), "true");
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "0");
-  assert.equal(run("eval", 'document.querySelector("aside button").disabled'), "true");
+  assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
   console.log("Chat E2E passed: chat recovery, music confirmation, uploads, stem separation, and echo removal recovery.");
 } finally {
   try { unlinkSync(uploadPath); } catch { /* No upload fixture to remove. */ }
