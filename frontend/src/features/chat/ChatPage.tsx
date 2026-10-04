@@ -9,8 +9,9 @@ import { isMusicPrompt } from "./musicPrompt";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage() {
-  const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, context, contextError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload } = useChat();
+  const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -75,16 +76,39 @@ export function ChatPage() {
           </main>
 
           <footer className="flex-none pt-4 border-t border-white/10">
-            <label className="mb-3 flex flex-col gap-1 text-xs text-zinc-400">
-              upload audio
-              <input type="file" accept=".mp3,.wav,.flac,.ogg" disabled={loading}
-                className="min-w-0 max-w-full text-xs file:mr-2 file:rounded-lg file:border file:border-white/10 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-zinc-200 disabled:opacity-50"
+            <div className="mb-3 space-y-3">
+              <div className="flex items-center gap-3">
+                <button type="button" disabled={loading} onClick={() => audioInputRef.current?.click()}
+                  className="shrink-0 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-50">
+                  {activity === "uploading audio..." ? "uploading audio..." : pendingAudio ? "replace audio" : "upload audio"}
+                </button>
+                {!pendingAudio && <span className="text-xs text-zinc-500">no file selected</span>}
+              </div>
+              <input ref={audioInputRef} type="file" accept=".mp3,.wav,.flac,.ogg" disabled={loading}
+                aria-label="upload audio" className="hidden"
                 onChange={(event) => {
                   const file = event.currentTarget.files?.[0];
                   event.currentTarget.value = "";
                   if (file) void upload(file);
                 }} />
-            </label>
+              {pendingAudio && (
+                <div className="min-w-0 space-y-2 rounded-xl border border-white/10 bg-zinc-900/80 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-all text-xs font-medium text-zinc-200">{pendingAudio.name}</p>
+                      <p className="mt-1 text-xs text-zinc-400">attached to your next message</p>
+                    </div>
+                    <button type="button" disabled={loading} onClick={removeAudio} aria-label="remove attached audio"
+                      className="shrink-0 rounded-lg px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-50">
+                      remove
+                    </button>
+                  </div>
+                  <audio controls preload="none" src={pendingAudio.url}
+                    aria-label={`attached audio: ${pendingAudio.name}`} className="h-10 w-full" />
+                </div>
+              )}
+              {uploadError && <p role="alert" className="text-xs text-red-400">{uploadError}</p>}
+            </div>
             <AiInput
               placeholder="Ask Nemotron Super..."
               onSubmit={(text) => send(text)}

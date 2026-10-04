@@ -28,6 +28,8 @@ export function useChat() {
   const [updatedMusicFields, setUpdatedMusicFields] = useState<(keyof MusicPrompt)[]>([]);
   const [musicModel, setMusicModel] = useState("lyria-3.5");
   const [musicError, setMusicError] = useState<string>();
+  const [pendingAudio, setPendingAudio] = useState<AudioTrack>();
+  const [uploadError, setUploadError] = useState<string>();
   const [context, setContext] = useState<ChatContext>();
   const [contextError, setContextError] = useState<string>();
   const contextRequest = useRef(0);
@@ -62,15 +64,21 @@ export function useChat() {
     if (!message || busy.current) return;
 
     busy.current = true;
+    const attachment = audioUrl ? undefined : pendingAudio;
+    if (attachment) {
+      setPendingAudio(undefined);
+      setUploadError(undefined);
+    }
     setUpdatedMusicFields([]);
     setActivity('thinking...');
-    setMessages((previous) => [...previous, { role: "user", text: message }]);
+    setMessages((previous) => [...previous, { role: "user", text: message, audio: attachment }]);
 
-    if (audioUrl) currentAudio.current = audioUrl;
+    if (audioUrl || attachment) currentAudio.current = audioUrl ?? attachment?.url;
     const result = await sendMessage(message, currentAudio.current, musicPrompt, setActivity).catch(
-      (error: unknown) => ({ reply: `Error: ${errorMessage(error)}` }),
+      (error: unknown) => ({ reply: `Error: ${errorMessage(error)}`, failed: true }),
     );
 
+    if (attachment && "failed" in result) setPendingAudio(attachment);
     if ("cleanedAudio" in result && result.cleanedAudio) currentAudio.current = result.cleanedAudio.url;
     if ("musicPrompt" in result && result.musicPrompt) {
       const nextPrompt = result.musicPrompt;
@@ -91,14 +99,22 @@ export function useChat() {
   async function upload(file: File): Promise<void> {
     if (busy.current) return;
     busy.current = true;
+    setUploadError(undefined);
     setActivity('uploading audio...');
     const result = await uploadAudio(file).catch((error: unknown) => new Error(errorMessage(error)));
-    if (!(result instanceof Error)) currentAudio.current = result.url;
-    setMessages((previous) => [...previous, result instanceof Error
-      ? { role: "agent", text: `Error: ${result.message}` }
-      : { role: "user", text: result.name, audio: result }]);
+    if (result instanceof Error) {
+      setUploadError(result.message);
+    } else {
+      setPendingAudio(result);
+    }
     busy.current = false;
     setActivity(undefined);
+  }
+
+  function removeAudio(): void {
+    if (busy.current) return;
+    setPendingAudio(undefined);
+    setUploadError(undefined);
   }
 
   function editMusicPrompt(field: keyof MusicPrompt, value: string): void {
@@ -153,6 +169,8 @@ export function useChat() {
       setContext({ messages: 0, limit: context?.limit ?? 40 });
       setContextError(undefined);
       currentAudio.current = undefined;
+      setPendingAudio(undefined);
+      setUploadError(undefined);
       setMusicPrompt(emptyMusicPrompt);
       setUpdatedMusicFields([]);
       setMusicModel("lyria-3.5");
@@ -166,5 +184,5 @@ export function useChat() {
     setActivity(undefined);
   }
 
-  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, context, contextError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload };
+  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio };
 }

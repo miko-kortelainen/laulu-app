@@ -91,8 +91,11 @@ export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
           </div>
         )}
         {message.audio && (
-          <audio controls preload="none" src={message.audio.url}
-            aria-label={`uploaded audio: ${message.audio.name}`} className="mt-3 max-w-full" />
+          <div className="mt-3 space-y-2">
+            <p className="text-xs opacity-70">{message.audio.name}</p>
+            <audio controls preload="none" src={message.audio.url}
+              aria-label={`uploaded audio: ${message.audio.name}`} className="max-w-full" />
+          </div>
         )}
         {sourceUrl && (
           <>

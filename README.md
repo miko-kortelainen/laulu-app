@@ -318,9 +318,12 @@ Its SHA-256 is `87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e
 The runner loads these local files and does not download models during separation.
 
 Use **upload audio** to add an MP3, WAV, FLAC, or OGG file. Uploads must be mono
-or stereo, at most 50 MB, and no longer than 10 minutes. Click **separate stems**
+or stereo, at most 50 MB, and no longer than 10 minutes. The attachment area shows
+the filename and an audio player. You can replace or remove it before sending.
+Send a message to attach the audio to that message. A failed upload or send keeps
+the previous attachment available. Click **separate stems**
 on an uploaded or generated track, or ask the agent to isolate its vocals or
-create an instrumental version. Chat requests use the latest uploaded or generated
+create an instrumental version. Chat requests use the latest sent attachment or generated
 track, or the track or stem most recently selected with an audio action button.
 A successful cleanup selects its cleaned output for follow-up requests.
 
