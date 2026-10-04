@@ -2,8 +2,8 @@ import { tool, type ToolContext } from '@strands-agents/sdk';
 import { traceable } from 'langsmith/traceable';
 import { processAudio, type AudioTrack } from './audio.js';
 
-export async function removeEcho(audioUrl: unknown): Promise<AudioTrack> {
-  const url = await processAudio(audioUrl, 'cleaned');
+export async function removeEcho(audioUrl: unknown, userId: unknown): Promise<AudioTrack> {
+  const url = await processAudio(audioUrl, 'cleaned', userId);
   return { url: `${url}/source_cleaned.wav`, name: 'cleaned audio' };
 }
 
@@ -23,7 +23,7 @@ export const removeEchoTool = tool({
   },
   callback: traceable(async (input: unknown, context: ToolContext) => {
     const audioUrl = input && typeof input === 'object' && 'audio_url' in input ? input.audio_url : undefined;
-    const audio = await removeEcho(audioUrl);
+    const audio = await removeEcho(audioUrl, context.invocationState.userId);
     context.invocationState.cleanedAudio = audio;
     return { ...audio };
   }, {

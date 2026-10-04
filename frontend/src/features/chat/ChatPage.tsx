@@ -9,7 +9,12 @@ import { isMusicPrompt } from "./musicPrompt";
 
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
-export function ChatPage() {
+export function ChatPage({ email, onLogout, signingOut, authError }: {
+  email?: string;
+  onLogout: () => Promise<void>;
+  signingOut: boolean;
+  authError?: string;
+}) {
   const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio } = useChat();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -36,6 +41,14 @@ export function ChatPage() {
           <p className="text-xs text-zinc-400">
             Powered by Nebius Token Factory & Strands Agents SDK
           </p>
+        </div>
+        <div className="min-w-0 text-right">
+          <p className="max-w-48 truncate text-xs text-zinc-400">{email}</p>
+          <button type="button" disabled={signingOut} onClick={() => void onLogout()}
+            className="mt-1 min-h-10 rounded-lg border border-white/10 px-3 py-1.5 text-xs hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
+            {signingOut ? "logging out..." : "log out"}
+          </button>
+          {authError && <p role="alert" className="text-xs text-red-300">{authError}</p>}
         </div>
       </header>
 

@@ -5,19 +5,28 @@ import { getChatContext, getOrCreateAgent, resetAgentSession } from './agent.js'
 import { getModelConfig } from './model.js';
 import { generateMusic, musicDirectory, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
+import { requireAuth } from './auth.js';
+import { userDirectory } from './user-files.js';
 
-const app = express();
+export const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+app.use('/api', requireAuth);
 app.use(express.json());
-app.use('/api/music', express.static(musicDirectory));
-app.use('/api/audio', express.static(audioDirectory));
-app.use('/api/stems', express.static(stemsDirectory));
-app.use('/api/cleaned', express.static(cleanedDirectory));
+for (const [route, directory] of [
+  ['/api/music', musicDirectory], ['/api/audio', audioDirectory],
+  ['/api/stems', stemsDirectory], ['/api/cleaned', cleanedDirectory],
+]) {
+  app.use(route, (req, res, next) => {
+    res.set('Cache-Control', 'private, no-store');
+    express.static(userDirectory(directory, res.locals.userId), { dotfiles: 'deny', index: false })(req, res, next);
+  });
+}
 
 app.post('/api/audio', express.raw({ type: 'application/octet-stream', limit: '50mb' }), async (req, res) => {
-  const audio = await uploadAudio(req.query.name, req.body).catch((error: unknown) => {
+  const audio = await uploadAudio(req.query.name, req.body, res.locals.userId).catch((error: unknown) => {
     res.status(400).json({ error: error instanceof Error ? error.message : 'audio upload failed.' });
   });
   if (audio) res.json({ audio });
@@ -30,36 +39,23 @@ app.use('/api/audio', (error: unknown, _req: Request, res: Response, _next: Next
 const busySessions = new Set<string>();
 app.use(['/api/chat', '/api/music', '/api/reset'], (req, res, next) => {
   if (req.method !== 'POST') return next();
-  const sessionId: unknown = req.body?.sessionId ?? 'default';
-  if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 200) {
-    res.status(400).json({ error: 'invalid conversation session.' });
-    return;
-  }
+  const sessionId: string = res.locals.userId;
   if (busySessions.has(sessionId)) {
     res.status(409).json({ error: 'wait for the current action to finish.' });
     return;
   }
   busySessions.add(sessionId);
-  res.locals.sessionId = sessionId;
   next();
-});
-
-// Health & Status
-app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({
-    status: 'ok',
-    config: getModelConfig(),
-  });
 });
 
 // Chat endpoint
 app.get('/api/context', (_req: Request, res: Response) => {
-  res.json(getChatContext());
+  res.json(getChatContext(res.locals.userId));
 });
 
 app.post('/api/chat', async (req: Request, res: Response) => {
   const message: unknown = req.body?.message;
-  const sessionId: string = res.locals.sessionId;
+  const sessionId: string = res.locals.userId;
   const streamProgress = req.get('accept') === 'application/x-ndjson';
   const removeHooks: (() => void)[] = [];
   const send = (data: unknown): void => {
@@ -76,7 +72,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 
   try {
     const audioUrl: unknown = req.body?.audioUrl;
-    if (audioUrl !== undefined) audioPath(audioUrl);
+    if (audioUrl !== undefined) audioPath(audioUrl, sessionId);
     const musicPrompt = req.body?.musicPrompt === undefined ? '' : validateMusicPrompt(req.body.musicPrompt);
     const agent = getOrCreateAgent(sessionId);
     if (streamProgress) {
@@ -116,7 +112,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 
 // Only this explicit confirmation request can make a paid Lyria call.
 app.post('/api/music', async (req: Request, res: Response) => {
-  const sessionId: string = res.locals.sessionId;
+  const sessionId: string = res.locals.userId;
   let prompt: string;
   let model: ReturnType<typeof validateMusicModel>;
   try {
@@ -128,7 +124,7 @@ app.post('/api/music', async (req: Request, res: Response) => {
     return;
   }
 
-  const track = await generateMusic(prompt, model, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
+  const track = await generateMusic(prompt, model, sessionId, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
       .json({ error: error instanceof Error ? error.message : 'music generation failed.' });
   });
@@ -138,13 +134,13 @@ app.post('/api/music', async (req: Request, res: Response) => {
 
 // Reset endpoint
 app.post('/api/reset', (req: Request, res: Response) => {
-  const sessionId: string = res.locals.sessionId;
+  const sessionId: string = res.locals.userId;
   resetAgentSession(sessionId);
   busySessions.delete(sessionId);
   res.json({ status: 'ok' });
 });
 
-app.listen(PORT, () => {
+if (process.env.NODE_ENV !== 'test') app.listen(PORT, () => {
   const config = getModelConfig();
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(`Nebius Model: ${config.model}`);

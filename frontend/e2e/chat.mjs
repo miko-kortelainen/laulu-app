@@ -1,3 +1,4 @@
+import { seedAuth } from "./auth-fixture.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
@@ -18,6 +19,7 @@ function openInput() {
 }
 
 try {
+  await seedAuth(run, url);
   run("open", "about:blank");
   run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
   run("open", url);
@@ -37,11 +39,12 @@ try {
   assert.equal(run("eval", 'document.activeElement.name'), '"genre"');
   assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().left >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().right'), "true");
   run("network", "route", "**/api/**", "--body", '{"reply":"e2e reply"}');
-  run("eval", `window.chatRequests = []; window.musicRequests = []; window.contextMessages = 6; const originalFetch = window.fetch;
+  run("eval", `window.chatRequests = []; window.musicRequests = []; window.mediaRequests = []; window.contextMessages = 6; const originalFetch = window.fetch;
     window.fetch = (input, options) => {
       if (input === "/api/context") return Promise.resolve(Response.json({ messages: window.contextMessages, limit: 40 }));
       if (input === "/api/chat") window.chatRequests.push(JSON.parse(options.body));
       if (input === "/api/music") window.musicRequests.push(JSON.parse(options.body));
+      if (/^\\/api\\/(audio|music|stems|cleaned)\\//.test(input)) window.mediaRequests.push({ url: input, authorization: new Headers(options.headers).get('authorization') });
       return originalFetch(input, options);
     };`);
 
@@ -234,8 +237,25 @@ try {
   run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "stems are ready.", stems }));
   run("find", "role", "button", "click", "--name", "separate stems");
   run("wait", "--text", "download vocals WAV");
-  assert.equal(run("eval", 'document.querySelector("audio[aria-label=vocals]").getAttribute("src")'), JSON.stringify(stems.vocalsUrl));
-  assert.equal(run("eval", 'document.querySelector("audio[aria-label=instrumental]").getAttribute("src")'), JSON.stringify(stems.instrumentalUrl));
+  run("wait", "--fn", 'document.querySelector("audio[aria-label=vocals]").getAttribute("src")?.startsWith("blob:")');
+  run("wait", "--fn", 'document.querySelector("audio[aria-label=instrumental]").getAttribute("src")?.startsWith("blob:")');
+  assert.equal(run("eval", 'window.mediaRequests.length >= 3 && window.mediaRequests.every(request => request.authorization?.startsWith("Bearer "))'), "true");
+
+  // Private downloads report HTTP failure and retry with an authenticated blob.
+  run("eval", `window.fetchBeforeDownload = window.fetch; window.failDownload = true;
+    window.fetch = (input, options) => input === ${JSON.stringify(stems.vocalsUrl)} && window.failDownload
+      ? Promise.resolve(new Response(null, { status: 503 })) : window.fetchBeforeDownload(input, options);
+    window.anchorClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () { window.downloadedAudio = { href: this.href, name: this.download }; };`);
+  run("find", "role", "button", "click", "--name", "download vocals WAV", "--exact");
+  run("wait", "--text", "could not download audio. try again.");
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "3");
+  run("eval", "window.failDownload = false");
+  run("find", "role", "button", "click", "--name", "download vocals WAV", "--exact");
+  run("wait", "--fn", 'window.downloadedAudio?.href.startsWith("blob:")');
+  assert.equal(run("eval", "window.downloadedAudio.name"), '"vocals.wav"');
+  assert.equal(run("eval", 'window.mediaRequests.at(-1).authorization.startsWith("Bearer ")'), "true");
+  run("eval", "window.fetch = window.fetchBeforeDownload; HTMLAnchorElement.prototype.click = window.anchorClick");
 
   // Upload failure leaves prior results intact; the same file can be uploaded again.
   writeFileSync(uploadPath, "mock WAV upload");
@@ -252,7 +272,7 @@ try {
   run("upload", 'input[type="file"]', uploadPath);
   run("wait", "--text", "uploaded track.wav");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("uploaded track.wav")'), "false");
-  assert.equal(run("eval", 'document.querySelector("footer audio").getAttribute("src")'), JSON.stringify(audioUrl));
+  run("wait", "--fn", 'document.querySelector("footer audio").getAttribute("src")?.startsWith("blob:")');
   assert.equal(run("eval", 'window.chatRequests.length'), requestsBeforeUpload);
   run("set", "viewport", "390", "844");
   assert.equal(run("eval", 'document.documentElement.scrollWidth <= window.innerWidth'), "true");
@@ -268,7 +288,7 @@ try {
   run("network", "route", "**/api/audio?*", "--abort");
   run("upload", 'input[type="file"]', uploadPath);
   run("wait", "--fn", 'document.querySelector("footer > div > [role=alert]")?.textContent === "Failed to fetch"');
-  assert.equal(run("eval", 'document.querySelector("footer audio").getAttribute("src")'), JSON.stringify(audioUrl));
+  run("wait", "--fn", 'document.querySelector("footer audio").getAttribute("src")?.startsWith("blob:")');
   run("network", "unroute", "**/api/chat");
   run("network", "route", "**/api/chat", "--body", '{"reply":"audio received."}');
   run("eval", `window.fetchBeforeAttachment = window.fetch;
@@ -280,7 +300,7 @@ try {
   run("click", send);
   run("wait", "--text", "thinking...");
   assert.equal(run("eval", 'document.querySelector("footer audio")'), "null");
-  assert.equal(run("eval", 'document.querySelector(\'main audio[aria-label^="uploaded audio:"]\').getAttribute("src")'), JSON.stringify(audioUrl));
+  run("wait", "--fn", 'document.querySelector(\'main audio[aria-label^="uploaded audio:"]\').getAttribute("src")?.startsWith("blob:")');
   run("eval", 'window.finishAttachment(); window.fetch = window.fetchBeforeAttachment');
   run("wait", "--text", "audio received.");
   assert.equal(run("eval", 'document.querySelector("footer audio")'), "null");
@@ -314,10 +334,10 @@ try {
   };
   run("network", "unroute", "**/api/chat");
   run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "cleaned audio is ready.", cleanedAudio }));
-  run("click", 'button[aria-label="remove echo/reverb from vocals"]:first-of-type');
+  run("find", "first", 'button[aria-label="remove echo/reverb from vocals"]', "click");
   run("wait", "--text", "download cleaned audio WAV");
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(stems.vocalsUrl));
-  assert.equal(run("eval", 'document.querySelector(`audio[aria-label="cleaned audio"]`).getAttribute("src")'), JSON.stringify(cleanedAudio.url));
+  run("wait", "--fn", 'document.querySelector(`audio[aria-label="cleaned audio"]`).getAttribute("src")?.startsWith("blob:")');
   openInput();
   run("fill", "textarea:not([name])", "clean it again");
   run("click", send);
@@ -336,7 +356,7 @@ try {
   run("fill", "textarea:not([name])", "check this attachment");
   run("click", send);
   run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 4');
-  assert.equal(run("eval", 'document.querySelector("footer audio").getAttribute("src")'), JSON.stringify(audioUrl));
+  run("wait", "--fn", 'document.querySelector("footer audio").getAttribute("src")?.startsWith("blob:")');
   // Failed resets preserve the draft and tracks; successful resets clear both.
   run("network", "route", "**/api/reset", "--body", '{"status":"failed"}');
   run("find", "role", "button", "click", "--name", "new session", "--exact");

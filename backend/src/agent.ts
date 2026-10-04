@@ -11,11 +11,11 @@ import { analyzeAudioTool } from './analysis.js';
 const agents = new Map<string, Agent>();
 const contextWindowSize = 40;
 
-export function getChatContext(sessionId: string = 'default'): { messages: number; limit: number } {
+export function getChatContext(sessionId: string): { messages: number; limit: number } {
   return { messages: agents.get(sessionId)?.messages.length ?? 0, limit: contextWindowSize };
 }
 
-export function getOrCreateAgent(sessionId: string = 'default'): Agent {
+export function getOrCreateAgent(sessionId: string): Agent {
   if (agents.has(sessionId)) {
     return agents.get(sessionId)!;
   }
@@ -34,6 +34,7 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   const invoke = agent.invoke.bind(agent);
   agent.invoke = traceable((...args: Parameters<Agent['invoke']>) => invoke(args[0], {
     ...args[1],
+    invocationState: { ...args[1]?.invocationState, userId: sessionId },
     limits: { turns: 6, outputTokens: 12_288, totalTokens: 30_000 },
   }), {
     name: 'musical-copilot',
@@ -45,6 +46,6 @@ export function getOrCreateAgent(sessionId: string = 'default'): Agent {
   return agent;
 }
 
-export function resetAgentSession(sessionId: string = 'default') {
+export function resetAgentSession(sessionId: string) {
   agents.delete(sessionId);
 }

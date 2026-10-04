@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile, unlink } from 'node:fs/promises';
 import test from 'node:test';
 import type { ToolContext } from '@strands-agents/sdk';
-import { generateMusic, updateMusicFormTool, musicDirectory, MusicPromptTokenLimitError } from '../src/music.js';
+import { generateMusic as generateUserMusic, updateMusicFormTool, musicDirectory, MusicPromptTokenLimitError } from '../src/music.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
+
+const userId = '10000000-0000-4000-8000-000000000001';
+const generateMusic = (prompt: string, model?: unknown) => generateUserMusic(prompt, model, userId);
 
 test('music waits for confirmation, validates responses, and saves only valid audio', async () => {
   const prompt = 'Indie folk, warm acoustic guitar and soft brushed drums, relaxed at 82 BPM in G major. ' +
@@ -141,7 +144,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
       assert.equal(tokenCalls, previousTokenCalls + 1);
       assert.equal(calls, previousCalls + 1);
       assert.match(track.url, /^\/api\/music\/[0-9a-f-]{36}\.mp3$/);
-      savedPath = `${musicDirectory}${track.url.split('/').at(-1)}`;
+      savedPath = `${musicDirectory}${userId}/${track.url.split('/').at(-1)}`;
       assert.deepEqual(await readFile(savedPath), bytes);
       assert.equal(track.lyrics, 'Tiny paws in the morning dew,\nA world of green and a sky of blue.\n\nchorus');
       await unlink(savedPath);

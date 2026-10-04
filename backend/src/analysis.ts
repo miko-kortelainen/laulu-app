@@ -9,12 +9,12 @@ import { getAiGateway } from './gateway.js';
 const model = 'qwen3.8-omni-flash';
 const instructions = readFileSync(new URL('../prompts/analysis.md', import.meta.url), 'utf8').trim();
 
-export async function analyzeAudio(audioUrl: unknown, question: unknown): Promise<string> {
+export async function analyzeAudio(audioUrl: unknown, question: unknown, userId: unknown): Promise<string> {
   if (typeof question !== 'string' || !question.trim() || question.length > 2_000) {
     throw new Error('audio analysis question must contain 1–2,000 characters.');
   }
   const gateway = getAiGateway('qwencloud', model);
-  const audio = await prepareAnalysisAudio(audioUrl);
+  const audio = await prepareAnalysisAudio(audioUrl, userId);
   // Trace the question and source URL, never the audio bytes or credentials.
   const tracingOptions = {
     name: 'QwenOmni',
@@ -72,7 +72,7 @@ export const analyzeAudioTool = tool({
     context.invocationState.audioAnalysisAttempted = true;
     const fields = input && typeof input === 'object' ? input : {};
     return await analyzeAudio('audio_url' in fields ? fields.audio_url : undefined,
-      'question' in fields ? fields.question : undefined);
+      'question' in fields ? fields.question : undefined, context.invocationState.userId);
   }, {
     name: 'analyze_audio', run_type: 'tool',
     processInputs: ({ args }) => ({ request: args[0] }),

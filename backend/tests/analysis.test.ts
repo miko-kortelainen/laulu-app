@@ -9,11 +9,15 @@ import { promisify } from 'node:util';
 import test from 'node:test';
 import type { ToolContext } from '@strands-agents/sdk';
 import { Client } from 'langsmith';
-import { analyzeAudio, analyzeAudioTool } from '../src/analysis.js';
-import { audioDirectory, prepareAnalysisAudio } from '../src/audio.js';
+import { analyzeAudio as analyzeUserAudio, analyzeAudioTool } from '../src/analysis.js';
+import { audioDirectory, prepareAnalysisAudio as prepareUserAnalysisAudio } from '../src/audio.js';
 import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { getModelId } from '../src/model.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
+
+const userId = '10000000-0000-4000-8000-000000000004';
+const analyzeAudio = (url: unknown, question: unknown) => analyzeUserAudio(url, question, userId);
+const prepareAnalysisAudio = (url: unknown) => prepareUserAnalysisAudio(url, userId);
 
 const runFile = promisify(execFile);
 const python = fileURLToPath(new URL('../audio-processing/.venv/bin/python', import.meta.url));
@@ -57,16 +61,16 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
   const runs: Parameters<Client['createRun']>[0][] = [];
   const updates = new Map<string, Parameters<Client['updateRun']>[1]>();
   const filename = `${randomUUID()}.wav`;
-  const source = path.join(audioDirectory, filename);
+  const source = path.join(audioDirectory, userId, filename);
   const audioUrl = `/api/audio/${filename}`;
   const audio = wav();
-  const sessionId = `analysis-${randomUUID()}`;
+  const sessionId = userId;
   const question = 'describe the instruments and suggest two changes';
   const observation = 'a repeating tone is audible; instrument identity is uncertain.';
   let mainCalls = 0;
   let qwenCalls = 0;
   let mode: 'success' | 'http' | 'empty' | 'truncated' | 'reasoning' | 'brokenStream' = 'success';
-  await mkdir(audioDirectory, { recursive: true });
+  await mkdir(path.join(audioDirectory, userId), { recursive: true });
   await writeFile(source, audio);
   process.env.LANGSMITH_TRACING = 'true';
   Client.prototype.createRun = async (run) => { runs.push(run); };
@@ -135,7 +139,7 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
 
     // Failures preserve existing feature state and cannot trigger a second Qwen attempt.
     for (mode of ['http', 'empty', 'truncated', 'reasoning', 'brokenStream']) {
-      const invocationState = { musicPrompt: { genre: 'folk' }, cleanedAudio: { url: audioUrl, name: 'original' } };
+      const invocationState = { userId, musicPrompt: { genre: 'folk' }, cleanedAudio: { url: audioUrl, name: 'original' } };
       const beforeFailure = qwenCalls;
       await assert.rejects(analyzeAudioTool.invoke({ audio_url: audioUrl, question }, { invocationState } as ToolContext),
         mode === 'http' ? /offline quota exhausted/ : /complete answer/);
@@ -164,11 +168,11 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
 test('FLAC, OGG, and a full ten-minute WAV fit inline analysis without replacing originals', { timeout: 90_000 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'analysis-test-'));
   const sources: string[] = [];
-  await mkdir(audioDirectory, { recursive: true });
+  await mkdir(path.join(audioDirectory, userId), { recursive: true });
   try {
     for (const format of ['flac', 'ogg', 'wav']) {
       const filename = `${randomUUID()}.${format}`;
-      const source = path.join(audioDirectory, filename);
+      const source = path.join(audioDirectory, userId, filename);
       sources.push(source);
       const duration = format === 'wav' ? 600 : 2;
       await runFile(python, ['-c',

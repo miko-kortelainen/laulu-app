@@ -13,7 +13,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
   const originalTracing = process.env.LANGSMITH_TRACING;
   const runs: Parameters<Client['createRun']>[0][] = [];
   const updates = new Map<string, Parameters<Client['updateRun']>[1]>();
-  const sessionId = 'offline-tracing-test';
+  const sessionId = '10000000-0000-4000-8000-000000000002';
   const prompt = {
     genre: 'folk', mood: 'gentle', key: 'G major', bpm: '80', duration: '',
     instruments: 'acoustic guitar', vocals: 'instrumental only, no vocals',
@@ -77,7 +77,7 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     assert.deepEqual(revision.invocationState.musicPrompt, revisedPrompt);
     assert.equal(modelCalls, 4);
 
-    await assert.rejects(generateMusic('', 'lyria-3.5', { metadata: { thread_id: sessionId } }), /music prompt/);
+    await assert.rejects(generateMusic('', 'lyria-3.5', sessionId, { metadata: { thread_id: sessionId } }), /music prompt/);
     const audio = runs.find((run) => run.name === 'generate_audio');
     assert.ok(audio?.id);
     assert.equal(audio.extra?.metadata?.thread_id, sessionId);

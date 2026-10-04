@@ -1,3 +1,4 @@
+import { seedAuth } from "./auth-fixture.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFile, writeFile, unlink } from "node:fs/promises";
@@ -66,7 +67,7 @@ const server = createServer(async (request, response) => {
     return response.end(wav);
   }
   const path = pathname === "/" ? "index.html" : pathname.slice(1);
-  const file = await readFile(new URL(`../dist/${path}`, import.meta.url)).catch(() => undefined);
+  const file = await readFile(`${process.env.E2E_DIST}/${path}`).catch(() => undefined);
   if (!file) {
     response.writeHead(404);
     return response.end();
@@ -80,7 +81,7 @@ try {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   assert.ok(address && typeof address !== "string");
-  await run("open", `http://127.0.0.1:${address.port}`);
+  await seedAuth(run, `http://127.0.0.1:${address.port}`);
   await run("wait", "--text", "0 / 40 messages");
   await run("upload", 'input[type="file"]', fixturePath);
   await run("wait", "--fn", `${media}?.duration === 8 && document.querySelector('footer svg path') !== null`);

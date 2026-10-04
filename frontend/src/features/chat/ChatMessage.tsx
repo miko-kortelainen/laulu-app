@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { AudioPlayer } from "@/components/ui/audio-player";
+import { AudioDownload } from "@/components/ui/audio-download";
 import type { Message } from "./useChat";
 
 function MessageContent({ text }: { text: string }) {
@@ -68,13 +69,7 @@ export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
           <div className="mt-3 space-y-3">
             <AudioPlayer src={message.track.url} label="generated music" className="w-full" />
             <div>
-              <a
-                href={message.track.url}
-                download
-                className="text-xs text-zinc-300 underline underline-offset-4 hover:text-white"
-              >
-                download MP3
-              </a>
+              <AudioDownload url={message.track.url} name="generated-music.mp3">download MP3</AudioDownload>
             </div>
             {message.track.lyrics && (
               <details className="rounded-lg border border-white/10 bg-zinc-900/40 p-3 text-xs">
@@ -118,9 +113,7 @@ export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
               <div key={stem.name} className="space-y-1">
                 <p className="text-xs">{stem.name}</p>
                 <AudioPlayer src={stem.url} label={stem.name} className="w-full" />
-                <a href={stem.url} download className="text-xs underline underline-offset-4 hover:text-white">
-                  download {stem.name} WAV
-                </a>
+                <AudioDownload url={stem.url} name={`${stem.name}.wav`}>{`download ${stem.name} WAV`}</AudioDownload>
                 <button type="button" disabled={loading} onClick={() => onRemoveEcho(stem.url)}
                   aria-label={`remove echo/reverb from ${stem.name}`}
                   className="ml-2 rounded-lg border border-current/20 px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50">

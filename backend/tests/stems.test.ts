@@ -5,9 +5,13 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { ToolContext } from '@strands-agents/sdk';
-import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from '../src/audio.js';
+import { audioDirectory, audioPath as userAudioPath, cleanedDirectory, stemsDirectory, uploadAudio as uploadUserAudio } from '../src/audio.js';
 import { separateStemsTool } from '../src/stems.js';
 import { removeEchoTool } from '../src/dereverb.js';
+
+const userId = '10000000-0000-4000-8000-000000000003';
+const audioPath = (url: unknown) => userAudioPath(url, userId);
+const uploadAudio = (name: unknown, data: unknown) => uploadUserAudio(name, data, userId);
 
 const python = fileURLToPath(new URL('../audio-processing/.venv/bin/python', import.meta.url));
 
@@ -33,9 +37,9 @@ test('local audio tools validate uploads, return playable stems and cleaned audi
   await assert.rejects(uploadAudio('track.exe', Buffer.from('audio')), /MP3, WAV/);
   await assert.rejects(uploadAudio('track.wav', Buffer.alloc(0)), /audio upload/);
   await assert.rejects(uploadAudio('track.wav', Buffer.alloc(50 * 1024 * 1024 + 1)), /audio upload/);
-  const before = await readdir(audioDirectory).catch(() => []);
+  const before = await readdir(path.join(audioDirectory, userId)).catch(() => []);
   await assert.rejects(uploadAudio('broken.wav', Buffer.from('not audio')), /Format not recognised/);
-  assert.deepEqual(await readdir(audioDirectory), before);
+  assert.deepEqual(await readdir(path.join(audioDirectory, userId)), before);
 
   const input = sampleAudio();
   const audio = await uploadAudio('my voice.wav', input);
@@ -44,7 +48,7 @@ test('local audio tools validate uploads, return playable stems and cleaned audi
   try {
     assert.equal(audio.name, 'my voice.wav');
     assert.deepEqual(await readFile(audioPath(audio.url)), input);
-    const invocationState: Record<string, unknown> = {};
+    const invocationState: Record<string, unknown> = { userId };
     const context = { invocationState } as ToolContext;
     const result = await separateStemsTool.invoke({ audio_url: audio.url }, context);
     assert.deepEqual(invocationState.stems, result);
@@ -54,7 +58,7 @@ test('local audio tools validate uploads, return playable stems and cleaned audi
     const vocalsUrl = String(result.vocalsUrl);
     assert.match(vocalsUrl, /^\/api\/stems\/[0-9a-f-]{36}\/source_vocals\.wav$/);
     assert.equal(result.instrumentalUrl, vocalsUrl.replace('vocals', 'instrumental'));
-    outputDirectory = path.join(stemsDirectory, vocalsUrl.split('/')[3]);
+    outputDirectory = path.join(stemsDirectory, userId, vocalsUrl.split('/')[3]);
     execFileSync(python, ['-c', `
 import sys, numpy as np, soundfile as sf
 for stem in ("vocals", "instrumental"):
@@ -72,7 +76,7 @@ for stem in ("vocals", "instrumental"):
       assert.ok(cleaned && typeof cleaned === 'object' && !Array.isArray(cleaned));
       const cleanedUrl = String(cleaned.url);
       assert.match(cleanedUrl, /^\/api\/cleaned\/[0-9a-f-]{36}\/source_cleaned\.wav$/);
-      cleanedOutputs.push(path.join(cleanedDirectory, cleanedUrl.split('/')[3]));
+      cleanedOutputs.push(path.join(cleanedDirectory, userId, cleanedUrl.split('/')[3]));
       execFileSync(python, ['-c', `
 import sys, numpy as np, soundfile as sf
 samples, rate = sf.read(sys.argv[1], always_2d=True)

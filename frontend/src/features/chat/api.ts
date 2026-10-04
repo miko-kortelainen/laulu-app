@@ -1,4 +1,5 @@
 import { formatMusicPrompt, isMusicPrompt, type MusicPrompt } from "./musicPrompt";
+import { authenticatedFetch } from "@/lib/api";
 
 export interface ChatReply {
   reply: string;
@@ -13,7 +14,7 @@ export interface ChatContext {
 }
 
 export async function getChatContext(): Promise<ChatContext> {
-  const response = await fetch("/api/context");
+  const response = await authenticatedFetch("/api/context");
   if (!response.ok) throw new Error("could not load conversation context.");
   const data: unknown = await response.json();
   if (!data || typeof data !== "object" ||
@@ -70,7 +71,7 @@ async function readChatResponse(response: Response, onStatus: (status: string) =
 }
 
 export async function sendMessage(message: string, audioUrl: string | undefined, musicPrompt: MusicPrompt, onStatus: (status: string) => void): Promise<ChatReply> {
-  const response = await fetch("/api/chat", {
+  const response = await authenticatedFetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
     body: JSON.stringify({ message, audioUrl, musicPrompt: JSON.stringify(musicPrompt) }),
@@ -123,7 +124,7 @@ export async function uploadAudio(file: File): Promise<AudioTrack> {
   if (!/\.(mp3|wav|flac|ogg)$/i.test(file.name) || !file.size || file.size > 50 * 1024 * 1024) {
     throw new Error("Choose an MP3, WAV, FLAC, or OGG file up to 50 MB.");
   }
-  const response = await fetch(`/api/audio?name=${encodeURIComponent(file.name)}`, {
+  const response = await authenticatedFetch(`/api/audio?name=${encodeURIComponent(file.name)}`, {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream" },
     body: file,
@@ -148,7 +149,7 @@ export async function generateMusic(fields: MusicPrompt, model: string): Promise
   if (!prompt.trim() || prompt.length > 10_000) {
     throw new Error("Music prompt must contain 1–10,000 characters.");
   }
-  const response = await fetch("/api/music", {
+  const response = await authenticatedFetch("/api/music", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, model }),
@@ -170,10 +171,8 @@ export async function generateMusic(fields: MusicPrompt, model: string): Promise
 }
 
 export async function resetChat(): Promise<void> {
-  const response = await fetch("/api/reset", {
+  const response = await authenticatedFetch("/api/reset", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId: "default" }),
   });
 
   const data: unknown = response.ok ? await response.json() : undefined;

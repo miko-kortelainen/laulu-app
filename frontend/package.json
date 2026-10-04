@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test:e2e": "node e2e/chat.mjs",
-    "test:audio": "node e2e/audio-player.mjs",
+    "test:e2e": "node e2e/run.mjs chat",
+    "test:audio": "node e2e/run.mjs audio-player",
+    "test:auth": "node e2e/run.mjs auth",
+    "test:all": "node e2e/run.mjs all",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.117.2",
     "clsx": "^2.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

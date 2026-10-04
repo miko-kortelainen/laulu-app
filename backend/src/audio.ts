@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { musicDirectory } from './music.js';
+import { userDirectory } from './user-files.js';
 
 export const audioDirectory = fileURLToPath(new URL('../uploaded-audio/', import.meta.url));
 export const stemsDirectory = fileURLToPath(new URL('../separated-audio/', import.meta.url));
@@ -23,17 +24,17 @@ export interface AudioTrack {
   name: string;
 }
 
-export function audioPath(value: unknown): string {
+export function audioPath(value: unknown, userId: unknown): string {
   const processed = typeof value === 'string' ? processedUrlPattern.exec(value) : null;
   if (processed && ((processed[1] === 'stems' && processed[4] !== 'cleaned') ||
       (processed[1] === 'cleaned' && processed[4] === 'cleaned'))) {
-    return path.join(processed[1] === 'stems' ? stemsDirectory : cleanedDirectory, processed[2], processed[3]);
+    return path.join(userDirectory(processed[1] === 'stems' ? stemsDirectory : cleanedDirectory, userId), processed[2], processed[3]);
   }
   const match = typeof value === 'string' ? audioUrlPattern.exec(value) : null;
   if (!match || (match[1] === 'music' && match[3] !== 'mp3')) {
     throw new Error('choose a generated track or upload an MP3, WAV, FLAC, or OGG file first.');
   }
-  return path.join(match[1] === 'music' ? musicDirectory : audioDirectory, match[2]);
+  return path.join(userDirectory(match[1] === 'music' ? musicDirectory : audioDirectory, userId), match[2]);
 }
 
 async function runProcessor(script: string, args: string[], timeout: number): Promise<void> {
@@ -53,8 +54,8 @@ async function runProcessor(script: string, args: string[], timeout: number): Pr
   });
 }
 
-export async function prepareAnalysisAudio(audioUrl: unknown): Promise<{ data: string; format: 'mp3' | 'wav' }> {
-  const source = audioPath(audioUrl);
+export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): Promise<{ data: string; format: 'mp3' | 'wav' }> {
+  const source = audioPath(audioUrl, userId);
   const file = await stat(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
   const extension = path.extname(source);
   // Leave room for the data URI prefix under the provider's 10 MB base64 limit.
@@ -73,7 +74,7 @@ export async function prepareAnalysisAudio(audioUrl: unknown): Promise<{ data: s
   }
 }
 
-export async function uploadAudio(name: unknown, data: unknown): Promise<AudioTrack> {
+export async function uploadAudio(name: unknown, data: unknown, userId: unknown): Promise<AudioTrack> {
   if (typeof name !== 'string' || !name.trim() || name.length > 255 ||
       !audioExtensions.has(path.extname(name).toLowerCase())) {
     throw new Error('choose an MP3, WAV, FLAC, or OGG file.');
@@ -82,8 +83,9 @@ export async function uploadAudio(name: unknown, data: unknown): Promise<AudioTr
     throw new Error('audio upload must contain 1 byte to 50 MB.');
   }
   const filename = `${randomUUID()}${path.extname(name).toLowerCase()}`;
-  const source = path.join(audioDirectory, filename);
-  await mkdir(audioDirectory, { recursive: true });
+  const directory = userDirectory(audioDirectory, userId);
+  const source = path.join(directory, filename);
+  await mkdir(directory, { recursive: true });
   await writeFile(source, data, { flag: 'wx' });
   await runProcessor('audio.py', [source], 60_000).catch(async (error: unknown) => {
     await rm(source, { force: true });
@@ -95,12 +97,12 @@ export async function uploadAudio(name: unknown, data: unknown): Promise<AudioTr
 // ponytail: one GPU job at a time; add a queue only when concurrent users need it.
 let processing = false;
 
-export async function processAudio(audioUrl: unknown, operation: 'stems' | 'cleaned'): Promise<string> {
-  const source = audioPath(audioUrl);
+export async function processAudio(audioUrl: unknown, operation: 'stems' | 'cleaned', userId: unknown): Promise<string> {
+  const source = audioPath(audioUrl, userId);
   await access(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
   if (processing) throw new Error('another track is being processed. try again when it finishes.');
   processing = true;
-  const directory = operation === 'stems' ? stemsDirectory : cleanedDirectory;
+  const directory = userDirectory(operation === 'stems' ? stemsDirectory : cleanedDirectory, userId);
   const names = operation === 'stems' ? ['vocals', 'instrumental'] : ['cleaned'];
   let pending: string | undefined;
 

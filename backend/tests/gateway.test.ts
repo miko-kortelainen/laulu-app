@@ -25,9 +25,9 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
   const originalEnv = new Map(variables.map((name) => [name, process.env[name]]));
   const root = 'https://gateway.ai.cloudflare.com/v1/offline-account/offline-gateway';
   const calls: string[] = [];
-  const session = `gateway-${randomUUID()}`;
+  const session = randomUUID();
   const audioName = `${randomUUID()}.mp3`;
-  const audioPath = `${audioDirectory}${audioName}`;
+  const audioPath = `${audioDirectory}${session}/${audioName}`;
   const bytes = Buffer.from('ID3-offline-gateway-fixture');
   let musicPath: string | undefined;
   let fail = false;
@@ -88,8 +88,8 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
   try {
     for (const name of variables) delete process.env[name];
     assert.throws(() => getAiGateway('nebius'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
-    await assert.rejects(generateMusic('instrumental folk'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
-    await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    await assert.rejects(generateMusic('instrumental folk', undefined, session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     await assert.rejects(generateLyrics({ genre: 'folk' }, 'write a verse'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     assert.throws(() => getOrCreateAgent(session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     assert.equal(calls.length, 0);
@@ -107,18 +107,18 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     assert.equal((await getOrCreateAgent(session).invoke('hello')).toString(), 'offline answer');
     assert.equal(await generateLyrics({ genre: 'folk' }, 'write a verse'), 'offline answer');
 
-    const track = await generateMusic('instrumental folk');
-    musicPath = `${musicDirectory}${track.url.split('/').at(-1)}`;
+    const track = await generateMusic('instrumental folk', undefined, session);
+    musicPath = `${musicDirectory}${session}/${track.url.split('/').at(-1)}`;
     assert.deepEqual(await readFile(musicPath), bytes);
-    await mkdir(audioDirectory, { recursive: true });
+    await mkdir(`${audioDirectory}${session}`, { recursive: true });
     await writeFile(audioPath, bytes);
-    assert.equal(await analyzeAudio(`/api/audio/${audioName}`, 'describe this'), 'offline answer');
+    assert.equal(await analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), 'offline answer');
     assert.equal(calls.length, 5);
 
     fail = true;
-    await assert.rejects(generateMusic('instrumental folk'), /token counting failed/);
+    await assert.rejects(generateMusic('instrumental folk', undefined, session), /token counting failed/);
     assert.equal(calls.length, 6);
-    await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this'), /offline gateway failure/);
+    await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), /offline gateway failure/);
     assert.equal(calls.length, 7);
 
     fail = false;

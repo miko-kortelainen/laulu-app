@@ -7,8 +7,8 @@ export interface SeparatedStems {
   instrumentalUrl: string;
 }
 
-export async function separateStems(audioUrl: unknown): Promise<SeparatedStems> {
-  const url = await processAudio(audioUrl, 'stems');
+export async function separateStems(audioUrl: unknown, userId: unknown): Promise<SeparatedStems> {
+  const url = await processAudio(audioUrl, 'stems', userId);
   return { vocalsUrl: `${url}/source_vocals.wav`, instrumentalUrl: `${url}/source_instrumental.wav` };
 }
 
@@ -29,7 +29,7 @@ export const separateStemsTool = tool({
   },
   callback: traceable(async (input: unknown, context: ToolContext) => {
     const audioUrl = input && typeof input === 'object' && 'audio_url' in input ? input.audio_url : undefined;
-    const stems = await separateStems(audioUrl);
+    const stems = await separateStems(audioUrl, context.invocationState.userId);
     context.invocationState.stems = stems;
     return { ...stems };
   }, {

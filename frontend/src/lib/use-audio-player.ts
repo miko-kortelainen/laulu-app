@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { authenticatedFetch } from "./api";
 
-async function loadWaveform(src: string, signal: AbortSignal): Promise<string> {
-  const response = await fetch(src, { signal });
-  if (!response.ok) throw new Error("could not load waveform.");
+async function loadWaveform(blob: Blob, signal: AbortSignal): Promise<string> {
   // A low sample rate keeps waveform decoding small; playback uses the original file.
   const context = new OfflineAudioContext(1, 1, 8000);
-  const buffer = await context.decodeAudioData(await response.arrayBuffer());
+  const buffer = await context.decodeAudioData(await blob.arrayBuffer());
   signal.throwIfAborted();
   const peaks = new Float32Array(80);
 
@@ -36,20 +35,49 @@ export function useAudioPlayer(src: string) {
   const [waveform, setWaveform] = useState<string>();
   const [waveformError, setWaveformError] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
+  const blobUrl = useRef<string | undefined>(undefined);
+  const loadingAudio = useRef<Promise<void> | undefined>(undefined);
+  const controller = useRef<AbortController | undefined>(undefined);
+
+  const loadAudio = useCallback((): Promise<void> => {
+    if (loadingAudio.current) return loadingAudio.current;
+    const signal = controller.current!.signal;
+    const request = authenticatedFetch(src, { signal }).then(async (response) => {
+      if (!response.ok) throw new Error("could not load audio.");
+      const blob = await response.blob();
+      signal.throwIfAborted();
+      const audio = audioRef.current;
+      if (!audio) return;
+      if (blobUrl.current) URL.revokeObjectURL(blobUrl.current);
+      blobUrl.current = URL.createObjectURL(blob);
+      audio.src = blobUrl.current;
+      audio.load();
+      const waveform = await loadWaveform(blob, signal).catch(() => undefined);
+      if (signal.aborted) return;
+      setWaveform(waveform);
+      setWaveformError(!waveform);
+    }).finally(() => { if (loadingAudio.current === request) loadingAudio.current = undefined; });
+    loadingAudio.current = request;
+    return request;
+  }, [src]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    controller.current = new AbortController();
+    const signal = controller.current.signal;
     const audio = audioRef.current;
-    void loadWaveform(src, controller.signal).then((path) => {
-      if (!controller.signal.aborted) setWaveform(path);
-    }).catch(() => {
-      if (!controller.signal.aborted) setWaveformError(true);
+    void loadAudio().catch(() => {
+      if (signal.aborted) return;
+      setWaveformError(true);
+      setPlaybackError("could not load audio. try play again.");
     });
     return () => {
-      controller.abort();
+      controller.current?.abort();
+      loadingAudio.current = undefined;
       audio?.pause();
+      audio?.removeAttribute("src");
+      if (blobUrl.current) URL.revokeObjectURL(blobUrl.current);
     };
-  }, [src]);
+  }, [loadAudio]);
 
   useEffect(() => {
     if (!playing) return;
@@ -70,7 +98,13 @@ export function useAudioPlayer(src: string) {
       audio.pause();
       return;
     }
-    if (audio.error) audio.load();
+    if (!audio.getAttribute("src") || audio.error) {
+      const failure = await loadAudio().catch(() => new Error("could not load audio. try play again."));
+      if (failure) {
+        setPlaybackError(failure.message);
+        return;
+      }
+    }
     await audio.play().catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setPlaybackError("could not play audio. try again.");
@@ -96,7 +130,6 @@ export function useAudioPlayer(src: string) {
 
   const audioProps = {
     ref: audioRef,
-    src,
     onPlay: () => setPlaying(true),
     onPause: () => setPlaying(false),
     onEnded: () => setPlaying(false),

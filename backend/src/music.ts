@@ -7,6 +7,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { generateLyrics } from './lyrics.js';
 import { getAiGateway } from './gateway.js';
+import { userDirectory } from './user-files.js';
 
 export const musicDirectory = fileURLToPath(new URL('../generated-music/', import.meta.url));
 
@@ -92,10 +93,12 @@ export const updateMusicFormTool = tool({
 export const generateMusic = traceable(async (
   prompt: string,
   modelId: unknown = 'lyria-3.5',
+  userId: string,
   _traceConfig?: { metadata: { thread_id: string; ls_model_name?: string } },
 ): Promise<MusicTrack> => {
   const input = validateMusicPrompt(prompt);
   const model = validateMusicModel(modelId);
+  const directory = userDirectory(musicDirectory, userId);
   const gateway = getAiGateway('google-ai-studio');
 
   const client = new GoogleGenAI({
@@ -147,8 +150,8 @@ export const generateMusic = traceable(async (
   if (!audio?.length) throw new Error('music service returned no audio.');
 
   const filename = `${randomUUID()}.mp3`;
-  await mkdir(musicDirectory, { recursive: true });
-  await writeFile(`${musicDirectory}${filename}`, audio, { flag: 'wx' });
+  await mkdir(directory, { recursive: true });
+  await writeFile(`${directory}/${filename}`, audio, { flag: 'wx' });
   const text = lyrics.join('\n')
     .replace(/\[\[[^\]\r\n]*\]\]/g, '')
     .replace(/^[ \t]*\[:\][ \t]*/gm, '')
@@ -158,6 +161,6 @@ export const generateMusic = traceable(async (
 }, {
   name: 'generate_audio',
   run_type: 'tool',
-  argsConfigPath: [2],
+  argsConfigPath: [3],
   metadata: { ls_provider: 'google' },
 });

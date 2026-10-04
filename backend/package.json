@@ -12,11 +12,13 @@
     "test:analysis": "node --import tsx tests/analysis.test.ts",
     "test:stems": "tsx --test tests/stems.test.ts",
     "test:tracing": "node --import tsx tests/tracing.test.ts",
+    "test:auth": "node --import tsx --test tests/auth.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {
     "@google/genai": "^2.26.0",
     "@strands-agents/sdk": "^1.19.0",
+    "@supabase/supabase-js": "2.117.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",

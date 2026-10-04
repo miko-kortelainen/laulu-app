@@ -19,6 +19,8 @@ A simple full-stack AI chatbot built with:
 │   │   └── analysis.md    # Detailed Qwen listening analysis instructions
 │   ├── src/
 │   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
+│   │   ├── auth.ts        # Supabase access token verification
+│   │   ├── user-files.ts  # Per-user local audio directories
 │   │   ├── model.ts       # Shared Nebius configuration and model setup
 │   │   ├── gateway.ts     # Required Cloudflare AI Gateway BYOK routing
 │   │   ├── lyrics.ts      # Dedicated GLM lyric agent
@@ -39,6 +41,7 @@ A simple full-stack AI chatbot built with:
     ├── src/
     │   ├── App.tsx        # Application composition
     │   ├── features/chat/ # Chat page, message UI, state hook, and API functions
+    │   ├── features/auth/ # Login, registration, email confirmation, and recovery
     │   ├── components/ui/ # Shared component library
     │   ├── lib/           # Shared utilities
     │   ├── index.css      # Tailwind CSS styles
@@ -51,9 +54,61 @@ A simple full-stack AI chatbot built with:
 
 ## Quick Start
 
+### Configure authentication
+
+Authentication uses Supabase Auth. This step needs no custom tables, SQL migration, or backend secret key.
+
+1. Open the existing Supabase project.
+2. Enable email/password authentication and open registration.
+3. Enable **Confirm email**.
+4. Set the development Site URL to `http://localhost:5173`.
+5. Add `http://localhost:5173/` to the allowed redirect URLs.
+6. Add the exact production origin and redirect URL before deployment.
+7. Configure custom SMTP for users outside the Supabase project team.
+8. Keep the standard confirmation and recovery templates that use `{{ .ConfirmationURL }}`.
+
+The browser handles the email callback through the Supabase SDK. It supports confirmation, resend, and password recovery.
+[Supabase password authentication](https://supabase.com/docs/guides/auth/passwords) and [SMTP configuration](https://supabase.com/docs/guides/auth/auth-smtp).
+
+Create `frontend/.env.local` from `frontend/.env.example`. Enter the project URL and publishable key:
+
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
+```
+
+Add the same project values to the existing `backend/.env`:
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
+```
+
+Restart both development servers after an environment change.
+The frontend shows a configuration error if its values are absent.
+Protected backend endpoints reject requests if server authentication is not configured.
+
+Each user has a separate in-memory conversation and separate local audio directories.
+Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
+Local audio playback and downloads use authenticated requests.
+Existing audio without an owner remains on disk but has no public route.
+R2 storage, audio metadata, and usage quotas remain in [the next implementation phase](AUTHENTICATION_PLAN.md).
+
+### Authentication checks
+
+```bash
+npm --prefix backend run test:auth
+npm --prefix frontend run test:all
+```
+
+Frontend checks build an isolated app with a mock Supabase project.
+They cover auth, chat, and audio without real accounts, outgoing email, or paid AI calls.
+Backend auth checks use signed fixture tokens and mocked Supabase signing keys.
+
 ### 1. Configure Cloudflare AI Gateway
 
-Copy `backend/.env.example` to `backend/.env` and enter your Cloudflare gateway configuration:
+Create `backend/.env` from `backend/.env.example` if it does not exist.
+Add the Cloudflare gateway values to the existing file:
 
 ```env
 CF_AI_GATEWAY_ACCOUNT_ID=your_cloudflare_account_id
