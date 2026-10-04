@@ -54,9 +54,6 @@ export function ChatMessage({ message, loading, onSeparate, onRemoveEcho }: {
         isUser ? "ml-auto items-end" : "mr-auto items-start",
       )}
     >
-      <div className="text-[11px] font-mono text-zinc-500 px-4">
-        {isUser ? "You" : "Nemotron Super"}
-      </div>
       <div
         className={cn(
           "min-w-0 max-w-full rounded-2xl px-4 py-2.5 text-sm leading-relaxed",

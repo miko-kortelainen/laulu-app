@@ -58,9 +58,6 @@ export function ChatPage() {
 
             {loading && (
               <div className="mr-auto flex flex-col items-start gap-1 max-w-[90%] sm:max-w-[85%]">
-                <div className="text-[11px] font-mono text-zinc-500 px-4">
-                  Nemotron Super
-                </div>
                 <div
                   role="status"
                   className={cn(
