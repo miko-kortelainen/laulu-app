@@ -94,6 +94,9 @@ The frontend shows a configuration error if its values are absent.
 Protected backend endpoints reject requests if server authentication is not configured.
 
 Each user has a separate in-memory conversation and separate local audio directories.
+The backend deletes idle conversations after 30 minutes. Agent access renews this timeout, but context reads do not.
+Running agent requests pause the timeout. The timeout restarts when each request finishes or fails.
+After expiration, the next chat request starts a new conversation. Saved songs and local audio remain available.
 Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
 Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
 React Router serves chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.

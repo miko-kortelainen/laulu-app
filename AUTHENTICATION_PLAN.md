@@ -183,7 +183,8 @@ Read that ID inside audio tool callbacks.
 Never accept tool-generated user IDs, arbitrary storage keys, filesystem paths, or remote URLs as authority.
 
 Keep NDJSON progress, existing request limits, explicit music confirmation, and the global GPU lock.
-Expire idle agents to bound memory use.
+Idle agents expire after 30 minutes. Agent access renews the timeout; context reads do not.
+Running invocations pause expiration. The timeout restarts after success or failure.
 Use one backend instance initially because conversation state and processing locks remain in memory.
 
 ## 4. Audio metadata and ownership

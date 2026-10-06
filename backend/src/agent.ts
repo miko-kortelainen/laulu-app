@@ -7,17 +7,31 @@ import { separateStemsTool } from './stems.js';
 import { removeEchoTool } from './dereverb.js';
 import { analyzeAudioTool } from './analysis.js';
 
-// Map of sessionId -> Agent instance
-const agents = new Map<string, Agent>();
+interface AgentSession {
+  agent: Agent;
+  idleTimer?: NodeJS.Timeout;
+  activeInvocations: number;
+}
+
+const agents = new Map<string, AgentSession>();
 const contextWindowSize = 40;
+const idleTimeoutMs = 30 * 60 * 1000;
+
+function scheduleExpiration(sessionId: string, session: AgentSession): void {
+  if (session.activeInvocations > 0 || agents.get(sessionId) !== session) return;
+  clearTimeout(session.idleTimer);
+  session.idleTimer = setTimeout(() => agents.delete(sessionId), idleTimeoutMs).unref();
+}
 
 export function getChatContext(sessionId: string): { messages: number; limit: number } {
-  return { messages: agents.get(sessionId)?.messages.length ?? 0, limit: contextWindowSize };
+  return { messages: agents.get(sessionId)?.agent.messages.length ?? 0, limit: contextWindowSize };
 }
 
 export function getOrCreateAgent(sessionId: string): Agent {
-  if (agents.has(sessionId)) {
-    return agents.get(sessionId)!;
+  const existing = agents.get(sessionId);
+  if (existing) {
+    scheduleExpiration(sessionId, existing);
+    return existing.agent;
   }
 
   const model = createNebiusModel();
@@ -31,21 +45,33 @@ export function getOrCreateAgent(sessionId: string): Agent {
     conversationManager: new SlidingWindowConversationManager({ windowSize: contextWindowSize }),
   });
 
+  const session: AgentSession = { agent, activeInvocations: 0 };
   const invoke = agent.invoke.bind(agent);
-  agent.invoke = traceable((...args: Parameters<Agent['invoke']>) => invoke(args[0], {
-    ...args[1],
-    invocationState: { ...args[1]?.invocationState, userId: sessionId },
-    limits: { turns: 6, outputTokens: 12_288, totalTokens: 30_000 },
-  }), {
+  agent.invoke = traceable(async (...args: Parameters<Agent['invoke']>) => {
+    session.activeInvocations++;
+    clearTimeout(session.idleTimer);
+    try {
+      return await invoke(args[0], {
+        ...args[1],
+        invocationState: { ...args[1]?.invocationState, userId: sessionId },
+        limits: { turns: 6, outputTokens: 12_288, totalTokens: 30_000 },
+      });
+    } finally {
+      session.activeInvocations--;
+      scheduleExpiration(sessionId, session);
+    }
+  }, {
     name: 'musical-copilot',
     run_type: 'chain',
     metadata: { thread_id: sessionId },
   });
 
-  agents.set(sessionId, agent);
+  agents.set(sessionId, session);
+  scheduleExpiration(sessionId, session);
   return agent;
 }
 
 export function resetAgentSession(sessionId: string) {
+  clearTimeout(agents.get(sessionId)?.idleTimer);
   agents.delete(sessionId);
 }
