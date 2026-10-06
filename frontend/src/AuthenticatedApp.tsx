@@ -3,6 +3,7 @@ import { Navigate, NavLink, Route, Routes } from "react-router";
 import { ChatPage } from "@/features/chat/ChatPage";
 import { useChat } from "@/features/chat/useChat";
 import { ProfilePage } from "@/features/profile/ProfilePage";
+import { SongsPage } from "@/features/songs/SongsPage";
 
 interface AuthenticatedAppProps {
   user: User;
@@ -30,6 +31,9 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
               <NavLink to="/" end className={linkClass}>
                 chat
               </NavLink>
+              <NavLink to="/songs" className={linkClass}>
+                my songs
+              </NavLink>
               <NavLink to="/profile" className={linkClass}>
                 profile
               </NavLink>
@@ -44,6 +48,7 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
       </header>
       <Routes>
         <Route path="/" element={<ChatPage chat={chat} />} />
+        <Route path="/songs" element={<SongsPage />} />
         <Route path="/profile" element={<ProfilePage user={user} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

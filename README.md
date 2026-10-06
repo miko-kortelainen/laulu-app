@@ -44,6 +44,7 @@ A simple full-stack AI chatbot built with:
     │   ├── App.tsx        # Application composition
     │   ├── features/chat/ # Chat page, message UI, state hook, and API functions
     │   ├── features/auth/ # Login, registration, email confirmation, and recovery
+    │   ├── features/songs/ # Saved-song page, state hook, and API functions
     │   ├── components/ui/ # Shared component library
     │   ├── lib/           # Shared utilities
     │   ├── index.css      # Tailwind CSS styles
@@ -93,12 +94,17 @@ Protected backend endpoints reject requests if server authentication is not conf
 Each user has a separate in-memory conversation and separate local audio directories.
 Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
 Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
-React Router serves chat at `/` and the signed-in profile at `/profile`. Navigation preserves the current conversation and music form.
-Configure production hosting to serve `index.html` for frontend routes such as `/profile`, while keeping `/api/` requests on the backend.
+React Router serves chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.
+Navigation preserves the current conversation and music form.
+Configure production hosting to serve `index.html` for frontend routes such as `/profile` and `/songs`.
+Keep `/api/` requests on the backend.
 Local audio playback and downloads use authenticated requests.
 Existing audio without an owner remains on disk but has no public route.
 Generated songs use private R2 storage and Supabase metadata. Uploads, stems, and cleaned audio stay in local user directories.
-Usage quotas and a saved-song interface remain in [the broader plan](AUTHENTICATION_PLAN.md).
+Use **my songs** to see your newest 100 saved songs, creation dates, prompts, and lyrics.
+Select **listen** to play a song or download its MP3. Only the selected song loads audio.
+The page reads songs for the signed-in user. It loads the list again when you return or select **refresh**.
+Older local songs are not included. Usage quotas remain in [the broader plan](AUTHENTICATION_PLAN.md).
 
 ### Configure generated-song storage
 

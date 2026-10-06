@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 const frontend = fileURLToPath(new URL("../", import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "musical-auth-e2e-"));
 const target = process.argv[2];
-if (!["auth", "chat", "audio-player", "all"].includes(target)) throw new Error("unknown E2E target");
+if (!["auth", "chat", "audio-player", "songs", "all"].includes(target)) throw new Error("unknown E2E target");
 const wav = Buffer.alloc(44 + 16000);
 wav.write("RIFF", 0);
 wav.writeUInt32LE(wav.length - 8, 4);
@@ -48,7 +48,7 @@ try {
     cwd: frontend, env: { ...process.env, VITE_SUPABASE_URL: url, VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_offline" },
   });
   process.stdout.write(build.stdout);
-  for (const name of target === "all" ? ["auth", "chat", "audio-player"] : [target]) {
+  for (const name of target === "all" ? ["auth", "chat", "audio-player", "songs"] : [target]) {
     const result = await exec(process.execPath, [join(frontend, `e2e/${name}.mjs`)], {
       cwd: frontend, env: { ...process.env, E2E_URL: url, E2E_AUTH_ORIGIN: url, E2E_DIST: directory }, timeout: 240000, maxBuffer: 2 * 1024 * 1024,
     });

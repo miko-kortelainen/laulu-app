@@ -10,6 +10,7 @@
     "test:e2e": "node e2e/run.mjs chat",
     "test:audio": "node e2e/run.mjs audio-player",
     "test:auth": "node e2e/run.mjs auth",
+    "test:songs": "node e2e/run.mjs songs",
     "test:all": "node e2e/run.mjs all",
     "preview": "vite preview"
   },
