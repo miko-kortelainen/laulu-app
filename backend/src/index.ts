@@ -8,6 +8,7 @@ import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudi
 import { requireAuth } from './auth.js';
 import { userDirectory } from './user-files.js';
 import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
+import { getUsage, QuotaError, reserveUsage } from './quotas.js';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,12 +28,24 @@ for (const [route, directory] of [
 }
 
 function storageFailure(res: Response, error: unknown): void {
+  if (error instanceof QuotaError) return quotaFailure(res, error);
   const invalidRange = error instanceof Error && error.name === 'InvalidRange';
   res.status(error instanceof SongNotFoundError ? 404 : invalidRange ? 416 : 502).json({
     error: error instanceof Error ? error.message : 'song storage failed. try again.',
     ...(error instanceof SongStorageError ? { songId: error.songId, retryUrl: `/api/songs/${error.songId}/retry` } : {}),
   });
 }
+
+function quotaFailure(res: Response, error: QuotaError): void {
+  if (error.resetAt) res.set('Retry-After', String(Math.max(0, Math.ceil((Date.parse(error.resetAt) - Date.now()) / 1000))));
+  res.status(error.status).json({ error: error.message, code: error.status === 429 ? 'quota_exceeded' : 'quota_unavailable',
+    resource: error.resource, resetAt: error.resetAt });
+}
+
+app.get('/api/usage', async (_req, res) => {
+  const usage = await getUsage(res.locals.userId).catch((error: unknown) => storageFailure(res, error));
+  if (usage) res.set('Cache-Control', 'private, no-store').json(usage);
+});
 
 app.get('/api/music/:filename', async (req, res) => {
   const match = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\.mp3$/i.exec(req.params.filename);
@@ -122,6 +135,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     if (audioUrl !== undefined) audioPath(audioUrl, sessionId);
     const musicPrompt = req.body?.musicPrompt === undefined ? '' : validateMusicPrompt(req.body.musicPrompt);
     const agent = getOrCreateAgent(sessionId);
+    await reserveUsage(sessionId, 'chat');
     if (streamProgress) {
       res.set({ 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
       res.flushHeaders();
@@ -138,11 +152,22 @@ app.post('/api/chat', async (req: Request, res: Response) => {
       }));
     }
     const result = await agent.invoke(message.trim() + (musicPrompt ? `\n\ncurrent music form:\n${musicPrompt}` : '') + (audioUrl ? `\n\navailable audio: ${audioUrl}` : ''));
+    const quotaError = result.invocationState.quotaError;
+    if (quotaError instanceof QuotaError) {
+      if (!res.headersSent) quotaFailure(res, quotaError);
+      else send({ error: quotaError.message, code: quotaError.status === 429 ? 'quota_exceeded' : 'quota_unavailable',
+        resource: quotaError.resource, resetAt: quotaError.resetAt });
+      return;
+    }
     const reply = result.stopReason.startsWith('limit')
       ? 'stopped at the request limit. send a new message to continue.'
       : result.toString();
     send({ reply, musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems, cleanedAudio: result.invocationState.cleanedAudio });
   } catch (error: unknown) {
+    if (error instanceof QuotaError && !res.headersSent) {
+      quotaFailure(res, error);
+      return;
+    }
     const message = error instanceof Error ? error.message : 'Failed to process message with agent';
     console.error('Agent invocation error:', error);
     if (!res.headersSent) res.status(500);
@@ -172,7 +197,7 @@ app.post('/api/music', async (req: Request, res: Response) => {
   }
 
   const track = await generateMusic(prompt, model, sessionId, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
-    if (error instanceof SongStorageError) return storageFailure(res, error);
+    if (error instanceof QuotaError || error instanceof SongStorageError) return storageFailure(res, error);
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
       .json({ error: error instanceof Error ? error.message : 'music generation failed.' });
   });

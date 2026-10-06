@@ -6,6 +6,7 @@ import { generateLyrics } from './lyrics.js';
 import { getAiGateway } from './gateway.js';
 import { userDirectory } from './user-files.js';
 import { checkSongStorage, musicDirectory, saveSong } from './songs.js';
+import { releaseSongReservation, reserveUsage, songOutputLimit } from './quotas.js';
 
 export { musicDirectory };
 
@@ -119,41 +120,46 @@ export const generateMusic = traceable(async (
     throw new MusicPromptTokenLimitError(`music prompt contains ${totalTokens.toLocaleString('en-US')} tokens; the ${model} input limit is 131,072. shorten the prompt and try again.`);
   }
 
-  const data = await client.interactions.create({
-    model, input, store: false,
-  }, { timeout: 300_000, maxRetries: 0 }).catch((error: unknown) => {
-    throw new Error(`music generation failed. ${error instanceof Error ? error.message : 'unknown service error.'}`);
-  });
-  if (data.status !== 'completed' || !Array.isArray(data.steps)) {
-    throw new Error('music service did not return a completed track.');
-  }
-
+  const songId = await reserveUsage(userId, 'generation', songOutputLimit());
   let audio: Buffer | undefined;
   const lyrics: string[] = [];
-  for (const value of data.steps) {
-    const step = record(value);
-    if (step.type !== 'model_output' || !Array.isArray(step.content)) continue;
-
-    for (const value of step.content) {
-      const block = record(value);
-      if (block.type === 'text' && typeof block.text === 'string') lyrics.push(block.text);
-      if (block.type !== 'audio') continue;
-      if ((block.mime_type !== 'audio/mpeg' && block.mime_type !== 'audio/mp3') ||
-          typeof block.data !== 'string' || !block.data ||
-          block.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(block.data)) {
-        throw new Error('music service returned invalid MP3 audio.');
-      }
-      audio = Buffer.from(block.data, 'base64');
+  try {
+    const data = await client.interactions.create({
+      model, input, store: false,
+    }, { timeout: 300_000, maxRetries: 0 });
+    if (data.status !== 'completed' || !Array.isArray(data.steps)) {
+      throw new Error('music service did not return a completed track.');
     }
+
+    for (const value of data.steps) {
+      const step = record(value);
+      if (step.type !== 'model_output' || !Array.isArray(step.content)) continue;
+
+      for (const value of step.content) {
+        const block = record(value);
+        if (block.type === 'text' && typeof block.text === 'string') lyrics.push(block.text);
+        if (block.type !== 'audio') continue;
+        if ((block.mime_type !== 'audio/mpeg' && block.mime_type !== 'audio/mp3') ||
+            typeof block.data !== 'string' || !block.data ||
+            block.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(block.data)) {
+          throw new Error('music service returned invalid MP3 audio.');
+        }
+        audio = Buffer.from(block.data, 'base64');
+      }
+    }
+    if (!audio?.length) throw new Error('music service returned no audio.');
+  } catch (error: unknown) {
+    // No save was attempted. Keep the paid attempt, but release its unused storage.
+    await releaseSongReservation(userId, songId).catch((cause: unknown) => console.error('could not release unused song storage:', cause));
+    throw new Error(`music generation failed. ${error instanceof Error ? error.message : 'unknown service error.'}`);
   }
-  if (!audio?.length) throw new Error('music service returned no audio.');
 
   const text = lyrics.join('\n')
     .replace(/\[\[[^\]\r\n]*\]\]/g, '')
     .replace(/^[ \t]*\[:\][ \t]*/gm, '')
     .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n')
     .trim();
-  return saveSong(userId, audio, input, model, text);
+  return saveSong(userId, audio, input, model, text, songId);
 }, {
   name: 'generate_audio',
   run_type: 'tool',

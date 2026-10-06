@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { configureTestQuotas } from './quota-fixture.js';
 
 export function configureTestSongStorage() {
   const env = {
@@ -10,6 +11,7 @@ export function configureTestSongStorage() {
   };
   const previous = new Map(Object.keys(env).map((key) => [key, process.env[key]]));
   Object.assign(process.env, env);
+  const quotas = configureTestQuotas();
   const rows = new Map<string, Record<string, unknown>>();
   const objects = new Map<string, Buffer>();
   const failures = { read: false, insert: false, put: false, ready: false, readyResponse: false, deleteObject: false, deleteRow: false };
@@ -53,6 +55,19 @@ export function configureTestSongStorage() {
 
   async function databaseResponse(request: Request): Promise<Response | undefined> {
     const url = new URL(request.url);
+    const quotaResponse = await quotas.databaseResponse(request.clone());
+    if (quotaResponse) return quotaResponse;
+    if (url.origin === process.env.SUPABASE_URL && url.pathname === '/rest/v1/rpc/prepare_song_save') {
+      assert.equal(request.headers.get('apikey'), env.SUPABASE_SECRET_KEY);
+      if (failures.insert) return Response.json({ message: 'offline insert failure' }, { status: 503 });
+      const { p_song: row }: { p_song: Record<string, unknown> } = await request.json();
+      assert.equal(row.status, 'pending');
+      const id = row.id as string;
+      if (!rows.has(id)) rows.set(id, row);
+      const reservation = quotas.reservations.get(id);
+      if (reservation) reservation.storageBytes = 0;
+      return Response.json({ allowed: true, song: rows.get(id) });
+    }
     if (url.pathname !== '/rest/v1/songs' || url.origin !== process.env.SUPABASE_URL) return undefined;
     assert.equal(request.headers.get('apikey'), env.SUPABASE_SECRET_KEY);
     const owner = url.searchParams.get('owner_id')?.replace(/^eq\./, '');
@@ -63,15 +78,6 @@ export function configureTestSongStorage() {
       assert.ok(owner, 'every read must filter by the verified owner');
       if (failures.read) return Response.json({ message: 'offline database read failure' }, { status: 503 });
       return Response.json(matches);
-    }
-    if (request.method === 'POST') {
-      if (failures.insert) return Response.json({ message: 'offline insert failure' }, { status: 503 });
-      const row: Record<string, unknown> = await request.json();
-      assert.equal(typeof row.id, 'string');
-      assert.equal(row.status, 'pending');
-      assert.ok(!rows.has(row.id as string));
-      rows.set(row.id as string, row);
-      return new Response(null, { status: 201 });
     }
     if (request.method === 'DELETE') {
       assert.ok(owner && id, 'every deletion must filter by owner and id');
@@ -90,8 +96,9 @@ export function configureTestSongStorage() {
     return Response.json(row);
   }
 
-  return { rows, objects, failures, databaseResponse, get writes() { return writes; }, get reads() { return reads; }, get deletes() { return deletes; },
+  return { rows, objects, failures, quotas, databaseResponse, get writes() { return writes; }, get reads() { return reads; }, get deletes() { return deletes; },
     restore() {
+      quotas.restore();
       send.mock.restore();
       for (const [key, value] of previous) {
         if (value === undefined) delete process.env[key];

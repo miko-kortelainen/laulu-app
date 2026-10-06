@@ -1,10 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { access, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { deleteSongObject, putSongObject, r2Storage, readSongObject } from './r2.js';
 import { userDirectory } from './user-files.js';
+import { database } from './database.js';
+import { checkAllowance, quotaDefaults, quotaRpc, songOutputLimit } from './quotas.js';
 
 export const musicDirectory = fileURLToPath(new URL('../generated-music/', import.meta.url));
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -34,13 +35,6 @@ export interface SavedSong {
   createdAt: string;
 }
 
-function database() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY;
-  if (!url || !key) throw new Error('configure SUPABASE_URL and the server-only SUPABASE_SECRET_KEY before generating songs.');
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
-}
-
 function songPath(userId: unknown, id: unknown): string {
   if (typeof id !== 'string' || !uuid.test(id)) throw new SongNotFoundError('song not found.');
   return path.join(userDirectory(musicDirectory, userId), `${id}.mp3`);
@@ -49,9 +43,10 @@ function songPath(userId: unknown, id: unknown): string {
 export class SongNotFoundError extends Error {}
 
 export class SongStorageError extends Error {
-  constructor(public readonly songId: string, inMemory = false) {
+  constructor(public readonly songId: string, inMemory = false, cause?: unknown) {
     super('song generated, but saving failed. retry saving instead of generating again.' +
-      (inMemory ? ' local recovery is only in memory; keep the backend running until saving succeeds.' : ''));
+      (inMemory ? ' local recovery is only in memory; keep the backend running until saving succeeds.' : '') +
+      (cause instanceof Error ? ` ${cause.message}` : ''), { cause });
   }
 }
 
@@ -151,8 +146,15 @@ async function persistSong(song: Song, audio: Buffer): Promise<SavedSong> {
   const existing = await findSong(song.owner_id, song.id);
   if (existing?.status === 'ready') return publicSong(existing);
   if (!existing) {
-    const { error } = await database().from('songs').insert(song);
-    if (error) throw new Error('could not create song metadata.');
+    if (audio.length > songOutputLimit()) throw new Error('generated song exceeds MAX_GENERATED_SONG_BYTES. increase the limit before retrying storage.');
+    const result = await quotaRpc('prepare_song_save', { p_song: song, p_defaults: quotaDefaults() });
+    checkAllowance(result);
+    if (!result || typeof result !== 'object' || !('allowed' in result) || result.allowed !== true ||
+        !('song' in result) || !result.song || typeof result.song !== 'object' ||
+        !('id' in result.song) || result.song.id !== song.id ||
+        !('owner_id' in result.song) || result.song.owner_id !== song.owner_id) {
+      throw new Error('could not create song metadata.');
+    }
   }
   await putSongObject(song.object_key, audio);
   const { data, error } = await database().from('songs').update({ status: 'ready' })
@@ -161,8 +163,7 @@ async function persistSong(song: Song, audio: Buffer): Promise<SavedSong> {
   return publicSong(data as Song);
 }
 
-export async function saveSong(userId: string, audio: Buffer, prompt: string, model: string, lyrics: string): Promise<SavedSong> {
-  const id = randomUUID();
+export async function saveSong(userId: string, audio: Buffer, prompt: string, model: string, lyrics: string, id: string = randomUUID()): Promise<SavedSong> {
   const filename = songPath(userId, id);
   const song: Song = {
     id, owner_id: userId, object_key: `users/${userId}/${id}.mp3`,
@@ -177,7 +178,7 @@ export async function saveSong(userId: string, audio: Buffer, prompt: string, mo
     memoryRecovery.set(id, { song, audio });
     console.error('local song recovery failed; keeping audio in memory:', error);
   }
-  const track = await persistSong(song, audio).catch(() => { throw new SongStorageError(id, memoryRecovery.has(id)); });
+  const track = await persistSong(song, audio).catch((error: unknown) => { throw new SongStorageError(id, memoryRecovery.has(id), error); });
   await clearSongRecovery(userId, id);
   return track;
 }
@@ -191,7 +192,7 @@ export async function retrySongStorage(userId: string, id: string): Promise<Save
   }
   const recovery = memoryRecovery.get(id);
   if (recovery?.song.owner_id === userId) {
-    const track = await persistSong(recovery.song, recovery.audio).catch(() => { throw new SongStorageError(id, true); });
+    const track = await persistSong(recovery.song, recovery.audio).catch((error: unknown) => { throw new SongStorageError(id, true, error); });
     await clearSongRecovery(userId, id);
     return track;
   }
@@ -214,7 +215,7 @@ export async function retrySongStorage(userId: string, id: string): Promise<Save
     lyrics: value.lyrics, size_bytes: value.size_bytes, status: 'pending', created_at: value.created_at };
   const audio = await readFile(filename);
   if (audio.length !== song.size_bytes) throw new Error('unsaved song audio is incomplete.');
-  const track = await persistSong(song, audio).catch(() => { throw new SongStorageError(id); });
+  const track = await persistSong(song, audio).catch((error: unknown) => { throw new SongStorageError(id, false, error); });
   await clearSongRecovery(userId, id);
   return track;
 }

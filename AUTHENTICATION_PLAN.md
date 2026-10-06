@@ -1,6 +1,6 @@
 # Authentication and audio storage plan
 
-Status: authentication, generated-song R2 storage, saved-song UI, and song deletion implemented. Other audio storage and usage limits remain planned.
+Status: authentication, generated-song R2 storage, saved-song UI, song deletion, and durable usage quotas implemented. Other audio storage remains planned.
 
 ## Implemented generated-song storage
 
@@ -29,8 +29,9 @@ This phase needs only the project URL, publishable key, and Supabase Auth config
 It needs no custom database schema, migration, or backend secret key.
 See [authentication setup in the README](README.md#configure-authentication).
 
-Generated-song R2 storage and metadata are implemented. The broader saved-audio and quota sections describe future work.
-Keep public launch limited until the planned usage allowances are implemented.
+Generated-song R2 storage, metadata, and durable quotas are implemented.
+Quota setup and failure rules are in [the README](README.md#configure-usage-quotas).
+The broader saved-audio sections describe future work.
 
 ## Goal and scope
 
@@ -347,16 +348,16 @@ An already-issued signed URL remains usable until expiry unless the object is de
 | --- | --- |
 | Custom SMTP and sender DNS | Public confirmation and recovery emails need reliable delivery |
 | Production origin and HTTPS | Auth redirects, API access, and bucket CORS need the actual deployment origin |
-| Durable usage limits | Open registration gives new users access to paid AI calls and persistent storage |
+| Durable usage limits | Implemented for chat, analysis, generation attempts, and generated-song bytes. Apply the quota migration before launch |
 | Request limits | Keep per-user action locks, upload limits, model limits, and the global GPU limit |
 | Retention and deletion | Decide how long ready assets, failed outputs, and recovery files remain |
 | Temporary disk capacity | Python processing needs local space despite R2 storage |
 | Ownership migration | Existing local files have no user ownership |
 | Error visibility | Separate auth, provider, storage, and processing failures without exposing secrets |
 
-Use server-side usage counters with atomic reservations for concurrent requests.
-Set explicit allowances for chat, analysis, music generation, and stored bytes before public launch.
-Do not use process memory as the only record of paid usage.
+Supabase stores per-user allowances, daily counters, and atomic reservations for concurrent requests.
+Configure allowances for chat, analysis, music generation, and generated-song bytes before public launch.
+The quota records survive backend restarts. Uploads, stems, and cleaned audio remain outside the storage quota.
 Keep existing turn and token limits. A per-request limit does not enforce a daily allowance.
 
 Preserve existing local files during migration.

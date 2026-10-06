@@ -4,18 +4,22 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import test from 'node:test';
 import { userDirectory } from '../src/user-files.js';
+import { configureTestQuotas } from './quota-fixture.js';
 
 test('verified users own their API session and local media', async () => {
   process.env.NODE_ENV = 'test';
   process.env.LANGSMITH_TRACING = 'false';
   process.env.SUPABASE_URL = 'https://offline-auth.supabase.co';
   process.env.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_offline';
+  const quotas = configureTestQuotas();
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'offline', alg: 'ES256', use: 'sig' };
   const originalFetch = globalThis.fetch;
   let authRequests = 0;
   globalThis.fetch = async (input, options) => {
     const request = new Request(input, options);
+    const database = await quotas.databaseResponse(request.clone());
+    if (database) return database;
     if (request.url.startsWith(process.env.SUPABASE_URL!)) {
       authRequests++;
       assert.equal(request.url, `${process.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`);
@@ -53,7 +57,7 @@ test('verified users own their API session and local media', async () => {
 
   try {
     assert.deepEqual(await (await fetch(`${url}/api/health`)).json(), { status: 'ok' });
-    for (const endpoint of ['context', 'chat', 'music', 'reset', 'audio', `audio/${filename}`, 'stems/fixture', 'cleaned/fixture']) {
+    for (const endpoint of ['context', 'usage', 'chat', 'music', 'reset', 'audio', `audio/${filename}`, 'stems/fixture', 'cleaned/fixture']) {
       assert.equal((await fetch(`${url}/api/${endpoint}`)).status, 401);
     }
     assert.equal(authRequests, 0);
@@ -81,6 +85,26 @@ test('verified users own their API session and local media', async () => {
       start();
       return new Promise<never>((_resolve, reject) => { cancel = reject; });
     };
+    for (const failure of ['quota', 'unavailable', 'invalid'] as const) {
+      quotas.failures.resource = failure === 'quota' ? 'chat' : undefined;
+      quotas.failures.unavailable = failure === 'unavailable';
+      quotas.failures.invalid = failure === 'invalid';
+      const denied = await fetch(`${url}/api/chat`, { method: 'POST', headers: { ...headersA, Accept: 'application/x-ndjson' },
+        body: JSON.stringify({ message: 'denied', userId: userB }),
+      });
+      assert.equal(denied.status, failure === 'quota' ? 429 : 503);
+      assert.equal(denied.headers.get('content-type')?.includes('application/json'), true, 'deny before streaming headers');
+      const body = await denied.json();
+      assert.equal(body.code, failure === 'quota' ? 'quota_exceeded' : 'quota_unavailable');
+      if (failure === 'quota') {
+        assert.equal(body.resource, 'chat');
+        assert.ok(denied.headers.get('retry-after'));
+      }
+      assert.equal(quotas.reservations.size, 0, 'no model invocation or reservation on quota failure');
+    }
+    quotas.failures.resource = undefined;
+    quotas.failures.unavailable = false;
+    quotas.failures.invalid = false;
     const pendingChat = fetch(`${url}/api/chat`, { method: 'POST', headers: headersA, body: JSON.stringify({ message: 'pending' }) });
     await started;
     assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA })).status, 409);
@@ -88,7 +112,11 @@ test('verified users own their API session and local media', async () => {
     assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersB })).status, 200);
     cancel(new Error('offline request cancellation'));
     assert.equal((await pendingChat).status, 500);
+    const usageBeforeReset = await (await fetch(`${url}/api/usage?userId=${userB}`, { headers: headersA })).json();
+    assert.equal(usageBeforeReset.chat.used, 1, 'failed paid requests consume one allowance');
     assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA })).status, 200);
+    assert.deepEqual(await (await fetch(`${url}/api/usage`, { headers: headersA })).json(), usageBeforeReset, 'conversation reset does not reset usage');
+    assert.equal((await (await fetch(`${url}/api/usage`, { headers: headersB })).json()).chat.used, 0);
 
     const ownFile = await fetch(`${url}/api/audio/${filename}`, { headers: headersA });
     assert.equal(ownFile.status, 200);
@@ -105,6 +133,7 @@ test('verified users own their API session and local media', async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     globalThis.fetch = originalFetch;
+    quotas.restore();
     await rm(directory, { recursive: true, force: true });
   }
 });

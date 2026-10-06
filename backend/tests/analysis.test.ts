@@ -14,6 +14,8 @@ import { audioDirectory, prepareAnalysisAudio as prepareUserAnalysisAudio } from
 import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { getModelId } from '../src/model.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
+import { configureTestQuotas } from './quota-fixture.js';
+import { QuotaError } from '../src/quotas.js';
 
 const userId = '10000000-0000-4000-8000-000000000004';
 const analyzeAudio = (url: unknown, question: unknown) => analyzeUserAudio(url, question, userId);
@@ -55,6 +57,9 @@ function completion(model: string, delta: unknown, finishReason = 'stop'): Respo
 test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from failures', async () => {
   const originalFetch = globalThis.fetch;
   const restoreGateway = configureTestGateway();
+  const quotas = configureTestQuotas();
+  const previousURL = process.env.SUPABASE_URL;
+  process.env.SUPABASE_URL = 'https://offline-analysis.supabase.co';
   const originalTracing = process.env.LANGSMITH_TRACING;
   const originalCreate = Client.prototype.createRun;
   const originalUpdate = Client.prototype.updateRun;
@@ -77,6 +82,8 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
   Client.prototype.updateRun = async (id, run) => { updates.set(id, JSON.parse(JSON.stringify(run)) as typeof run); };
   globalThis.fetch = async (url, options) => {
     const httpRequest = new Request(url, options);
+    const database = await quotas.databaseResponse(httpRequest.clone());
+    if (database) return database;
     const request = await httpRequest.json();
     if (request.model === 'qwen3.8-omni-flash') {
       qwenCalls++;
@@ -104,6 +111,10 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
     if (mainCalls % 2 === 1) {
       return completion(request.model, { role: 'assistant', tool_calls: [{ index: 0, id: `analysis-${mainCalls}`, type: 'function',
         function: { name: 'analyze_audio', arguments: JSON.stringify({ audio_url: audioUrl, question }) } }] }, 'tool_calls');
+    }
+    if (quotas.failures.resource) {
+      assert.ok(JSON.stringify(request.messages).includes('allowance exhausted'));
+      return completion(request.model, { role: 'assistant', content: 'audio analysis allowance exhausted.' });
     }
     assert.ok(JSON.stringify(request.messages).includes(observation));
     return completion(request.model, { role: 'assistant', content: observation });
@@ -137,6 +148,20 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
     assert.equal(qwenCalls, beforeValidation);
     process.env.CF_AI_GATEWAY_TOKEN = 'offline-gateway-token';
 
+    quotas.failures.resource = 'analysis';
+    const deniedResult = await agent.invoke(`analyze again\n\navailable audio: ${audioUrl}`);
+    assert.ok(deniedResult.invocationState.quotaError instanceof QuotaError, 'the agent result preserves the structured quota failure');
+    assert.equal(qwenCalls, beforeValidation);
+    const deniedState = { userId, quotaError: undefined as unknown };
+    await assert.rejects(analyzeAudioTool.invoke({ audio_url: audioUrl, question }, { invocationState: deniedState } as ToolContext), QuotaError);
+    assert.ok(deniedState.quotaError instanceof QuotaError, 'tool quota failures propagate to the HTTP stream');
+    assert.equal(qwenCalls, beforeValidation, 'denied analysis never reaches Qwen');
+    quotas.failures.resource = undefined;
+    quotas.failures.unavailable = true;
+    await assert.rejects(analyzeAudio(audioUrl, question), /usage database is unavailable/);
+    assert.equal(qwenCalls, beforeValidation);
+    quotas.failures.unavailable = false;
+
     // Failures preserve existing feature state and cannot trigger a second Qwen attempt.
     for (mode of ['http', 'empty', 'truncated', 'reasoning', 'brokenStream']) {
       const invocationState = { userId, musicPrompt: { genre: 'folk' }, cleanedAudio: { url: audioUrl, name: 'original' } };
@@ -159,6 +184,9 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
     Client.prototype.createRun = originalCreate;
     Client.prototype.updateRun = originalUpdate;
     restoreGateway();
+    quotas.restore();
+    if (previousURL === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = previousURL;
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
     else process.env.LANGSMITH_TRACING = originalTracing;
     await rm(source, { force: true });

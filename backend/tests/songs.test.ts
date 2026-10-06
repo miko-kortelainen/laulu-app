@@ -170,6 +170,7 @@ test('songs persist privately, restore from R2, and retry failed saves without r
         assert.equal((await fetch(`${base}/api/music/${error.songId}.mp3`, { headers: headersA })).status, 404);
       }
       const beforeRetry = generations;
+      const reservationsBeforeRetry = storage.quotas.reservations.size;
       const tokensBeforeRetry = tokenCalls;
       assert.equal((await fetch(`${base}${error.retryUrl}`, { method: 'POST', headers: headersB })).status, 404);
       storage.failures[failure] = false;
@@ -177,6 +178,7 @@ test('songs persist privately, restore from R2, and retry failed saves without r
       assert.equal(retry.status, 200);
       assert.equal((await retry.json()).track.id, error.songId);
       assert.equal(generations, beforeRetry);
+      assert.equal(storage.quotas.reservations.size, reservationsBeforeRetry, 'storage retry never reserves another paid attempt');
       assert.equal(tokenCalls, tokensBeforeRetry);
       const writesBeforeRepeat = storage.writes;
       assert.equal((await fetch(`${base}${error.retryUrl}`, { method: 'POST', headers: headersA })).status, 200);

@@ -20,6 +20,8 @@ A simple full-stack AI chatbot built with:
 │   ├── src/
 │   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
 │   │   ├── auth.ts        # Supabase access token verification
+│   │   ├── database.ts    # Server-only Supabase database client
+│   │   ├── quotas.ts      # Durable paid-operation allowances and storage reservations
 │   │   ├── user-files.ts  # Per-user local audio directories
 │   │   ├── model.ts       # Shared Nebius configuration and model setup
 │   │   ├── gateway.ts     # Required Cloudflare AI Gateway BYOK routing
@@ -105,7 +107,7 @@ Use **my songs** to see your newest 100 saved songs, creation dates, prompts, an
 Select **listen** to play a song or download its MP3. Only the selected song loads audio.
 The page reads songs for the signed-in user. It loads the list again when you return or select **refresh**.
 Select **delete** and confirm to permanently remove a saved song. If deletion fails, the song stays in the list for another attempt.
-Older local songs are not included. Usage quotas remain in [the broader plan](AUTHENTICATION_PLAN.md).
+Older local songs are not included. Paid operations also require [usage quota setup](#configure-usage-quotas).
 
 ### Configure generated-song storage
 
@@ -175,6 +177,74 @@ Offline checks: `npm --prefix backend run test:songs` and `npm --prefix backend 
 These checks mock Supabase, R2, and model responses. They make no paid calls.
 The database policy checks are in `supabase/tests/songs.sql`.
 After local Supabase setup and migration, run `npx supabase test db supabase/tests/songs.sql --local`.
+
+### Configure usage quotas
+
+1. Open the same Supabase project, then select **SQL Editor → New query**.
+2. Run [the quota migration](supabase/migrations/20261006150319_usage_quotas.sql) after the songs migration.
+3. Keep `SUPABASE_SECRET_KEY` in `backend/.env`. Chat and analysis now require this server-only key too.
+4. Add these allowance defaults to `backend/.env`, or use the same built-in values:
+
+```env
+QUOTA_CHAT_DAILY=50
+QUOTA_ANALYSIS_DAILY=10
+QUOTA_GENERATION_DAILY=5
+QUOTA_STORAGE_BYTES=536870912
+MAX_GENERATED_SONG_BYTES=26214400
+```
+
+5. Restart the backend.
+
+These defaults allow 50 chat requests, 10 analyses, and 5 generation attempts per user per UTC day.
+Each user has 512 MiB of generated-song storage. Generation reserves 25 MiB before the paid Lyria call.
+The backend converts this reservation to the exact MP3 size when it inserts pending song metadata.
+An analysis also consumes its surrounding chat request. Bounded agent turns and lyric generation belong to that chat allowance.
+Uploads, stems, cleaned audio, and local recovery copies do not count toward this storage quota.
+Existing pending and ready song metadata counts immediately. No byte-counter backfill is necessary.
+
+The first usage request creates a row in `public.user_quotas` from these defaults.
+To change an existing user's allowances, open **Table Editor → user_quotas** and edit that user's row.
+Environment changes affect new rows only. Set a daily allowance to `0` to disable that operation for a user.
+Per-user allowance changes take effect on the next reservation.
+Credit balances, paid tiers, and payments remain separate work. Their debit logic can use the existing reservation transaction.
+
+Authenticated `GET /api/usage` returns limits, used counts, remaining allowances, reserved bytes, and the next UTC reset time.
+The database owns the date and counters. Backend restarts and conversation resets do not clear them.
+Quota exhaustion returns HTTP `429` with `code: "quota_exceeded"` and the exhausted `resource`.
+Daily exhaustion also returns `resetAt` and a `Retry-After` header.
+Database failures return HTTP `503` and prevent paid calls.
+An analysis quota failure after streaming starts returns a terminal NDJSON error with the same code and resource.
+
+Local validation occurs before reservation. Each accepted reservation counts as an attempt, including provider failures and lost database responses.
+No automatic refund occurs after reservation, because the paid operation can have an uncertain outcome.
+Failed generations release unused storage when the backend knows that no save occurred.
+Pending saves keep their capacity until storage succeeds or cleanup completes. Storage retries do not consume another generation attempt.
+Deletion releases bytes when the backend deletes metadata after object and local-file cleanup.
+If a track exceeds `MAX_GENERATED_SONG_BYTES`, its local recovery copy remains available.
+Increase that limit before storage retry. The exact track must still fit the user's storage allowance.
+
+Interrupted generations can leave storage reservations after a restart. These reservations do not expire automatically.
+To find them, inspect `usage_reservations` rows with `storage_bytes > 0` in the SQL Editor.
+Before release, make sure that the operation stopped and that no song metadata, R2 object, or local recovery copy needs this capacity.
+Then run this server-administrator query with the actual owner and reservation IDs:
+
+```sql
+select public.release_song_reservation('USER_UUID', 'RESERVATION_UUID');
+```
+
+This query releases only unused storage. It preserves the daily attempt count and does not release capacity held by song metadata.
+Automatic reconciliation remains deferred. Keep one backend instance for the existing local conversation locks and recovery files.
+
+The database concurrency and permission check uses separate PostgreSQL connections:
+
+```bash
+QUOTA_TEST_DATABASE_URL=postgresql://localhost/quota_test_musical npm --prefix backend run test:quotas:db
+```
+
+Use a disposable local database named `quota_test...` with Supabase auth roles and both repository migrations.
+The command requires `psql` and an administrator connection. It creates and deletes fixture users and songs only.
+Set `QUOTA_TEST_PSQL` if the executable is outside `PATH`.
+The mocked music, analysis, authentication, and song checks also cover quota failures without paid provider calls.
 
 ### Authentication checks
 

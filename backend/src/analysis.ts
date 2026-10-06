@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import OpenAI from 'openai';
 import { prepareAnalysisAudio } from './audio.js';
 import { getAiGateway } from './gateway.js';
+import { QuotaError, reserveUsage } from './quotas.js';
 
 const model = 'qwen3.8-omni-flash';
 const instructions = readFileSync(new URL('../prompts/analysis.md', import.meta.url), 'utf8').trim();
@@ -28,6 +29,8 @@ export async function analyzeAudio(audioUrl: unknown, question: unknown, userId:
     maxRetries: 0,
     timeout: 120_000,
   }), tracingOptions);
+  if (typeof userId !== 'string') throw new Error('a verified user is required for audio analysis.');
+  await reserveUsage(userId, 'analysis');
   const stream = await client.chat.completions.create({
     model,
     messages: [{ role: 'user', content: [
@@ -72,7 +75,10 @@ export const analyzeAudioTool = tool({
     context.invocationState.audioAnalysisAttempted = true;
     const fields = input && typeof input === 'object' ? input : {};
     return await analyzeAudio('audio_url' in fields ? fields.audio_url : undefined,
-      'question' in fields ? fields.question : undefined, context.invocationState.userId);
+      'question' in fields ? fields.question : undefined, context.invocationState.userId).catch((error: unknown) => {
+      if (error instanceof QuotaError) context.invocationState.quotaError = error;
+      throw error;
+    });
   }, {
     name: 'analyze_audio', run_type: 'tool',
     processInputs: ({ args }) => ({ request: args[0] }),

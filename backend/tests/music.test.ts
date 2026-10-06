@@ -5,6 +5,7 @@ import type { ToolContext } from '@strands-agents/sdk';
 import { generateMusic as generateUserMusic, updateMusicFormTool, musicDirectory, MusicPromptTokenLimitError } from '../src/music.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 import { configureTestSongStorage } from './song-fixture.js';
+import { retrySongStorage, SongStorageError } from '../src/songs.js';
 
 const userId = '10000000-0000-4000-8000-000000000001';
 const generateMusic = (prompt: string, model?: unknown) => generateUserMusic(prompt, model, userId);
@@ -122,10 +123,24 @@ test('music waits for confirmation, validates responses, and saves only valid au
     assert.equal(calls, 0);
     tokenResponse = async () => Response.json({ totalTokens: 100 });
 
+    for (const resource of ['generation', 'storage']) {
+      storage.quotas.failures.resource = resource;
+      const beforeDenied = calls;
+      await assert.rejects(generateMusic(prompt), /allowance exhausted/);
+      assert.equal(calls, beforeDenied, 'quota denial never reaches paid generation');
+    }
+    storage.quotas.failures.resource = undefined;
+    storage.quotas.failures.unavailable = true;
+    await assert.rejects(generateMusic(prompt), /usage database is unavailable/);
+    storage.quotas.failures.unavailable = false;
+    assert.equal(storage.quotas.reservations.size, 0, 'local preflight and quota failures never consume usage');
+
     response = Response.json({ error: { code: 400, message: 'Prompt rejected by music service.', status: 'INVALID_ARGUMENT' } }, { status: 400 });
     const previousErrorCalls = calls;
     await assert.rejects(generateMusic(prompt), /music generation failed.*Prompt rejected by music service/);
     assert.equal(calls, previousErrorCalls + 1);
+    assert.equal(storage.quotas.reservations.size, 1);
+    assert.equal([...storage.quotas.reservations.values()][0].storageBytes, 0, 'failed provider call releases storage but keeps usage');
     response = Response.json({ status: 'failed', steps: [] });
     await assert.rejects(generateMusic(prompt), /completed track/);
     response = Response.json({ status: 'completed', steps: [] });
@@ -162,6 +177,33 @@ test('music waits for confirmation, validates responses, and saves only valid au
       await assert.rejects(readFile(savedPath), /ENOENT/);
       assert.equal(track.lyrics, 'Tiny paws in the morning dew,\nA world of green and a sky of blue.\n\nchorus');
       savedPath = undefined;
+    }
+
+    const previousOutputLimit = process.env.MAX_GENERATED_SONG_BYTES;
+    try {
+      process.env.MAX_GENERATED_SONG_BYTES = String(bytes.length - 1);
+      response = completedResponse.clone();
+      const beforeOversize = calls;
+      const beforeWrites = storage.writes;
+      let oversizedId = '';
+      await assert.rejects(generateMusic(prompt, expectedModel), (error: unknown) => {
+        assert.ok(error instanceof SongStorageError);
+        assert.match(error.message, /MAX_GENERATED_SONG_BYTES/);
+        oversizedId = error.songId;
+        return true;
+      });
+      assert.equal(calls, beforeOversize + 1);
+      assert.equal(storage.writes, beforeWrites, 'oversized output never reaches R2');
+      assert.equal(storage.quotas.reservations.get(oversizedId)?.storageBytes, bytes.length - 1);
+      assert.deepEqual(await readFile(`${musicDirectory}${userId}/${oversizedId}.mp3`), bytes, 'paid output remains recoverable');
+      process.env.MAX_GENERATED_SONG_BYTES = String(bytes.length);
+      const retried = await retrySongStorage(userId, oversizedId);
+      assert.equal(retried.id, oversizedId);
+      assert.equal(calls, beforeOversize + 1, 'size recovery never regenerates');
+      assert.equal(storage.quotas.reservations.get(oversizedId)?.storageBytes, 0);
+    } finally {
+      if (previousOutputLimit === undefined) delete process.env.MAX_GENERATED_SONG_BYTES;
+      else process.env.MAX_GENERATED_SONG_BYTES = previousOutputLimit;
     }
   } finally {
     globalThis.fetch = originalFetch;
