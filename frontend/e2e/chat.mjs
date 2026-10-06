@@ -266,37 +266,22 @@ try {
   run("click", "summary");
   assert.equal(run("eval", 'document.querySelector("details > div").textContent.trim()'), JSON.stringify(lyrics));
 
-  // A generated track stays playable when separation fails, then succeeds on retry.
-  run("network", "unroute", "**/api/chat");
-  run("network", "route", "**/api/chat", "--body", '{"reply":"local separation failed."}');
-  run("find", "role", "button", "click", "--name", "separate stems");
-  run("wait", "--text", "local separation failed.");
-  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "1");
-  const stems = {
-    vocalsUrl: "/api/stems/11111111-1111-1111-1111-111111111111/source_vocals.wav",
-    instrumentalUrl: "/api/stems/11111111-1111-1111-1111-111111111111/source_instrumental.wav",
-  };
-  run("network", "unroute", "**/api/chat");
-  run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "stems are ready.", stems }));
-  run("find", "role", "button", "click", "--name", "separate stems");
-  run("wait", "--text", "download vocals WAV");
-  run("wait", "--fn", 'document.querySelector("audio[aria-label=vocals]").getAttribute("src")?.startsWith("blob:")');
-  run("wait", "--fn", 'document.querySelector("audio[aria-label=instrumental]").getAttribute("src")?.startsWith("blob:")');
-  assert.equal(run("eval", 'window.mediaRequests.length >= 3 && window.mediaRequests.every(request => request.authorization?.startsWith("Bearer "))'), "true");
+  assert.equal(run("eval", 'Array.from(document.querySelectorAll("button")).some(button => button.textContent.includes("separate stems") || button.textContent.includes("remove echo/reverb"))'), "false");
+  assert.equal(run("eval", 'window.mediaRequests.length >= 1 && window.mediaRequests.every(request => request.authorization?.startsWith("Bearer "))'), "true");
 
   // Private downloads report HTTP failure and retry with an authenticated blob.
   run("eval", `window.fetchBeforeDownload = window.fetch; window.failDownload = true;
-    window.fetch = (input, options) => input === ${JSON.stringify(stems.vocalsUrl)} && window.failDownload
+    window.fetch = (input, options) => input === ${JSON.stringify(generatedAudioUrl)} && window.failDownload
       ? Promise.resolve(new Response(null, { status: 503 })) : window.fetchBeforeDownload(input, options);
     window.anchorClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function () { window.downloadedAudio = { href: this.href, name: this.download }; };`);
-  run("find", "role", "button", "click", "--name", "download vocals WAV", "--exact");
+  run("find", "role", "button", "click", "--name", "download MP3", "--exact");
   run("wait", "--text", "could not download audio. try again.");
-  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "3");
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "1");
   run("eval", "window.failDownload = false");
-  run("find", "role", "button", "click", "--name", "download vocals WAV", "--exact");
+  run("find", "role", "button", "click", "--name", "download MP3", "--exact");
   run("wait", "--fn", 'window.downloadedAudio?.href.startsWith("blob:")');
-  assert.equal(run("eval", "window.downloadedAudio.name"), '"vocals.wav"');
+  assert.equal(run("eval", "window.downloadedAudio.name"), '"generated-music.mp3"');
   assert.equal(run("eval", 'window.mediaRequests.at(-1).authorization.startsWith("Bearer ")'), "true");
   run("eval", "window.fetch = window.fetchBeforeDownload; HTMLAnchorElement.prototype.click = window.anchorClick");
 
@@ -305,7 +290,7 @@ try {
   run("network", "route", "**/api/audio?*", "--abort");
   run("upload", 'input[type="file"]', uploadPath);
   run("wait", "--fn", 'document.querySelector("footer > div > [role=alert]")?.textContent === "Failed to fetch"');
-  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "3");
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "1");
   run("network", "unroute", "**/api/audio?*");
   const audioUrl = "/api/audio/22222222-2222-2222-2222-222222222222.wav";
   run("network", "route", "**/api/audio?*", "--body", JSON.stringify({
@@ -349,43 +334,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("footer audio")'), "null");
   assert.equal(run("eval", 'document.querySelector(\'main audio[aria-label^="uploaded audio:"]\').closest("main > div").textContent.includes("here is my track")'), "true");
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(audioUrl));
-  run("network", "unroute", "**/api/chat");
-  run("network", "route", "**/api/chat", "--body", JSON.stringify({
-    reply: "uploaded stems are ready.", stems,
-  }));
-  run("click", 'div:has(> [role="group"][aria-label^="uploaded audio:"]) ~ button:first-of-type');
-  run("wait", "--text", "uploaded stems are ready.");
-  assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(audioUrl));
-  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "6");
-  // Selecting an older generated track also changes the source for follow-up requests.
-  run("click", 'div:has(> [role="group"][aria-label="generated music"]) ~ button:first-of-type');
-  run("wait", "--fn", 'document.querySelectorAll("audio").length === 8');
-  openInput();
-  run("fill", "textarea:not([name])", "separate that track again");
-  run("click", send);
-  run("wait", "--fn", 'document.querySelectorAll("audio").length === 10');
-  assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(generatedAudioUrl));
-  // Cleanup supports the original track, selected stems, and valid retry after failure.
-  run("network", "unroute", "**/api/chat");
-  run("network", "route", "**/api/chat", "--abort");
-  run("click", 'div:has(> [role="group"][aria-label="generated music"]) ~ button:last-of-type');
-  run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 3');
-  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "10");
-  assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(generatedAudioUrl));
-  const cleanedAudio = {
-    url: "/api/cleaned/33333333-3333-3333-3333-333333333333/source_cleaned.wav", name: "cleaned audio",
-  };
-  run("network", "unroute", "**/api/chat");
-  run("network", "route", "**/api/chat", "--body", JSON.stringify({ reply: "cleaned audio is ready.", cleanedAudio }));
-  run("find", "first", 'button[aria-label="remove echo/reverb from vocals"]', "click");
-  run("wait", "--text", "download cleaned audio WAV");
-  assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(stems.vocalsUrl));
-  run("wait", "--fn", 'document.querySelector(`audio[aria-label="cleaned audio"]`).getAttribute("src")?.startsWith("blob:")');
-  openInput();
-  run("fill", "textarea:not([name])", "clean it again");
-  run("click", send);
-  run("wait", "--fn", 'document.querySelectorAll("audio").length === 12');
-  assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(cleanedAudio.url));
+  assert.equal(run("eval", 'Array.from(document.querySelectorAll("button")).some(button => button.textContent.includes("separate stems") || button.textContent.includes("remove echo/reverb"))'), "false");
   // A failed send retains the attachment for a retry, and reset failures preserve it.
   run("network", "unroute", "**/api/audio?*");
   run("network", "route", "**/api/audio?*", "--body", JSON.stringify({
@@ -398,22 +347,22 @@ try {
   openInput();
   run("fill", "textarea:not([name])", "check this attachment");
   run("click", send);
-  run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 4');
+  run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 3');
   run("wait", "--fn", 'document.querySelector("footer audio").getAttribute("src")?.startsWith("blob:")');
   // Failed resets preserve the draft and tracks; successful resets clear both.
   run("network", "route", "**/api/reset", "--body", '{"status":"failed"}');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("wait", "--text", "Error: Conversation reset failed.");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
-  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "14");
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "4");
   run("network", "unroute", "**/api/reset");
   run("network", "route", "**/api/reset", "--abort");
   run("find", "role", "button", "click", "--name", "new session", "--exact");
-  run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 5');
+  run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 4');
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
   assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3-clip-preview"');
-  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "14");
+  assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "4");
   run("network", "unroute", "**/api/reset");
   run("network", "route", "**/api/reset", "--body", '{"status":"ok"}');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
@@ -424,7 +373,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "0");
   assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
-  console.log("Chat E2E passed: chat recovery, music confirmation, uploads, stem separation, and echo removal recovery.");
+  console.log("Chat E2E passed: chat recovery, music confirmation, uploads, private downloads, and deferred processing controls.");
 } finally {
   try { unlinkSync(uploadPath); } catch { /* No upload fixture to remove. */ }
   run("close");

@@ -24,9 +24,7 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto py-4 space-y-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <h1 className="sr-only">chat</h1>
           {messages.map((message, index) => (
-            <ChatMessage key={index} message={message} loading={loading}
-              onSeparate={(url) => send("separate the vocals and instrumental from this track.", url)}
-              onRemoveEcho={(url) => send("remove echo and reverb from this audio.", url)} />
+            <ChatMessage key={index} message={message} />
           ))}
 
           {loading && (

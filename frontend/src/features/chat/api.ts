@@ -4,8 +4,6 @@ import { authenticatedFetch } from "@/lib/api";
 export interface ChatReply {
   reply: string;
   musicPrompt?: MusicPrompt;
-  stems?: SeparatedStems;
-  cleanedAudio?: AudioTrack;
 }
 
 export interface ChatContext {
@@ -28,11 +26,6 @@ export async function getChatContext(): Promise<ChatContext> {
 export interface AudioTrack {
   url: string;
   name: string;
-}
-
-export interface SeparatedStems {
-  vocalsUrl: string;
-  instrumentalUrl: string;
 }
 
 export interface MusicTrack {
@@ -103,29 +96,10 @@ export async function sendMessage(message: string, audioUrl: string | undefined,
     throw new Error("Invalid chat response.");
   }
 
-  const stems = "stems" in data ? data.stems : undefined;
-  if (stems !== undefined && (!stems || typeof stems !== "object" ||
-      !("vocalsUrl" in stems) || typeof stems.vocalsUrl !== "string" ||
-      !/^\/api\/stems\/[0-9a-f-]{36}\/source_vocals\.wav$/.test(stems.vocalsUrl) ||
-      !("instrumentalUrl" in stems) || typeof stems.instrumentalUrl !== "string" ||
-      stems.instrumentalUrl !== stems.vocalsUrl.replace("source_vocals.wav", "source_instrumental.wav"))) {
-    throw new Error("Invalid stem separation response.");
-  }
-
-  const cleanedAudio = "cleanedAudio" in data ? data.cleanedAudio : undefined;
-  if (cleanedAudio !== undefined && (!cleanedAudio || typeof cleanedAudio !== "object" ||
-      !("url" in cleanedAudio) || typeof cleanedAudio.url !== "string" ||
-      !/^\/api\/cleaned\/[0-9a-f-]{36}\/source_cleaned\.wav$/.test(cleanedAudio.url) ||
-      !("name" in cleanedAudio) || typeof cleanedAudio.name !== "string")) {
-    throw new Error("Invalid echo removal response.");
-  }
-
   return {
     reply,
     musicPrompt: "musicPrompt" in data && isMusicPrompt(data.musicPrompt)
       ? data.musicPrompt : undefined,
-    stems: stems as SeparatedStems | undefined,
-    cleanedAudio: cleanedAudio as AudioTrack | undefined,
   };
 }
 

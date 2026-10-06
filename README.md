@@ -534,13 +534,12 @@ Use **upload audio** to add an MP3, WAV, FLAC, or OGG file. Uploads must be mono
 or stereo, at most 50 MB, and no longer than 10 minutes. The attachment area shows
 the filename and an audio player. You can replace or remove it before sending.
 Send a message to attach the audio to that message. A failed upload or send keeps
-the previous attachment available. Click **separate stems**
-on an uploaded or generated track, or ask the agent to isolate its vocals or
-create an instrumental version. Chat requests use the latest sent attachment or generated
-track, or the track or stem most recently selected with an audio action button.
-A successful cleanup selects its cleaned output for follow-up requests.
+the previous attachment available. Chat requests use the latest sent attachment or generated
+track. Stem separation and echo/reverb cleanup controls and result players are
+removed from the frontend pending backend cost planning. The backend agent tools
+remain available through typed requests.
 
-Each result has two audio players and WAV download links. Sources stay intact
+Sources stay intact
 when separation fails. One audio processing job runs at a time, with a 20-minute
 timeout. CPU processing can be slow. Uploads are saved in `backend/uploaded-audio/`
 and completed stems in `backend/separated-audio/`; Git ignores both directories.
@@ -562,11 +561,10 @@ Peak adjustment check: `backend/audio-processing/.venv/bin/python backend/audio-
 
 The agent's `remove_echo_reverb` tool uses the supplied **UVR-DeEcho-DeReverb**
 VR model. It accepts generated tracks, uploads, separated stems, and previous
-cleaned results. Ask to remove echo or reverb, or click **remove echo/reverb**
-beside an audio player. For clean isolated vocals, ask the agent to separate
-vocals first and then clean them.
+cleaned results. Its frontend controls and result player are removed pending
+backend cost planning. The backend agent tool remains available through typed requests.
 
-The result is one cleaned 44.1 kHz floating-point WAV with a player and download.
+The backend result is one cleaned 44.1 kHz floating-point WAV.
 The model reduces echo and reverb together; it does not guarantee complete removal.
 Sources remain intact. Completed results are saved in `backend/cleaned-audio/`
 and survive a restart. CPU processing can be slow.

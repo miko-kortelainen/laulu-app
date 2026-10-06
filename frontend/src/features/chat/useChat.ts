@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { generateMusic, getChatContext, resetChat, retrySongStorage, sendMessage, SongStorageError, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack, type SeparatedStems } from "./api";
+import { generateMusic, getChatContext, resetChat, retrySongStorage, sendMessage, SongStorageError, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack } from "./api";
 import { emptyMusicPrompt, isMusicPrompt, musicPromptFields, type MusicPrompt } from "./musicPrompt";
 
 export interface Message {
@@ -7,8 +7,6 @@ export interface Message {
   text: string;
   track?: MusicTrack;
   audio?: AudioTrack;
-  stems?: SeparatedStems;
-  cleanedAudio?: AudioTrack;
 }
 
 function errorMessage(error: unknown): string {
@@ -60,12 +58,12 @@ export function useChat() {
     return () => window.clearTimeout(timeout);
   }, [updatedMusicFields]);
 
-  async function send(text: string, audioUrl?: string): Promise<void> {
+  async function send(text: string): Promise<void> {
     const message = text.trim();
     if (!message || busy.current) return;
 
     busy.current = true;
-    const attachment = audioUrl ? undefined : pendingAudio;
+    const attachment = pendingAudio;
     if (attachment) {
       setPendingAudio(undefined);
       setUploadError(undefined);
@@ -74,13 +72,12 @@ export function useChat() {
     setActivity('thinking...');
     setMessages((previous) => [...previous, { role: "user", text: message, audio: attachment }]);
 
-    if (audioUrl || attachment) currentAudio.current = audioUrl ?? attachment?.url;
+    if (attachment) currentAudio.current = attachment.url;
     const result = await sendMessage(message, currentAudio.current, musicPrompt, setActivity).catch(
       (error: unknown) => ({ reply: `Error: ${errorMessage(error)}`, failed: true }),
     );
 
     if (attachment && "failed" in result) setPendingAudio(attachment);
-    if ("cleanedAudio" in result && result.cleanedAudio) currentAudio.current = result.cleanedAudio.url;
     if ("musicPrompt" in result && result.musicPrompt) {
       const nextPrompt = result.musicPrompt;
       setUpdatedMusicFields(musicPromptFields
@@ -89,9 +86,7 @@ export function useChat() {
       setMusicPrompt(nextPrompt);
       setMusicError(undefined);
     }
-    setMessages((previous) => [...previous, { role: "agent", text: result.reply,
-      stems: "stems" in result ? result.stems : undefined,
-      cleanedAudio: "cleanedAudio" in result ? result.cleanedAudio : undefined }]);
+    setMessages((previous) => [...previous, { role: "agent", text: result.reply }]);
     await refreshContext();
     busy.current = false;
     setActivity(undefined);
