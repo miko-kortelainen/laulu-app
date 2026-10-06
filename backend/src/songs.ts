@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { access, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { putSongObject, r2Storage, readSongObject } from './r2.js';
+import { deleteSongObject, putSongObject, r2Storage, readSongObject } from './r2.js';
 import { userDirectory } from './user-files.js';
 
 export const musicDirectory = fileURLToPath(new URL('../generated-music/', import.meta.url));
@@ -115,6 +115,23 @@ export async function listSongs(userId: string): Promise<SavedSong[]> {
     .eq('owner_id', userId).eq('status', 'ready').order('created_at', { ascending: false }).limit(100);
   if (error) throw new Error('could not load saved songs. try again.');
   return (data as Song[]).map(publicSong);
+}
+
+export async function deleteSong(userId: string, id: string): Promise<void> {
+  const song = await findSong(userId, id);
+  const key = `users/${userId}/${id}.mp3`;
+  if (!song || song.status !== 'ready' || song.object_key !== key) {
+    throw new SongNotFoundError('song not found.');
+  }
+  await deleteSongObject(key).catch(() => { throw new Error('could not delete song audio. try deleting again.'); });
+  const filename = songPath(userId, id);
+  // Remove local copies before metadata so legacy playback cannot restore a deleted song.
+  await Promise.all([filename, filename.replace(/\.mp3$/, '.json')].map((file) => rm(file, { force: true })))
+    .catch(() => { throw new Error('could not delete local song files. try deleting again.'); });
+  memoryRecovery.delete(id);
+  // Keep metadata until cleanup succeeds; deleting an absent R2 object is safe to retry.
+  const { error } = await database().from('songs').delete().eq('owner_id', userId).eq('id', id);
+  if (error) throw new Error('could not finish deleting the song. try deleting again.');
 }
 
 export async function listSongRecovery(userId: string): Promise<string[]> {

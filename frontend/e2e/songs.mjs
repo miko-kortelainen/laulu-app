@@ -50,7 +50,7 @@ try {
   assert.equal(await run("eval", "window.songRequests.some(request => request.url.startsWith('/api/music/'))"), "false");
   await run("click", "main li:first-child details summary");
   await run("wait", "--text", "warm acoustic folk");
-  await run("click", "main li:first-child details:last-child summary");
+  await run("click", "main li:first-child details:last-of-type summary");
   await run("wait", "--text", "a quiet morning");
   await run("find", "role", "button", "click", "--name", "listen song 1", "--exact");
   await run("wait", "--fn", "document.querySelector('main audio')?.duration > 0");
@@ -79,6 +79,39 @@ try {
   await run("eval", "window.badSongs = false");
   await run("find", "role", "button", "click", "--name", "try again", "--exact");
   await run("wait", "--fn", "!document.querySelector('[role=alert]') && !document.querySelector('[role=status]')");
+
+  await run("eval", `window.deleteConfirmed = false; window.deleteFailure = true; window.deleteRequests = [];
+    window.confirm = () => window.deleteConfirmed;
+    const beforeDelete = window.fetch;
+    window.fetch = (input, options) => {
+      if (options?.method !== 'DELETE') return beforeDelete(input, options);
+      window.deleteRequests.push({ url: input, token: new Headers(options.headers).get('authorization') });
+      if (window.deleteFailure) return Promise.resolve(Response.json({}, { status: 502 }));
+      return new Promise((resolve, reject) => {
+        window.finishSongDelete = () => resolve(new Response(null, { status: 204 }));
+        options.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    };`);
+  await run("find", "role", "button", "click", "--name", "delete song 2", "--exact");
+  assert.equal(await run("eval", "window.deleteRequests.length"), "0");
+  await run("eval", "window.deleteConfirmed = true");
+  await run("find", "role", "button", "click", "--name", "delete song 2", "--exact");
+  await run("wait", "--text", "could not delete the song.");
+  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "2");
+  assert.equal(await run("eval", "document.querySelector('main audio').getAttribute('aria-label')"), '"song 2"');
+  await run("eval", "window.deleteFailure = false");
+  await run("find", "role", "button", "click", "--name", "delete song 2", "--exact");
+  await run("wait", "--text", "deleting...");
+  assert.equal(await run("eval", "Array.from(document.querySelectorAll('main li > button')).every(button => button.disabled)"), "true");
+  assert.equal(await run("eval", "document.querySelector('main section > div button').disabled"), "true");
+  assert.equal(await run("eval", "window.deleteRequests.length"), "2");
+  assert.equal(await run("eval", "window.deleteRequests[1].url"), JSON.stringify(`/api/songs/${songs[1].id}`));
+  assert.equal(await run("eval", "window.deleteRequests[1].token"), JSON.stringify(`Bearer ${first.access_token}`));
+  await run("eval", "window.finishSongDelete()");
+  await run("wait", "--fn", "document.querySelectorAll('main li').length === 1 && !document.querySelector('main audio')");
+  assert.equal(await run("eval", "document.querySelector('main time').dateTime"), JSON.stringify(songs[0].createdAt));
+  assert.equal(await run("eval", "document.querySelector('[role=alert]')"), "null");
+
   await run("find", "role", "link", "click", "--name", "chat", "--exact");
   await run("wait", "--text", "0 / 40 messages");
   assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
@@ -102,7 +135,7 @@ try {
   await run("click", 'button[type="submit"]');
   await run("wait", "--text", "no saved songs yet.");
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
-  console.log("Songs E2E passed: authenticated navigation and reload, empty state, saved metadata, on-demand playback and download, retained chat form, failed refresh recovery, invalid-response rejection, narrow layout, and account switching.");
+  console.log("Songs E2E passed: authenticated navigation and reload, empty state, saved metadata, playback and download, deletion confirmation and failure recovery, retained chat form, failed refresh recovery, invalid-response rejection, narrow layout, and account switching.");
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);
   throw error;

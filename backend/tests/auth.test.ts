@@ -84,6 +84,7 @@ test('verified users own their API session and local media', async () => {
     const pendingChat = fetch(`${url}/api/chat`, { method: 'POST', headers: headersA, body: JSON.stringify({ message: 'pending' }) });
     await started;
     assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA })).status, 409);
+    assert.equal((await fetch(`${url}/api/songs/${randomUUID()}`, { method: 'DELETE', headers: headersA })).status, 409);
     assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersB })).status, 200);
     cancel(new Error('offline request cancellation'));
     assert.equal((await pendingChat).status, 500);

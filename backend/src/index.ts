@@ -7,7 +7,7 @@ import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validate
 import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
 import { userDirectory } from './user-files.js';
-import { listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
+import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -72,7 +72,7 @@ app.use('/api/audio', (error: unknown, _req: Request, res: Response, _next: Next
 
 const busySessions = new Set<string>();
 app.use(['/api/chat', '/api/music', '/api/reset', '/api/songs'], (req, res, next) => {
-  if (req.method !== 'POST') return next();
+  if (req.method !== 'POST' && req.method !== 'DELETE') return next();
   const sessionId: string = res.locals.userId;
   if (busySessions.has(sessionId)) {
     res.status(409).json({ error: 'wait for the current action to finish.' });
@@ -81,6 +81,11 @@ app.use(['/api/chat', '/api/music', '/api/reset', '/api/songs'], (req, res, next
   busySessions.add(sessionId);
   res.once('finish', () => busySessions.delete(sessionId));
   next();
+});
+
+app.delete('/api/songs/:id', async (req, res) => {
+  await deleteSong(res.locals.userId, req.params.id).catch((error: unknown) => storageFailure(res, error));
+  if (!res.headersSent) res.status(204).end();
 });
 
 app.post('/api/songs/:id/retry', async (req, res) => {

@@ -5,7 +5,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
-import { checkSongStorage, listSongRecovery, localSongPath, musicDirectory, retrySongStorage, saveSong, SongStorageError } from '../src/songs.js';
+import { checkSongStorage, deleteSong, listSongRecovery, localSongPath, musicDirectory, retrySongStorage, saveSong, SongStorageError } from '../src/songs.js';
 import { prepareAnalysisAudio, processAudio } from '../src/audio.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 import { configureTestSongStorage } from './song-fixture.js';
@@ -120,6 +120,42 @@ test('songs persist privately, restore from R2, and retry failed saves without r
     assert.equal((await fetch(`${base}${legacyUrl}`, { headers: headersA })).status, 200);
     assert.equal((await prepareAnalysisAudio(legacyUrl, userA)).data, audio.toString('base64'));
     process.env.SUPABASE_SECRET_KEY = 'sb_secret_offline';
+
+    const otherTrack = await saveSong(userB, audio, 'piano', 'lyria-3.5', '');
+    const deleteUrl = `${base}/api/songs/${track.id}`;
+    assert.equal((await fetch(deleteUrl, { method: 'DELETE' })).status, 401);
+    assert.equal((await fetch(deleteUrl, { method: 'DELETE', headers: headersB })).status, 404);
+    assert.equal((await fetch(`${base}/api/songs/invalid`, { method: 'DELETE', headers: headersA })).status, 404);
+    storage.rows.set(track.id, { ...row, object_key: `users/${userB}/${track.id}.mp3` });
+    assert.equal((await fetch(deleteUrl, { method: 'DELETE', headers: headersA })).status, 404);
+    storage.rows.set(track.id, { ...row, status: 'pending' });
+    assert.equal((await fetch(deleteUrl, { method: 'DELETE', headers: headersA })).status, 404);
+    storage.rows.set(track.id, row);
+    assert.equal(storage.deletes, 0, 'reject invalid ownership and state before touching R2');
+    storage.failures.deleteObject = true;
+    assert.equal((await fetch(deleteUrl, { method: 'DELETE', headers: headersA })).status, 502);
+    assert.ok(storage.rows.has(track.id));
+    assert.ok(storage.objects.has(row.object_key as string));
+    storage.failures.deleteObject = false;
+    // Stale local files must not become playable through the legacy fallback after deletion.
+    await writeFile(`${musicDirectory}${userA}/${track.id}.mp3`, audio);
+    await writeFile(`${musicDirectory}${userA}/${track.id}.json`, JSON.stringify(row));
+    storage.failures.deleteRow = true;
+    const partialDelete = await fetch(deleteUrl, { method: 'DELETE', headers: headersA });
+    assert.equal(partialDelete.status, 502);
+    assert.match((await partialDelete.json()).error, /try deleting again/);
+    assert.ok(storage.rows.has(track.id), 'keep metadata so cleanup can be retried');
+    assert.equal(storage.objects.has(row.object_key as string), false);
+    await assert.rejects(readFile(`${musicDirectory}${userA}/${track.id}.mp3`), /ENOENT/);
+    await assert.rejects(readFile(`${musicDirectory}${userA}/${track.id}.json`), /ENOENT/);
+    storage.failures.deleteRow = false;
+    assert.equal((await fetch(deleteUrl, { method: 'DELETE', headers: headersA })).status, 204);
+    assert.equal(storage.rows.has(track.id), false);
+    assert.equal((await fetch(`${base}${track.url}`, { headers: headersA })).status, 404);
+    assert.equal((await fetch(`${base}${track.url}`, { headers: headersB })).status, 404);
+    assert.ok(storage.rows.has(otherTrack.id));
+    assert.ok(storage.objects.has(`users/${userB}/${otherTrack.id}.mp3`));
+    assert.equal((await fetch(deleteUrl, { method: 'DELETE', headers: headersA })).status, 404);
 
     for (const failure of ['insert', 'put', 'ready', 'readyResponse'] as const) {
       storage.failures[failure] = true;
@@ -262,4 +298,25 @@ test('disk failures preserve storage retry and temporary processing files never 
   assert.deepEqual(await fs.readdir(directory), []);
   await assert.rejects(processAudio(url, 'stems', userId), /install local audio processing/);
   assert.deepEqual(await fs.readdir(directory), []);
+
+  await writeFile(`${directory}/${saved.id}.mp3`, audio);
+  const originalRemove = fs.rm;
+  let cleanupFails = true;
+  const removals = context.mock.method(fs, 'rm', async (...args: Parameters<typeof fs.rm>) => {
+    if (cleanupFails && String(args[0]) === `${directory}/${saved.id}.mp3`) throw new Error('offline cleanup failure');
+    return originalRemove(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(deleteSong(userId, saved.id), /could not delete local song files/);
+    assert.ok(storage.rows.has(saved.id));
+    assert.deepEqual(await readFile(`${directory}/${saved.id}.mp3`), audio);
+    cleanupFails = false;
+    await deleteSong(userId, saved.id);
+    assert.equal(storage.rows.has(saved.id), false);
+    assert.deepEqual(await fs.readdir(directory), []);
+  } finally {
+    removals.mock.restore();
+    syncBuiltinESMExports();
+  }
 });

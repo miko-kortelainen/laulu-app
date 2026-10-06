@@ -32,3 +32,9 @@ export async function getSongs(signal: AbortSignal): Promise<SavedSong[]> {
   if (!songs.every(isSavedSong)) throw new Error("invalid songs response. try again.");
   return songs;
 }
+
+export async function deleteSavedSong(id: string, signal: AbortSignal): Promise<void> {
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id)) throw new Error("invalid song reference.");
+  const response = await authenticatedFetch(`/api/songs/${id}`, { method: "DELETE", signal });
+  if (response.status !== 204) throw new Error("could not delete the song. try deleting again.");
+}

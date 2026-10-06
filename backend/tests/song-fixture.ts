@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 export function configureTestSongStorage() {
   const env = {
@@ -12,14 +12,21 @@ export function configureTestSongStorage() {
   Object.assign(process.env, env);
   const rows = new Map<string, Record<string, unknown>>();
   const objects = new Map<string, Buffer>();
-  const failures = { read: false, insert: false, put: false, ready: false, readyResponse: false };
+  const failures = { read: false, insert: false, put: false, ready: false, readyResponse: false, deleteObject: false, deleteRow: false };
   let writes = 0;
   let reads = 0;
+  let deletes = 0;
   const send = mock.method(S3Client.prototype, 'send', async (command: unknown) => {
-    assert.ok(command instanceof PutObjectCommand || command instanceof GetObjectCommand, 'only private object reads/writes are permitted');
+    assert.ok(command instanceof PutObjectCommand || command instanceof GetObjectCommand || command instanceof DeleteObjectCommand, 'only private object operations are permitted');
     assert.equal(command.input.Bucket, env.R2_BUCKET_NAME);
     const key = command.input.Key;
     assert.ok(key && /^users\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.mp3$/.test(key));
+    if (command instanceof DeleteObjectCommand) {
+      deletes++;
+      if (failures.deleteObject) throw new Error('offline R2 delete failure');
+      objects.delete(key);
+      return {};
+    }
     if (command instanceof PutObjectCommand) {
       if (failures.put) throw new Error('offline R2 failure');
       assert.equal(command.input.ContentType, 'audio/mpeg');
@@ -66,6 +73,12 @@ export function configureTestSongStorage() {
       rows.set(row.id as string, row);
       return new Response(null, { status: 201 });
     }
+    if (request.method === 'DELETE') {
+      assert.ok(owner && id, 'every deletion must filter by owner and id');
+      if (failures.deleteRow) return Response.json({ message: 'offline database delete failure' }, { status: 503 });
+      for (const row of matches) rows.delete(row.id as string);
+      return new Response(null, { status: 204 });
+    }
     assert.equal(request.method, 'PATCH');
     assert.ok(owner && id && status === 'pending', 'every update must filter owner, id, and state');
     if (failures.ready) return Response.json({ message: 'offline update failure' }, { status: 503 });
@@ -77,7 +90,7 @@ export function configureTestSongStorage() {
     return Response.json(row);
   }
 
-  return { rows, objects, failures, databaseResponse, get writes() { return writes; }, get reads() { return reads; },
+  return { rows, objects, failures, databaseResponse, get writes() { return writes; }, get reads() { return reads; }, get deletes() { return deletes; },
     restore() {
       send.mock.restore();
       for (const [key, value] of previous) {

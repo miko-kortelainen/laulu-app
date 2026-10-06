@@ -1,6 +1,6 @@
 # Authentication and audio storage plan
 
-Status: authentication and generated-song R2 storage implemented. Other audio storage and usage limits remain planned.
+Status: authentication, generated-song R2 storage, saved-song UI, and song deletion implemented. Other audio storage and usage limits remain planned.
 
 ## Implemented generated-song storage
 
@@ -12,6 +12,10 @@ Playback uses the existing authenticated Express endpoint. Signed URLs and brows
 Failed saves retain an owned local recovery file. Storage retries do not repeat generation.
 If the local write fails, storage retry uses an owned memory copy until the backend restarts.
 Completed saves delete their recovery files. Local processing uses separate temporary files with atomic writes and cleanup.
+The saved-song page supports playback, downloads, and confirmed deletion through `DELETE /api/songs/<song-id>`.
+Deletion verifies ownership and removes the R2 object and local recovery copies before it deletes metadata.
+If cleanup fails, metadata remains available for another deletion attempt. A deleted R2 object can make playback unavailable during this retry.
+Automatic retention and abandoned-save cleanup remain planned.
 Uploads, stems, and cleaned audio remain local. The broader sections below describe the remaining target architecture.
 
 ## Authentication phase

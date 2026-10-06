@@ -104,6 +104,7 @@ Generated songs use private R2 storage and Supabase metadata. Uploads, stems, an
 Use **my songs** to see your newest 100 saved songs, creation dates, prompts, and lyrics.
 Select **listen** to play a song or download its MP3. Only the selected song loads audio.
 The page reads songs for the signed-in user. It loads the list again when you return or select **refresh**.
+Select **delete** and confirm to permanently remove a saved song. If deletion fails, the song stays in the list for another attempt.
 Older local songs are not included. Usage quotas remain in [the broader plan](AUTHENTICATION_PLAN.md).
 
 ### Configure generated-song storage
@@ -143,12 +144,18 @@ These endpoints require the user's bearer token:
 | `GET /api/songs` | The user's newest 100 ready songs, including stable URLs and lyrics |
 | `GET /api/songs/recovery` | IDs of local songs with unfinished storage |
 | `POST /api/songs/<song-id>/retry` | Store an unfinished song without another model call |
+| `DELETE /api/songs/<song-id>` | Delete the user's saved song, its R2 object, and local recovery copies |
 | `GET /api/music/<song-id>.mp3` | Private playback or download after an ownership check |
 
 A failed save returns HTTP 502 with `songId` and `retryUrl`. The generation button changes to **retry saving**.
 This action stores the existing song. It does not call the music model again.
 The retry returns `{ track }`, with the same URL and lyrics as a successful generation.
 Repeated retries of a ready song return that song without another upload.
+
+Deletion checks the verified owner before it removes the R2 object or local copies.
+It deletes metadata last. If cleanup fails, the metadata remains so deletion can be retried.
+If the R2 object was already deleted, the song can remain listed while playback is unavailable until deletion succeeds.
+Deletion uses the same per-user action lock as generation and chat. No database migration is required.
 The recovery endpoint also finds unfinished local saves after a backend restart or lost response.
 
 Keep `backend/generated-music/` on persistent disk until unfinished saves succeed.

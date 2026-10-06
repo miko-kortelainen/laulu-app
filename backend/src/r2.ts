@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import 'dotenv/config';
 
 export function r2Storage(): { client: S3Client; bucket: string } {
@@ -24,6 +24,11 @@ export async function putSongObject(key: string, audio: Buffer): Promise<void> {
   await client.send(new PutObjectCommand({
     Bucket: bucket, Key: key, Body: audio, ContentType: 'audio/mpeg',
   }));
+}
+
+export async function deleteSongObject(key: string): Promise<void> {
+  const { client, bucket } = r2Storage();
+  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
 export async function readSongObject(key: string, range?: string): Promise<{ audio: Buffer; contentRange?: string }> {
