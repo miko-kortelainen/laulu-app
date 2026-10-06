@@ -25,6 +25,8 @@ A simple full-stack AI chatbot built with:
 │   │   ├── gateway.ts     # Required Cloudflare AI Gateway BYOK routing
 │   │   ├── lyrics.ts      # Dedicated GLM lyric agent
 │   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
+│   │   ├── songs.ts       # Generated-song ownership, metadata, and storage recovery
+│   │   ├── r2.ts          # Private Cloudflare R2 object reads and writes
 │   │   ├── audio.ts       # Audio storage, validation, and shared processing jobs
 │   │   ├── analysis.ts    # QwenCloud listening analysis tool
 │   │   ├── stems.ts       # Local vocal/instrumental separation tool
@@ -95,7 +97,71 @@ React Router serves chat at `/` and the signed-in profile at `/profile`. Navigat
 Configure production hosting to serve `index.html` for frontend routes such as `/profile`, while keeping `/api/` requests on the backend.
 Local audio playback and downloads use authenticated requests.
 Existing audio without an owner remains on disk but has no public route.
-R2 storage, audio metadata, and usage quotas remain in [the next implementation phase](AUTHENTICATION_PLAN.md).
+Generated songs use private R2 storage and Supabase metadata. Uploads, stems, and cleaned audio stay in local user directories.
+Usage quotas and a saved-song interface remain in [the broader plan](AUTHENTICATION_PLAN.md).
+
+### Configure generated-song storage
+
+1. In the Supabase SQL Editor, run [the songs migration](supabase/migrations/20261005113828_songs.sql) on the same project.
+2. Create a private Cloudflare R2 bucket.
+3. Disable public access through `r2.dev` and custom domains.
+4. Create R2 credentials with object read/write access for that bucket.
+5. Add these values to `backend/.env`:
+
+```env
+SUPABASE_SECRET_KEY=sb_secret_your_server_key
+R2_ACCOUNT_ID=your_cloudflare_account_id
+R2_BUCKET_NAME=your_private_bucket
+R2_ACCESS_KEY_ID=your_bucket_access_key
+R2_SECRET_ACCESS_KEY=your_bucket_secret
+```
+
+Keep these credentials on the backend. Restart the backend after the configuration change.
+Generation stops before the model call if credentials are absent or the metadata table is unavailable.
+
+Each `songs.owner_id` references `auth.users.id`. The backend gets this ID from verified access-token claims.
+The R2 key is `users/<owner-id>/<song-id>.mp3`. The database constraint requires the same owner and song ID in this key.
+Row-level security permits users to read only their own ready songs. Direct client writes are disabled.
+See the [Supabase RLS guide](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+The backend inserts pending metadata, uploads the MP3, then marks the song ready.
+It stores the prompt, model, lyrics, size, and creation time with the song.
+Playback and downloads keep the authenticated `/api/music/<song-id>.mp3` address and read the private object through Express.
+R2 supports single byte ranges through this endpoint. The browser needs no R2 URL or bucket CORS configuration.
+See the [Cloudflare S3 SDK example](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/).
+
+These endpoints require the user's bearer token:
+
+| Endpoint | Result |
+| --- | --- |
+| `GET /api/songs` | The user's newest 100 ready songs, including stable URLs and lyrics |
+| `GET /api/songs/recovery` | IDs of local songs with unfinished storage |
+| `POST /api/songs/<song-id>/retry` | Store an unfinished song without another model call |
+| `GET /api/music/<song-id>.mp3` | Private playback or download after an ownership check |
+
+A failed save returns HTTP 502 with `songId` and `retryUrl`. The generation button changes to **retry saving**.
+This action stores the existing song. It does not call the music model again.
+The retry returns `{ track }`, with the same URL and lyrics as a successful generation.
+Repeated retries of a ready song return that song without another upload.
+The recovery endpoint also finds unfinished local saves after a backend restart or lost response.
+
+Keep `backend/generated-music/` on persistent disk until unfinished saves succeed.
+The backend retains at most five unfinished saves per user before it blocks further generation.
+If the local recovery write fails, the backend still attempts the R2 save.
+If both saves fail, it retains the song in memory for storage retry and reports this condition.
+Keep the backend running until that retry succeeds. Memory recovery does not survive a restart.
+Successful storage deletes the local recovery audio and metadata.
+Local processing downloads each owned song into a separate temporary file.
+The backend checks its size and renames the completed download before use. It deletes the file after processing, including failure.
+The current implementation needs one backend instance because its request locks and recovery files are local.
+Recovery retention, song deletion, pagination, and a saved-song interface are separate work.
+Existing owned local songs keep their private playback and processing URLs. They are not imported or included in the saved-song list automatically.
+Account deletion requires song cleanup first. The ownership foreign key prevents database rows from becoming ownerless.
+
+Offline checks: `npm --prefix backend run test:songs` and `npm --prefix backend run test:music`.
+These checks mock Supabase, R2, and model responses. They make no paid calls.
+The database policy checks are in `supabase/tests/songs.sql`.
+After local Supabase setup and migration, run `npx supabase test db supabase/tests/songs.sql --local`.
 
 ### Authentication checks
 
@@ -290,9 +356,10 @@ The browser decodes the waveform with the Web Audio API; no player library or
 model call is used. If decoding fails, playback keeps a plain seek timeline.
 The agent acknowledges form changes briefly and conversationally, without follow-up
 questions or repeated button reminders. It does not repeat the music prompt in chat.
-Tracks are saved in `backend/generated-music/`, which Git ignores.
-Downloads survive backend restarts. Chat messages remain in the current browser
-session; keep the download URL or download the file before reloading.
+Generated tracks are saved in private R2 storage with owner-linked Supabase metadata.
+The backend uses `backend/generated-music/` for unfinished saves and temporary processing files. Git ignores this directory.
+Songs survive backend restarts and are available through `GET /api/songs` after another login.
+Chat messages remain in the current browser session. A saved-song interface is not included yet.
 The **new session** button resets the conversation and music form and leaves saved tracks in place.
 The conversation context bar below the music form shows the backend's retained
 chat and tool message count against its 40-message sliding window. The count

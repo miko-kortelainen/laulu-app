@@ -13,9 +13,11 @@
     "test:stems": "tsx --test tests/stems.test.ts",
     "test:tracing": "node --import tsx tests/tracing.test.ts",
     "test:auth": "node --import tsx --test tests/auth.test.ts",
+    "test:songs": "node --import tsx --test tests/songs.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1146.0",
     "@google/genai": "^2.26.0",
     "@strands-agents/sdk": "^1.19.0",
     "@supabase/supabase-js": "2.117.2",

@@ -1,6 +1,18 @@
 # Authentication and audio storage plan
 
-Status: authentication implemented. R2 storage and database work remain planned.
+Status: authentication and generated-song R2 storage implemented. Other audio storage and usage limits remain planned.
+
+## Implemented generated-song storage
+
+The current scope stores generated songs only. Setup and endpoint details are in [the README](README.md#configure-generated-song-storage).
+The `songs` table links each song to `auth.users.id` through `owner_id`.
+R2 keys use `users/<verified-user-id>/<song-id>.mp3`.
+The backend checks ownership before playback, downloads, storage retry, and local processing.
+Playback uses the existing authenticated Express endpoint. Signed URLs and browser R2 access remain future options.
+Failed saves retain an owned local recovery file. Storage retries do not repeat generation.
+If the local write fails, storage retry uses an owned memory copy until the backend restarts.
+Completed saves delete their recovery files. Local processing uses separate temporary files with atomic writes and cleanup.
+Uploads, stems, and cleaned audio remain local. The broader sections below describe the remaining target architecture.
 
 ## Authentication phase
 
@@ -13,7 +25,7 @@ This phase needs only the project URL, publishable key, and Supabase Auth config
 It needs no custom database schema, migration, or backend secret key.
 See [authentication setup in the README](README.md#configure-authentication).
 
-The R2, metadata, saved-audio, and quota sections describe the next phase.
+Generated-song R2 storage and metadata are implemented. The broader saved-audio and quota sections describe future work.
 Keep public launch limited until the planned usage allowances are implemented.
 
 ## Goal and scope
@@ -50,7 +62,7 @@ Chat history remains in memory for this release. Audio metadata and files surviv
 - Download buttons fetch private audio with a bearer token.
 
 Authentication now protects conversation ownership and local audio ownership.
-Durable R2 storage and database metadata remain the next phase.
+Generated songs now have durable R2 storage and database metadata. Other audio remains local.
 
 ## Architecture
 

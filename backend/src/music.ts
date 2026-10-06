@@ -1,15 +1,13 @@
 import { GoogleGenAI } from '@google/genai';
 import { tool, type ToolContext } from '@strands-agents/sdk';
 import { traceable } from 'langsmith/traceable';
-import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { generateLyrics } from './lyrics.js';
 import { getAiGateway } from './gateway.js';
 import { userDirectory } from './user-files.js';
+import { checkSongStorage, musicDirectory, saveSong } from './songs.js';
 
-export const musicDirectory = fileURLToPath(new URL('../generated-music/', import.meta.url));
+export { musicDirectory };
 
 export interface MusicTrack {
   url: string;
@@ -98,8 +96,9 @@ export const generateMusic = traceable(async (
 ): Promise<MusicTrack> => {
   const input = validateMusicPrompt(prompt);
   const model = validateMusicModel(modelId);
-  const directory = userDirectory(musicDirectory, userId);
+  userDirectory(musicDirectory, userId);
   const gateway = getAiGateway('google-ai-studio');
+  await checkSongStorage(userId);
 
   const client = new GoogleGenAI({
     apiKey: 'byok',
@@ -149,15 +148,12 @@ export const generateMusic = traceable(async (
   }
   if (!audio?.length) throw new Error('music service returned no audio.');
 
-  const filename = `${randomUUID()}.mp3`;
-  await mkdir(directory, { recursive: true });
-  await writeFile(`${directory}/${filename}`, audio, { flag: 'wx' });
   const text = lyrics.join('\n')
     .replace(/\[\[[^\]\r\n]*\]\]/g, '')
     .replace(/^[ \t]*\[:\][ \t]*/gm, '')
     .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n')
     .trim();
-  return { url: `/api/music/${filename}`, lyrics: text };
+  return saveSong(userId, audio, input, model, text);
 }, {
   name: 'generate_audio',
   run_type: 'tool',

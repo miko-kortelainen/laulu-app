@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { generateMusic, getChatContext, resetChat, sendMessage, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack, type SeparatedStems } from "./api";
+import { generateMusic, getChatContext, resetChat, retrySongStorage, sendMessage, SongStorageError, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack, type SeparatedStems } from "./api";
 import { emptyMusicPrompt, isMusicPrompt, musicPromptFields, type MusicPrompt } from "./musicPrompt";
 
 export interface Message {
@@ -28,6 +28,7 @@ export function useChat() {
   const [updatedMusicFields, setUpdatedMusicFields] = useState<(keyof MusicPrompt)[]>([]);
   const [musicModel, setMusicModel] = useState("lyria-3.5");
   const [musicError, setMusicError] = useState<string>();
+  const [pendingSongId, setPendingSongId] = useState<string>();
   const [pendingAudio, setPendingAudio] = useState<AudioTrack>();
   const [uploadError, setUploadError] = useState<string>();
   const [context, setContext] = useState<ChatContext>();
@@ -131,17 +132,18 @@ export function useChat() {
   }
 
   async function confirmMusic(): Promise<void> {
-    if (busy.current || !isMusicPrompt(musicPrompt)) return;
+    if (busy.current || (!pendingSongId && !isMusicPrompt(musicPrompt))) return;
 
     busy.current = true;
-    setActivity('generating track...');
-    const result = await generateMusic(musicPrompt, musicModel).catch(
-      (error: unknown) => new Error(errorMessage(error)),
-    );
+    setActivity(pendingSongId ? 'saving track...' : 'generating track...');
+    const result = await (pendingSongId ? retrySongStorage(pendingSongId) : generateMusic(musicPrompt, musicModel))
+      .catch((error: unknown) => error instanceof Error ? error : new Error(errorMessage(error)));
     if (result instanceof Error) {
+      if (result instanceof SongStorageError) setPendingSongId(result.songId);
       setMusicError(result.message);
     } else {
       currentAudio.current = result.url;
+      setPendingSongId(undefined);
       setMusicError(undefined);
       setMessages((previous) => [...previous, { role: "agent", text: "your track is ready.", track: result }]);
     }
@@ -175,6 +177,7 @@ export function useChat() {
       setUpdatedMusicFields([]);
       setMusicModel("lyria-3.5");
       setMusicError(undefined);
+      setPendingSongId(undefined);
       setMessages([
         { role: "agent", text: "Conversation cleared. How can I help you?" },
       ]);
@@ -184,5 +187,5 @@ export function useChat() {
     setActivity(undefined);
   }
 
-  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio };
+  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, pendingSongId, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio };
 }

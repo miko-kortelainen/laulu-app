@@ -220,10 +220,46 @@ try {
     track: { url: generatedAudioUrl, lyrics },
   }));
   run("select", "select[name=musicModel]", "lyria-3.5");
+  // A failed save switches the action to storage retry, without another generation.
+  run("eval", `window.fetchBeforeStorage = window.fetch; window.storageRetries = []; window.failStorageRetry = true;
+    window.fetch = (input, options) => {
+      if (input === "/api/music") {
+        window.musicRequests.push(JSON.parse(options.body));
+        return Promise.resolve(Response.json({ error: "song generated, but saving failed. retry saving instead of generating again.",
+          songId: "00000000-0000-0000-0000-000000000000", retryUrl: "/api/music" }, { status: 502 }));
+      }
+      if (input === "/api/songs/00000000-0000-0000-0000-000000000000/retry") {
+        window.storageRetries.push({ url: input, method: options.method,
+          authenticated: new Headers(options.headers).get("authorization")?.startsWith("Bearer ") });
+        return new Promise(resolve => { window.finishStorageRetry = () => resolve(window.failStorageRetry
+          ? Response.json({ error: "saving is still unavailable." }, { status: 503 })
+          : Response.json({ track: { url: ${JSON.stringify(generatedAudioUrl)}, lyrics: ${JSON.stringify(lyrics)} } })); });
+      }
+      return window.fetchBeforeStorage(input, options);
+    };`);
   run("find", "role", "button", "click", "--name", "generate music");
+  run("wait", "--text", "song generated, but saving failed.");
+  run("wait", "--text", "this saves the song already generated.");
+  assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"retry saving"');
+  assert.equal(run("eval", 'document.querySelector("textarea[name=lyrics]").value'), JSON.stringify(lyrics));
+  assert.equal(run("eval", 'window.musicRequests.length'), "2");
+  run("find", "role", "button", "click", "--name", "retry saving", "--exact");
+  run("wait", "--text", "saving track...");
+  assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
+  run("eval", 'document.querySelector("aside > button").click()');
+  assert.equal(run("eval", 'window.storageRetries.length'), "1");
+  run("eval", 'window.finishStorageRetry()');
+  run("wait", "--text", "saving is still unavailable.");
+  assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"retry saving"');
+  run("eval", 'window.failStorageRetry = false; document.querySelector("aside > button").focus()');
+  run("press", "Enter");
+  run("wait", "--text", "saving track...");
+  run("eval", 'window.finishStorageRetry(); window.fetch = window.fetchBeforeStorage');
   run("wait", "--fn", 'document.querySelector("audio") !== null');
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", 'window.musicRequests.length'), "2");
+  assert.equal(run("eval", 'window.storageRetries.length === 2 && window.storageRetries.every(request => request.method === "POST" && request.authenticated)'), "true");
+  assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"generate music"');
   assert.equal(run("eval", 'window.musicRequests.at(-1).model'), '"lyria-3.5"');
   run("select", "select[name=musicModel]", "lyria-3-clip-preview");
   assert.equal(run("eval", 'document.querySelector("summary").textContent.trim()'), '"lyrics"');

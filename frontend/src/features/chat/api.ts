@@ -40,6 +40,15 @@ export interface MusicTrack {
   lyrics: string;
 }
 
+export class SongStorageError extends Error {
+  readonly songId: string;
+
+  constructor(songId: string, message: string) {
+    super(message);
+    this.songId = songId;
+  }
+}
+
 async function readChatResponse(response: Response, onStatus: (status: string) => void): Promise<unknown> {
   if (!response.headers.get('content-type')?.includes('application/x-ndjson')) return response.json();
   if (!response.body) throw new Error('Invalid chat response.');
@@ -154,11 +163,27 @@ export async function generateMusic(fields: MusicPrompt, model: string): Promise
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, model }),
   });
+  return readMusicResponse(response);
+}
+
+export async function retrySongStorage(songId: string): Promise<MusicTrack> {
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(songId)) {
+    throw new Error("invalid song reference.");
+  }
+  const response = await authenticatedFetch(`/api/songs/${songId}/retry`, { method: "POST" });
+  return readMusicResponse(response);
+}
+
+async function readMusicResponse(response: Response): Promise<MusicTrack> {
   const data: unknown = await response.json();
   if (!data || typeof data !== "object") throw new Error("Invalid music response.");
   if (!response.ok) {
-    throw new Error("error" in data && typeof data.error === "string"
-      ? data.error : "Music generation failed.");
+    const message = "error" in data && typeof data.error === "string" ? data.error : "Music request failed.";
+    if ("songId" in data && typeof data.songId === "string" &&
+        /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(data.songId)) {
+      throw new SongStorageError(data.songId, message);
+    }
+    throw new Error(message);
   }
   const track = "track" in data ? data.track : undefined;
   if (!track || typeof track !== "object" ||

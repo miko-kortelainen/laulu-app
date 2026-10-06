@@ -10,9 +10,11 @@ import { getAiGateway } from '../src/gateway.js';
 import { generateLyrics } from '../src/lyrics.js';
 import { getModelConfig } from '../src/model.js';
 import { generateMusic, musicDirectory } from '../src/music.js';
+import { configureTestSongStorage } from './song-fixture.js';
 
 test('BYOK routes chat, lyrics, token counting, music, and analysis without provider credentials', async () => {
   const originalFetch = globalThis.fetch;
+  const storage = configureTestSongStorage();
   const originalCreateRun = Client.prototype.createRun;
   const originalUpdateRun = Client.prototype.updateRun;
   Client.prototype.createRun = async () => {};
@@ -34,6 +36,8 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
 
   globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
+    const database = await storage.databaseResponse(request);
+    if (database) return database;
     calls.push(request.url);
     assert.equal(request.headers.get('cf-aig-authorization'), 'Bearer offline-gateway-token');
     assert.equal(request.headers.has('authorization'), false);
@@ -109,7 +113,9 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
 
     const track = await generateMusic('instrumental folk', undefined, session);
     musicPath = `${musicDirectory}${session}/${track.url.split('/').at(-1)}`;
-    assert.deepEqual(await readFile(musicPath), bytes);
+    assert.deepEqual(storage.objects.get(`users/${session}/${track.url.split('/').at(-1)}`), bytes);
+    await assert.rejects(readFile(musicPath), /ENOENT/);
+    musicPath = undefined;
     await mkdir(`${audioDirectory}${session}`, { recursive: true });
     await writeFile(audioPath, bytes);
     assert.equal(await analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), 'offline answer');
@@ -131,6 +137,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
   } finally {
     resetAgentSession(session);
     globalThis.fetch = originalFetch;
+    storage.restore();
     Client.prototype.createRun = originalCreateRun;
     Client.prototype.updateRun = originalUpdateRun;
     for (const [name, value] of originalEnv) {

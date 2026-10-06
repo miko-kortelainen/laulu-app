@@ -3,10 +3,11 @@ import cors from 'cors';
 import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
 import { getChatContext, getOrCreateAgent, resetAgentSession } from './agent.js';
 import { getModelConfig } from './model.js';
-import { generateMusic, musicDirectory, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
+import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
 import { userDirectory } from './user-files.js';
+import { listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -16,7 +17,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api', requireAuth);
 app.use(express.json());
 for (const [route, directory] of [
-  ['/api/music', musicDirectory], ['/api/audio', audioDirectory],
+  ['/api/audio', audioDirectory],
   ['/api/stems', stemsDirectory], ['/api/cleaned', cleanedDirectory],
 ]) {
   app.use(route, (req, res, next) => {
@@ -24,6 +25,39 @@ for (const [route, directory] of [
     express.static(userDirectory(directory, res.locals.userId), { dotfiles: 'deny', index: false })(req, res, next);
   });
 }
+
+function storageFailure(res: Response, error: unknown): void {
+  const invalidRange = error instanceof Error && error.name === 'InvalidRange';
+  res.status(error instanceof SongNotFoundError ? 404 : invalidRange ? 416 : 502).json({
+    error: error instanceof Error ? error.message : 'song storage failed. try again.',
+    ...(error instanceof SongStorageError ? { songId: error.songId, retryUrl: `/api/songs/${error.songId}/retry` } : {}),
+  });
+}
+
+app.get('/api/music/:filename', async (req, res) => {
+  const match = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\.mp3$/i.exec(req.params.filename);
+  if (!match) return res.status(404).json({ error: 'song not found.' });
+  const range = req.get('range');
+  if (range && !/^bytes=(?:\d+-\d*|-\d+)$/.test(range)) {
+    return res.status(416).json({ error: 'invalid audio range.' });
+  }
+  const result = await readSong(res.locals.userId, match[1], range).catch((error: unknown) => storageFailure(res, error));
+  if (!result) return;
+  res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'private, no-store', 'Accept-Ranges': 'bytes' });
+  if ('filename' in result) return res.sendFile(result.filename);
+  if (result.contentRange) res.status(206).set('Content-Range', result.contentRange);
+  res.send(result.audio);
+});
+
+app.get('/api/songs', async (_req, res) => {
+  const songs = await listSongs(res.locals.userId).catch((error: unknown) => storageFailure(res, error));
+  if (songs) res.set('Cache-Control', 'private, no-store').json({ songs });
+});
+
+app.get('/api/songs/recovery', async (_req, res) => {
+  const songIds = await listSongRecovery(res.locals.userId).catch((error: unknown) => storageFailure(res, error));
+  if (songIds) res.set('Cache-Control', 'private, no-store').json({ songIds });
+});
 
 app.post('/api/audio', express.raw({ type: 'application/octet-stream', limit: '50mb' }), async (req, res) => {
   const audio = await uploadAudio(req.query.name, req.body, res.locals.userId).catch((error: unknown) => {
@@ -37,7 +71,7 @@ app.use('/api/audio', (error: unknown, _req: Request, res: Response, _next: Next
 });
 
 const busySessions = new Set<string>();
-app.use(['/api/chat', '/api/music', '/api/reset'], (req, res, next) => {
+app.use(['/api/chat', '/api/music', '/api/reset', '/api/songs'], (req, res, next) => {
   if (req.method !== 'POST') return next();
   const sessionId: string = res.locals.userId;
   if (busySessions.has(sessionId)) {
@@ -45,7 +79,15 @@ app.use(['/api/chat', '/api/music', '/api/reset'], (req, res, next) => {
     return;
   }
   busySessions.add(sessionId);
+  res.once('finish', () => busySessions.delete(sessionId));
   next();
+});
+
+app.post('/api/songs/:id/retry', async (req, res) => {
+  const userId: string = res.locals.userId;
+  const track = await retrySongStorage(userId, req.params.id).catch((error: unknown) => storageFailure(res, error));
+  busySessions.delete(userId);
+  if (track) res.json({ track });
 });
 
 // Chat endpoint
@@ -125,6 +167,7 @@ app.post('/api/music', async (req: Request, res: Response) => {
   }
 
   const track = await generateMusic(prompt, model, sessionId, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
+    if (error instanceof SongStorageError) return storageFailure(res, error);
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
       .json({ error: error instanceof Error ? error.message : 'music generation failed.' });
   });

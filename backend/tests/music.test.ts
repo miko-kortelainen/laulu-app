@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { ToolContext } from '@strands-agents/sdk';
 import { generateMusic as generateUserMusic, updateMusicFormTool, musicDirectory, MusicPromptTokenLimitError } from '../src/music.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
+import { configureTestSongStorage } from './song-fixture.js';
 
 const userId = '10000000-0000-4000-8000-000000000001';
 const generateMusic = (prompt: string, model?: unknown) => generateUserMusic(prompt, model, userId);
@@ -23,6 +24,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
     lyrics: '[Verse 1]\nTiny paws in the morning dew,\nA world of green and a sky of blue.\n\n[Chorus]\nStay with me (stay with me)',
   };
   const restoreGateway = configureTestGateway();
+  const storage = configureTestSongStorage();
   let calls = 0;
   let tokenCalls = 0;
   let expectedModel = 'lyria-3.5';
@@ -30,6 +32,8 @@ test('music waits for confirmation, validates responses, and saves only valid au
   let response = new Response();
   globalThis.fetch = async (url, options) => {
     const request = new Request(url, options);
+    const database = await storage.databaseResponse(request);
+    if (database) return database;
     assert.equal(request.method, 'POST');
     const headers = request.headers;
     assert.equal(headers.get('content-type'), 'application/json');
@@ -84,6 +88,15 @@ test('music waits for confirmation, validates responses, and saves only valid au
     assert.equal(calls, 0);
     assert.equal(tokenCalls, 0);
     process.env.CF_AI_GATEWAY_TOKEN = 'offline-gateway-token';
+
+    delete process.env.R2_SECRET_ACCESS_KEY;
+    await assert.rejects(generateMusic(prompt), /configure R2/);
+    process.env.R2_SECRET_ACCESS_KEY = 'offline-secret';
+    storage.failures.read = true;
+    await assert.rejects(generateMusic(prompt), /generation was not started/);
+    storage.failures.read = false;
+    assert.equal(calls, 0);
+    assert.equal(tokenCalls, 0);
 
     tokenResponse = async () => Response.json({ totalTokens: 131_073 });
     await assert.rejects(generateMusic(prompt), (error: unknown) => {
@@ -145,9 +158,9 @@ test('music waits for confirmation, validates responses, and saves only valid au
       assert.equal(calls, previousCalls + 1);
       assert.match(track.url, /^\/api\/music\/[0-9a-f-]{36}\.mp3$/);
       savedPath = `${musicDirectory}${userId}/${track.url.split('/').at(-1)}`;
-      assert.deepEqual(await readFile(savedPath), bytes);
+      assert.deepEqual(storage.objects.get(`users/${userId}/${track.url.split('/').at(-1)}`), bytes);
+      await assert.rejects(readFile(savedPath), /ENOENT/);
       assert.equal(track.lyrics, 'Tiny paws in the morning dew,\nA world of green and a sky of blue.\n\nchorus');
-      await unlink(savedPath);
       savedPath = undefined;
     }
   } finally {
@@ -155,6 +168,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
     else process.env.LANGSMITH_TRACING = originalTracing;
     restoreGateway();
-    if (savedPath) await unlink(savedPath);
+    storage.restore();
+    if (savedPath) await unlink(savedPath).catch(() => undefined);
   }
 });

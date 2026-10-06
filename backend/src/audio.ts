@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { musicDirectory } from './music.js';
+import { localSongPath, musicDirectory } from './songs.js';
 import { userDirectory } from './user-files.js';
 
 export const audioDirectory = fileURLToPath(new URL('../uploaded-audio/', import.meta.url));
@@ -37,6 +37,14 @@ export function audioPath(value: unknown, userId: unknown): string {
   return path.join(userDirectory(match[1] === 'music' ? musicDirectory : audioDirectory, userId), match[2]);
 }
 
+async function resolveAudioPath(value: unknown, userId: unknown): Promise<{ filename: string; temporary: boolean }> {
+  const filename = audioPath(value, userId);
+  if (typeof value === 'string' && value.startsWith('/api/music/')) {
+    return localSongPath(userId as string, path.basename(filename, '.mp3'));
+  }
+  return { filename, temporary: false };
+}
+
 async function runProcessor(script: string, args: string[], timeout: number): Promise<void> {
   const python = path.join(runtimeDirectory, '.venv', 'bin', 'python');
   await access(python).catch(() => {
@@ -55,22 +63,26 @@ async function runProcessor(script: string, args: string[], timeout: number): Pr
 }
 
 export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): Promise<{ data: string; format: 'mp3' | 'wav' }> {
-  const source = audioPath(audioUrl, userId);
-  const file = await stat(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
-  const extension = path.extname(source);
-  // Leave room for the data URI prefix under the provider's 10 MB base64 limit.
-  if ((extension === '.mp3' || extension === '.wav') && file.size > 0 && file.size < 7_499_000) {
-    return { data: (await readFile(source)).toString('base64'), format: extension === '.mp3' ? 'mp3' : 'wav' };
-  }
-  const directory = await mkdtemp(path.join(tmpdir(), 'music-analysis-'));
+  const { filename: source, temporary } = await resolveAudioPath(audioUrl, userId);
   try {
-    const output = path.join(directory, 'analysis.mp3');
-    await runProcessor('prepare_analysis.py', [source, output], 60_000);
-    const data = (await readFile(output)).toString('base64');
-    if (!data || data.length + 13 >= 10_000_000) throw new Error('audio is too large to analyze. try a shorter track.');
-    return { data, format: 'mp3' };
+    const file = await stat(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
+    const extension = path.extname(source);
+    // Leave room for the data URI prefix under the provider's 10 MB base64 limit.
+    if ((extension === '.mp3' || extension === '.wav') && file.size > 0 && file.size < 7_499_000) {
+      return { data: (await readFile(source)).toString('base64'), format: extension === '.mp3' ? 'mp3' : 'wav' };
+    }
+    const directory = await mkdtemp(path.join(tmpdir(), 'music-analysis-'));
+    try {
+      const output = path.join(directory, 'analysis.mp3');
+      await runProcessor('prepare_analysis.py', [source, output], 60_000);
+      const data = (await readFile(output)).toString('base64');
+      if (!data || data.length + 13 >= 10_000_000) throw new Error('audio is too large to analyze. try a shorter track.');
+      return { data, format: 'mp3' };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    if (temporary) await rm(source, { force: true }).catch((error: unknown) => console.error('could not clear song processing file:', error));
   }
 }
 
@@ -98,15 +110,17 @@ export async function uploadAudio(name: unknown, data: unknown, userId: unknown)
 let processing = false;
 
 export async function processAudio(audioUrl: unknown, operation: 'stems' | 'cleaned', userId: unknown): Promise<string> {
-  const source = audioPath(audioUrl, userId);
-  await access(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
   if (processing) throw new Error('another track is being processed. try again when it finishes.');
   processing = true;
-  const directory = userDirectory(operation === 'stems' ? stemsDirectory : cleanedDirectory, userId);
   const names = operation === 'stems' ? ['vocals', 'instrumental'] : ['cleaned'];
   let pending: string | undefined;
+  let source: string | undefined;
+  let temporary = false;
 
   try {
+    ({ filename: source, temporary } = await resolveAudioPath(audioUrl, userId));
+    await access(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
+    const directory = userDirectory(operation === 'stems' ? stemsDirectory : cleanedDirectory, userId);
     await mkdir(directory, { recursive: true });
     pending = await mkdtemp(path.join(directory, '.pending-'));
     await runProcessor(operation === 'stems' ? 'separate.py' : 'dereverb.py', [source, pending], 20 * 60_000);
@@ -120,6 +134,10 @@ export async function processAudio(audioUrl: unknown, operation: 'stems' | 'clea
     return `/api/${operation}/${id}`;
   } finally {
     processing = false;
-    if (pending) await rm(pending, { recursive: true, force: true });
+    try {
+      if (pending) await rm(pending, { recursive: true, force: true });
+    } finally {
+      if (temporary && source) await rm(source, { force: true }).catch((error: unknown) => console.error('could not clear song processing file:', error));
+    }
   }
 }
