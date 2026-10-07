@@ -58,9 +58,10 @@ export function checkAllowance(data: unknown): void {
     if (data.resource !== 'storage' && (!resetAt || !Number.isFinite(Date.parse(resetAt)))) {
       throw new QuotaError('invalid quota response. operation was not started.', 503);
     }
+    const global = 'scope' in data && data.scope === 'global';
     throw new QuotaError(data.resource === 'storage'
       ? 'song storage allowance exhausted. delete a saved song and try again.'
-      : `daily ${data.resource} allowance exhausted. try again after ${resetAt}.`,
+      : `${global ? 'app-wide daily' : 'daily'} ${data.resource} allowance exhausted. try again after ${resetAt}.`,
     429, data.resource, resetAt);
   }
 }
@@ -70,6 +71,11 @@ export async function reserveUsage(userId: string, operation: PaidOperation, sto
   const data = await quotaRpc('reserve_usage', {
     p_user_id: userId, p_operation: operation, p_id: id,
     p_storage_bytes: storageBytes, p_defaults: quotaDefaults(),
+    p_global_limits: {
+      chat: configuredLimit('GLOBAL_CHAT_DAILY', 0, 2_147_483_647),
+      analysis: configuredLimit('GLOBAL_ANALYSIS_DAILY', 0, 2_147_483_647),
+      generation: configuredLimit('GLOBAL_GENERATION_DAILY', 0, 2_147_483_647),
+    },
   });
   checkAllowance(data);
   if (!data || typeof data !== 'object' || !('allowed' in data) || data.allowed !== true ||

@@ -115,6 +115,20 @@ Select **retry saving** to store the existing audio without another generation c
 If saving fails, the song stays in the unsaved list. A successful save moves it to the saved list.
 Older local songs are not included. Paid operations also require [usage quota setup](#configure-usage-quotas).
 
+### Configure signup protection
+
+1. Open **Cloudflare Dashboard → Turnstile → Add widget**. Choose **Managed** and add your production hostname.
+2. Copy the public site key into `frontend/.env.local` as `VITE_TURNSTILE_SITE_KEY`.
+3. In **Supabase Dashboard → Authentication → Bot and Abuse Protection**, enable CAPTCHA protection.
+4. Select **Turnstile**, enter the widget's secret key, and save. Keep this secret out of frontend files.
+5. Rebuild the frontend. Check registration, login, confirmation resend, and password recovery on the production hostname.
+
+The frontend sends the verification token to Supabase. Supabase validates it before accepting the authentication request.
+Each request needs a fresh token. Expired or failed verification disables submission; select **retry verification** after a verification error.
+Password updates from a recovery session need no additional challenge.
+The widget is omitted when its site key is absent, for local development. Public deployment requires both the site key and Supabase CAPTCHA enforcement.
+See [Supabase CAPTCHA protection](https://supabase.com/docs/guides/auth/auth-captcha).
+
 ### Configure generated-song storage
 
 1. In the Supabase SQL Editor, run [the songs migration](supabase/migrations/20261005113828_songs.sql) on the same project.
@@ -187,7 +201,7 @@ After local Supabase setup and migration, run `npx supabase test db supabase/tes
 ### Configure usage quotas
 
 1. Open the same Supabase project, then select **SQL Editor → New query**.
-2. Run [the quota migration](supabase/migrations/20261006150319_usage_quotas.sql) after the songs migration.
+2. Run [the quota migration](supabase/migrations/20261006150319_usage_quotas.sql) after the songs migration, then run [the global usage migration](supabase/migrations/20261007130543_global_usage_limits.sql).
 3. Keep `SUPABASE_SECRET_KEY` in `backend/.env`. Chat and analysis now require this server-only key too.
 4. Add these allowance defaults to `backend/.env`, or use the same built-in values:
 
@@ -197,11 +211,24 @@ QUOTA_ANALYSIS_DAILY=10
 QUOTA_GENERATION_DAILY=5
 QUOTA_STORAGE_BYTES=536870912
 MAX_GENERATED_SONG_BYTES=26214400
+GLOBAL_CHAT_DAILY=0
+GLOBAL_ANALYSIS_DAILY=0
+GLOBAL_GENERATION_DAILY=0
 ```
 
-5. Restart the backend.
+5. Replace the three `GLOBAL_*_DAILY` values with your chosen shared daily attempt limits, then restart the backend.
 
-These defaults allow 50 chat requests, 10 analyses, and 5 generation attempts per user per UTC day.
+The global limits apply across all users. Their defaults are `0`, so paid operations stay disabled until you set positive values.
+These are operation limits, not dollar budgets. Chat includes bounded agent turns and delegated lyric generation.
+Both per-user and global allowances must permit each request. The same database transaction reserves both before the paid call.
+Backend restarts, conversation resets, and account deletion do not restore the shared allowance.
+Each operation resets at midnight UTC. Changing a global environment value takes effect after restarting the backend; it does not reset usage.
+The migration includes today's existing per-user usage and removes the old reservation entry point.
+Deploy the migration and updated backend together. An outdated backend fails before paid calls.
+Exhaustion returns the usual `429 quota_exceeded` response with an app-wide message and reset time.
+Storage retries remain available after generation limits are exhausted and do not consume another attempt.
+
+The per-user defaults allow 50 chat requests, 10 analyses, and 5 generation attempts per UTC day, subject to the global limits.
 Each user has 512 MiB of generated-song storage. Generation reserves 25 MiB before the paid Lyria call.
 The backend converts this reservation to the exact MP3 size when it inserts pending song metadata.
 An analysis also consumes its surrounding chat request. Bounded agent turns and lyric generation belong to that chat allowance.

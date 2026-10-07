@@ -85,18 +85,21 @@ test('verified users own their API session and local media', async () => {
       start();
       return new Promise<never>((_resolve, reject) => { cancel = reject; });
     };
-    for (const failure of ['quota', 'unavailable', 'invalid'] as const) {
-      quotas.failures.resource = failure === 'quota' ? 'chat' : undefined;
+    for (const failure of ['quota', 'global', 'unavailable', 'invalid'] as const) {
+      const exhausted = failure === 'quota' || failure === 'global';
+      quotas.failures.resource = exhausted ? 'chat' : undefined;
+      quotas.failures.scope = failure === 'global' ? 'global' : undefined;
       quotas.failures.unavailable = failure === 'unavailable';
       quotas.failures.invalid = failure === 'invalid';
       const denied = await fetch(`${url}/api/chat`, { method: 'POST', headers: { ...headersA, Accept: 'application/x-ndjson' },
         body: JSON.stringify({ message: 'denied', userId: userB }),
       });
-      assert.equal(denied.status, failure === 'quota' ? 429 : 503);
+      assert.equal(denied.status, exhausted ? 429 : 503);
       assert.equal(denied.headers.get('content-type')?.includes('application/json'), true, 'deny before streaming headers');
       const body = await denied.json();
-      assert.equal(body.code, failure === 'quota' ? 'quota_exceeded' : 'quota_unavailable');
-      if (failure === 'quota') {
+      assert.equal(body.code, exhausted ? 'quota_exceeded' : 'quota_unavailable');
+      if (failure === 'global') assert.match(body.error, /app-wide daily chat allowance exhausted/);
+      if (exhausted) {
         assert.equal(body.resource, 'chat');
         assert.ok(denied.headers.get('retry-after'));
       }

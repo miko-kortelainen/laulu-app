@@ -12,15 +12,33 @@ first.user.email_confirmed_at = "2026-01-15T12:00:00Z";
 first.user.created_at = "2026-01-15T12:00:00Z";
 first.user.last_sign_in_at = "2026-10-05T12:00:00Z";
 const second = authSession("20000000-0000-4000-8000-000000000002", "second@example.com");
+const captcha = Boolean(process.env.E2E_CAPTCHA);
+
+async function verify() {
+  if (!captcha) return;
+  await run("wait", "--fn", "Boolean(window.captchaOptions)");
+  await run("eval", "window.captchaOptions.callback('offline-captcha-token')");
+}
+
+async function clickSubmit() {
+  await verify();
+  await run("click", 'button[type="submit"]');
+}
 
 async function submit(email = first.user.email, password = "offline-password") {
   await run("fill", "#auth-email", email);
   await run("fill", "#auth-password", password);
-  await run("click", 'button[type="submit"]');
+  await clickSubmit();
 }
 
 try {
   await run("open", "about:blank");
+  if (captcha) await run("network", "route", "https://challenges.cloudflare.com/turnstile/v0/api.js*", "--body", `
+    window.captchaRenders = 0;
+    window.turnstile = {
+      render(container, options) { window.captchaOptions = options; return String(++window.captchaRenders); },
+      remove() { window.captchaOptions = undefined; }
+    };`);
   await run("network", "route", `${authOrigin}/auth/v1/user`, "--body", JSON.stringify(first.user));
   await run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
   await run("open", `${url}/profile`);
@@ -33,13 +51,34 @@ try {
   assert.equal(await run("eval", "document.activeElement.id"), '"auth-password"');
 
   await run("find", "role", "button", "click", "--name", "register", "--exact");
+  if (captcha) {
+    await run("wait", "--fn", "Boolean(window.captchaOptions)");
+    assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true");
+    await verify();
+    await run("eval", "window.captchaOptions['expired-callback']()");
+    assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true");
+    await run("eval", "window.captchaOptions['error-callback']()");
+    await run("wait", "--text", "verification could not finish.");
+    await run("find", "role", "button", "click", "--name", "retry verification", "--exact");
+    await run("eval", `window.captchaRequests = []; const beforeCaptcha = window.fetch;
+      window.fetch = (input, options) => {
+        if (['signup', 'resend', 'recover'].some(path => String(input).includes('/auth/v1/' + path))) window.captchaRequests.push(JSON.parse(options.body));
+        return beforeCaptcha(input, options);
+      };`);
+  }
   await run("network", "route", `${authOrigin}/auth/v1/signup*`, "--body", JSON.stringify({ user: first.user, session: null }));
   await submit();
   await run("wait", "--text", "check your email to confirm your account");
   assert.equal(await run("eval", 'document.querySelector("section[aria-label=chat]")'), "null");
   await run("network", "route", `${authOrigin}/auth/v1/resend*`, "--body", "{}");
+  if (captcha) {
+    assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true", "a consumed token must be replaced");
+    assert.equal(await run("eval", "window.captchaRequests[0].gotrue_meta_security.captcha_token"), '"offline-captcha-token"');
+  }
+  await verify();
   await run("find", "role", "button", "click", "--name", "resend confirmation", "--exact");
   await run("wait", "--text", "check your email for a confirmation link.");
+  if (captcha) assert.equal(await run("eval", "window.captchaRequests[1].gotrue_meta_security.captcha_token"), '"offline-captcha-token"');
 
   // The actual Supabase SDK processes the confirmation callback and removes its tokens.
   const hash = new URLSearchParams({ access_token: first.access_token, refresh_token: first.refresh_token,
@@ -62,7 +101,7 @@ try {
   assert.equal(await run("eval", 'document.querySelector("#auth-password").value'), '"offline-password"');
   await run("eval", "window.failLogin = false");
   await run("network", "route", `${authOrigin}/auth/v1/token*`, "--body", JSON.stringify(first));
-  await run("click", 'button[type="submit"]');
+  await clickSubmit();
   await run("wait", "--text", "0 / 40 messages");
   await run("eval", "location.reload()");
   await run("wait", "--text", "0 / 40 messages");
@@ -142,11 +181,11 @@ try {
   await run("eval", `const beforeRecover = window.fetch; window.failRecovery = true;
     window.fetch = (input, options) => String(input).includes('/auth/v1/recover') && window.failRecovery
       ? Promise.resolve(Response.json({ msg: 'email delivery failed' }, { status: 400 })) : beforeRecover(input, options);`);
-  await run("click", 'button[type="submit"]');
+  await clickSubmit();
   await run("wait", "--text", "email delivery failed");
   await run("eval", "window.failRecovery = false");
   await run("network", "route", `${authOrigin}/auth/v1/recover*`, "--body", "{}");
-  await run("click", 'button[type="submit"]');
+  await clickSubmit();
   await run("wait", "--text", "if an account exists");
   hash.set("type", "recovery");
   await run("open", `${url}/#${hash}`);
@@ -163,7 +202,7 @@ try {
   await run("wait", "--text", "link expired");
   assert.equal(await run("eval", "location.hash"), '""');
   assert.equal(await run("eval", 'document.querySelector("h1").innerText'), '"log in"');
-  console.log("Auth E2E passed: registration, confirmation, resend, login recovery, profile navigation and reload, retained song form, logout cancellation, account isolation, password recovery, and expired links.");
+  console.log(`Auth E2E passed: ${captcha ? "CAPTCHA expiry, failure recovery and token reset, " : ""}registration, confirmation, resend, login recovery, profile navigation and reload, retained song form, logout cancellation, account isolation, password recovery, and expired links.`);
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);
   throw error;

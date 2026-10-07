@@ -6,6 +6,7 @@ import test from 'node:test';
 const databaseURL = process.env.QUOTA_TEST_DATABASE_URL;
 const psql = process.env.QUOTA_TEST_PSQL || 'psql';
 const defaults = JSON.stringify({ chat_daily: 3, analysis_daily: 2, generation_daily: 3, storage_bytes: 100 });
+const globalLimits = JSON.stringify({ chat: 100, analysis: 100, generation: 100 });
 
 function query(sql) {
   return new Promise((resolve, reject) => {
@@ -30,7 +31,7 @@ test('database quotas serialize reservations, survive new connections, and prote
   const other = randomUUID();
   const day = "(clock_timestamp() at time zone 'UTC')::date";
   const reserve = (operation, id = randomUUID(), bytes = 0, user = owner) =>
-    query(`set role service_role; select public.reserve_usage('${user}', '${operation}', '${id}', ${bytes}, '${defaults}');`).then(JSON.parse);
+    query(`set role service_role; select public.reserve_usage('${user}', '${operation}', '${id}', ${bytes}, '${defaults}', '${globalLimits}');`).then(JSON.parse);
   const usage = () => query(`set role service_role; select public.get_usage('${owner}', '${defaults}');`).then(JSON.parse);
   const metadata = (id, bytes, user = owner) => ({ id, owner_id: user,
     object_key: `users/${user}/${id}.mp3`, prompt: 'offline folk', model: 'lyria-3.5', lyrics: '',
@@ -95,18 +96,61 @@ test('database quotas serialize reservations, survive new connections, and prote
     assert.equal((await reserve('chat', randomUUID(), 0, other)).resource, 'chat', 'per-user changes take effect immediately');
 
     for (const role of ['anon', 'authenticated']) {
-      for (const table of ['user_quotas', 'daily_usage', 'usage_reservations']) {
+      for (const table of ['user_quotas', 'daily_usage', 'usage_reservations', 'global_usage']) {
         await assert.rejects(query(`set role ${role}; select * from public.${table};`), /permission denied/);
-        await assert.rejects(query(`set role ${role}; update public.${table} set user_id = '${other}';`), /permission denied/);
+        await assert.rejects(query(`set role ${role}; update public.${table} set ${table === 'global_usage' ? 'used = 0' : `user_id = '${other}'`};`), /permission denied/);
       }
-      await assert.rejects(query(`set role ${role}; select public.reserve_usage('${owner}', 'chat', '${randomUUID()}', 0, '${defaults}');`), /permission denied/);
+      await assert.rejects(query(`set role ${role}; select public.reserve_usage('${owner}', 'chat', '${randomUUID()}', 0, '${defaults}', '${globalLimits}');`), /permission denied/);
       await assert.rejects(query(`set role ${role}; select public.get_usage('${owner}', '${defaults}');`), /permission denied/);
       await assert.rejects(query(`set role ${role}; select public.prepare_song_save('${JSON.stringify(song)}', '${defaults}');`), /permission denied/);
     }
-    assert.equal(await query("select count(*) from pg_class where relname in ('user_quotas', 'daily_usage', 'usage_reservations') and relrowsecurity;"), '3');
+    assert.equal(await query("select count(*) from pg_class where relname in ('user_quotas', 'daily_usage', 'usage_reservations', 'global_usage') and relrowsecurity;"), '4');
+    assert.equal(await query("select to_regprocedure('public.reserve_usage(uuid,text,uuid,bigint,jsonb)') is null;"), 't');
     assert.equal(await query("select count(*) from pg_proc where proname in ('quota_account', 'reserve_usage', 'release_song_reservation', 'prepare_song_save', 'get_usage') and prosecdef;"), '0');
   } finally {
     await query(`delete from public.songs where owner_id in ('${owner}', '${other}');
       delete from auth.users where id in ('${owner}', '${other}');`);
+  }
+});
+
+test('global limits serialize different accounts and survive account deletion and UTC rollover', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a disposable, migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  const users = Array.from({ length: 4 }, () => randomUUID());
+  const limits = JSON.stringify({ chat: 0, analysis: 5, generation: 5 });
+  const accounts = JSON.stringify({ chat_daily: 100, analysis_daily: 100, generation_daily: 100, storage_bytes: 0 });
+  const reserve = (user, operation, id = randomUUID(), bytes = 0, caps = limits) =>
+    query(`set role service_role; select public.reserve_usage('${user}', '${operation}', '${id}', ${bytes}, '${accounts}', '${caps}');`).then(JSON.parse);
+  await query(`insert into auth.users(id) values ${users.map((id) => `('${id}')`).join(',')};
+    update public.global_usage set usage_date = (clock_timestamp() at time zone 'UTC')::date - 1;`);
+  try {
+    const results = await Promise.all(Array.from({ length: 16 }, (_, index) => reserve(users[index % users.length], 'analysis')));
+    assert.equal(results.filter((result) => result.allowed).length, 5);
+    assert.equal(results.filter((result) => !result.allowed && result.scope === 'global').length, 11);
+    assert.equal(await query("select used from public.global_usage where operation = 'analysis';"), '5');
+    const successful = results.find((result) => result.allowed);
+    const owner = await query(`select user_id from public.usage_reservations where id = '${successful.id}';`);
+    assert.equal((await reserve(owner, 'analysis', successful.id)).created, false);
+    assert.equal(await query("select used from public.global_usage where operation = 'analysis';"), '5');
+    await query(`delete from auth.users where id = '${owner}';`);
+    const remaining = users.find((id) => id !== owner);
+    const denied = await reserve(remaining, 'analysis');
+    assert.equal(denied.scope, 'global', 'deleting an account does not restore global allowance');
+    assert.equal(new Date(denied.resetAt).getUTCHours(), 0);
+    assert.equal((await reserve(remaining, 'chat')).scope, 'global', 'zero disables an operation');
+    assert.equal((await reserve(remaining, 'generation', randomUUID(), 1)).resource, 'storage');
+    assert.equal(await query(`select count(*) from public.usage_reservations where user_id = '${remaining}' and operation in ('chat', 'generation');`), '0');
+    await assert.rejects(reserve(remaining, 'analysis', randomUUID(), 0, '{}'), /invalid global allowance/);
+    await query("update public.global_usage set usage_date = usage_date - 1 where operation = 'analysis';");
+    assert.equal((await reserve(remaining, 'analysis')).allowed, true);
+    assert.equal(await query("select used from public.global_usage where operation = 'analysis';"), '1');
+    await query(`update public.user_quotas set analysis_daily = 0 where user_id = '${remaining}';`);
+    assert.equal((await reserve(remaining, 'analysis')).resource, 'analysis');
+    assert.equal(await query("select used from public.global_usage where operation = 'analysis';"), '1', 'per-user denials do not consume global usage');
+  } finally {
+    await query(`delete from auth.users where id in (${users.map((id) => `'${id}'`).join(',')});`);
   }
 });

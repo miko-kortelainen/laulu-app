@@ -45,12 +45,14 @@ try {
   await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   const url = `http://127.0.0.1:${server.address().port}`;
   const build = await exec(process.execPath, [join(frontend, "node_modules/vite/bin/vite.js"), "build", "--outDir", directory], {
-    cwd: frontend, env: { ...process.env, VITE_SUPABASE_URL: url, VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_offline" },
+    cwd: frontend, env: { ...process.env, VITE_SUPABASE_URL: url, VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_offline",
+      VITE_TURNSTILE_SITE_KEY: target === "auth" ? "offline-site-key" : "" },
   });
   process.stdout.write(build.stdout);
   for (const name of target === "all" ? ["auth", "chat", "audio-player", "songs"] : [target]) {
     const result = await exec(process.execPath, [join(frontend, `e2e/${name}.mjs`)], {
-      cwd: frontend, env: { ...process.env, E2E_URL: url, E2E_AUTH_ORIGIN: url, E2E_DIST: directory }, timeout: 240000, maxBuffer: 2 * 1024 * 1024,
+      cwd: frontend, env: { ...process.env, E2E_URL: url, E2E_AUTH_ORIGIN: url, E2E_DIST: directory,
+        E2E_CAPTCHA: target === "auth" ? "1" : "" }, timeout: 240000, maxBuffer: 2 * 1024 * 1024,
     });
     process.stdout.write(result.stdout);
     process.stderr.write(result.stderr);
