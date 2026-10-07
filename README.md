@@ -110,6 +110,9 @@ Use **my songs** to see your newest 100 saved songs, creation dates, prompts, an
 Select **listen** to play a song or download its MP3. Only the selected song loads audio.
 The page reads songs for the signed-in user. It loads the list again when you return or select **refresh**.
 Select **delete** and confirm to permanently remove a saved song. If deletion fails, the song stays in the list for another attempt.
+The page also lists **unsaved songs**, including after a reload or backend restart when recovery audio is available.
+Select **retry saving** to store the existing audio without another generation call.
+If saving fails, the song stays in the unsaved list. A successful save moves it to the saved list.
 Older local songs are not included. Paid operations also require [usage quota setup](#configure-usage-quotas).
 
 ### Configure generated-song storage
