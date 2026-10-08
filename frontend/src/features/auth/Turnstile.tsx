@@ -4,7 +4,7 @@ interface TurnstileApi {
   render(container: HTMLElement, options: {
     sitekey: string;
     theme: "dark";
-    size: "compact";
+    size: "flexible";
     callback(token: string): void;
     "expired-callback"(): void;
     "error-callback"(): void;
@@ -35,7 +35,7 @@ export function Turnstile({ onToken }: { onToken: (token: string | undefined) =>
       if (!active || !container.current || !window.turnstile) return;
       widgetId = window.turnstile.render(container.current, {
         sitekey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
-        theme: "dark", size: "compact",
+        theme: "dark", size: "flexible",
         callback: (token) => { if (active) { setError(undefined); onToken(token); } },
         "expired-callback": () => { if (active) onToken(undefined); },
         "error-callback": fail,
@@ -65,7 +65,7 @@ export function Turnstile({ onToken }: { onToken: (token: string | undefined) =>
 
   return (
     <div className="space-y-2">
-      <div ref={container} className="flex justify-center" aria-label="human verification" />
+      <div ref={container} className="w-full" aria-label="human verification" />
       {error && <>
         <p role="alert" className="text-sm text-red-300">{error}</p>
         <button type="button" onClick={() => { setError(undefined); setAttempt((previous) => previous + 1); }}
