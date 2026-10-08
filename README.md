@@ -33,7 +33,6 @@ A simple full-stack AI chatbot built with:
 │   │   ├── audio.ts       # Audio uploads, validation, and analysis conversion
 │   │   ├── analysis.ts    # QwenCloud listening analysis tool
 │   │   └── index.ts       # Express server with /api/chat and /api/health endpoints
-│   ├── audio-processing/ # Python upload validation and analysis conversion
 │   ├── .env.example       # Sample environment variables
 │   ├── .env               # Active Cloudflare gateway configuration
 │   ├── package.json
@@ -557,12 +556,11 @@ feedback. The agent calls `analyze_audio`, shows **analyzing audio...**, and use
 observations in its chat reply. Uploading or generating audio does not start analysis.
 Analysis sends audio to QwenCloud and makes a paid inference call.
 
-Small MP3 and WAV files are sent directly. Larger files and FLAC/OGG inputs need
-the existing Python audio environment (`uv sync --frozen --project backend/audio-processing`).
-They are converted to a temporary compressed stereo or mono MP3 without changing
-the saved source. Conversion supports up to 10 minutes and checks the provider's
-10 MB base64 limit. Temporary files are removed after preparation.
-No checkpoints are needed for this conversion.
+The backend sends small MP3 and WAV files directly.
+For larger files and FLAC/OGG inputs, the Node backend runs FFmpeg to create a temporary MP3.
+Conversion preserves the source file and its mono or stereo channel count.
+The output uses 44.1 kHz and 80 kbps. A ten-minute track fits within the provider's 10 MB base64 limit.
+The backend deletes temporary files after preparation.
 
 Edit the listening analysis instructions in `backend/prompts/analysis.md`, then
 restart the backend. General analysis covers mood, instrument roles and timbres,
@@ -577,18 +575,19 @@ retries, a two-minute inference timeout, and a 2,048-token output limit.
 
 Offline analysis and failure recovery check: `npm --prefix backend run test:analysis`.
 It mocks inference and makes no paid calls. Its format-conversion checks require
-the Python audio environment.
+FFmpeg on `PATH`.
 
 ## Audio uploads and local storage
 
-Install the Python 3.13 environment from the repository root:
+Install FFmpeg on the backend host. On Ubuntu or Debian, run:
 
 ```bash
-uv sync --frozen --project backend/audio-processing
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends ffmpeg
 ```
 
-The environment uses NumPy, SoundFile, and librosa for upload validation and analysis conversion.
-It needs no GPU or model checkpoints.
+Make sure that `ffmpeg` and `ffprobe` are on `PATH`.
+The Node backend runs `ffprobe` for upload validation and `ffmpeg` for analysis conversion.
 
 Use **upload audio** to add an MP3, WAV, FLAC, or OGG file.
 Uploads must be mono or stereo, at most 50 MB, and no longer than 10 minutes.
@@ -601,7 +600,7 @@ Uploads stay in `backend/uploaded-audio/` for session analysis and playback. Git
 The backend reserves disk space before each upload, with a **1 GiB limit across all users**.
 If capacity is insufficient, the upload endpoint returns HTTP 507 and preserves existing files.
 The server accepts `MAX_AUDIO_JOBS` simultaneous uploads (default `2`) and returns HTTP 503 with `Retry-After: 5` when all slots are busy.
-The same limit applies to simultaneous Python audio conversions. Extra conversions wait for a free slot.
+The same limit applies to simultaneous FFmpeg and ffprobe processes. Extra processes wait for a free slot.
 
 The backend lets browsers from the `ALLOWED_ORIGINS` list (comma-separated) read cross-origin API responses.
 The default is the local Vite origins. Production on one origin needs no entry; set it to the studio origin only if another origin calls the API.
@@ -620,7 +619,7 @@ One backend process must own the upload directory. Concurrent processes require 
 The limits are defined in `backend/src/local-audio.ts`.
 
 Upload validation and session cleanup check: `npm --prefix backend run test:audio`.
-This check requires the Python environment and makes no paid calls.
+This check requires FFmpeg and makes no paid calls.
 Disk policy check: `cd backend` then `node --import tsx --test tests/local-audio.test.ts`.
 This check uses isolated temporary directories and makes no model calls.
 

@@ -1,23 +1,25 @@
 import assert from 'node:assert/strict';
-import childProcess, { execFileSync, type ExecFileException, type ExecFileOptions } from 'node:child_process';
-import { readFile, readdir, stat } from 'node:fs/promises';
+import childProcess, { type ExecFileException, type ExecFileOptions } from 'node:child_process';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { syncBuiltinESMExports } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 const userId = '10000000-0000-4000-8000-000000000003';
+const runFile = promisify(childProcess.execFile);
 
-const python = fileURLToPath(new URL('../audio-processing/.venv/bin/python', import.meta.url));
-
-function sampleAudio(): Buffer {
-  return execFileSync(python, ['-c', `
-import io, sys, numpy as np, soundfile as sf
-audio = 6000 / 32768 * np.sin(np.arange(22050) * 2 * np.pi * 440 / 22050)
-wav = io.BytesIO()
-sf.write(wav, audio, 22050, format="WAV", subtype="PCM_16")
-sys.stdout.buffer.write(wav.getvalue())
-`]);
+async function sampleAudio(channels = 1, duration = 1, format = 'wav'): Promise<Buffer> {
+  const directory = await mkdtemp(path.join(tmpdir(), 'audio-test-'));
+  const filename = path.join(directory, `sample.${format}`);
+  try {
+    await runFile('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i',
+      `sine=frequency=440:sample_rate=22050:duration=${duration}`, '-ac', String(channels), '-f', format, filename]);
+    return await readFile(filename);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 test('audio uploads validate files, preserve valid state, and end with their session', async (t) => {
@@ -37,6 +39,14 @@ test('audio uploads validate files, preserve valid state, and end with their ses
       callback(error, stdout, stderr);
     });
   }) as typeof childProcess.execFile;
+  Object.defineProperty(childProcess.execFile, promisify.custom, {
+    value: (file: string, args: readonly string[], options: ExecFileOptions) => new Promise((resolve, reject) => {
+      childProcess.execFile(file, args, options, (error, stdout, stderr) => {
+        if (error) reject(error);
+        else resolve({ stdout, stderr });
+      });
+    }),
+  });
   syncBuiltinESMExports();
   t.after(() => { childProcess.execFile = originalExecFile; syncBuiltinESMExports(); });
   const { audioDirectory, audioPath: userAudioPath, uploadAudio: uploadUserAudio } = await import('../src/audio.js');
@@ -52,23 +62,39 @@ test('audio uploads validate files, preserve valid state, and end with their ses
   await assert.rejects(uploadAudio('track.wav', Buffer.alloc(0)), /audio upload/);
   await assert.rejects(uploadAudio('track.wav', Buffer.alloc(50 * 1024 * 1024 + 1)), /audio upload/);
   const before = await readdir(path.join(audioDirectory, userId)).catch(() => []);
-  await assert.rejects(uploadAudio('broken.wav', Buffer.from('not audio')), /Format not recognised/);
+  await assert.rejects(uploadAudio('broken.wav', Buffer.from('not audio')), /Invalid data/);
+  await assert.rejects(uploadAudio('surround.wav', await sampleAudio(3)), /mono or stereo/);
+  await assert.rejects(uploadAudio('long.wav', await sampleAudio(1, 601)), /10 minutes/);
+  await assert.rejects(uploadAudio('disguised.wav', await sampleAudio(1, 1, 'adts')), /Invalid argument/);
   assert.deepEqual(await readdir(path.join(audioDirectory, userId)), before);
 
-  const input = sampleAudio();
+  const input = await sampleAudio();
+  const previousPath = process.env.PATH;
+  try {
+    process.env.PATH = '';
+    await assert.rejects(uploadAudio('track.wav', input), /install FFmpeg/);
+    assert.deepEqual(await readdir(path.join(audioDirectory, userId)), before);
+  } finally {
+    process.env.PATH = previousPath;
+  }
   const queued = await Promise.allSettled([
     uploadAudio('broken.wav', Buffer.from('not audio')),
     ...Array.from({ length: 4 }, (_, index) => uploadAudio(`queued ${index}.wav`, input)),
   ]);
   assert.deepEqual(queued.map((result) => result.status), ['rejected', 'fulfilled', 'fulfilled', 'fulfilled', 'fulfilled'],
     'a failed processor releases its slot and queued conversions finish');
-  assert.equal(peakProcessors, 2, 'Python processors never exceed the configured limit');
+  assert.equal(peakProcessors, 2, 'audio processors never exceed the configured limit');
   assert.equal(activeProcessors, 0);
   const audio = await uploadAudio('my voice.wav', input);
   const finishSession = retainUploadSession(userId);
   try {
     assert.equal(audio.name, 'my voice.wav');
     assert.deepEqual(await readFile(audioPath(audio.url)), input);
+    for (const format of ['mp3', 'flac', 'ogg']) {
+      const data = await sampleAudio(2, 1, format);
+      const track = await uploadAudio(`stereo.${format}`, data);
+      assert.deepEqual(await readFile(audioPath(track.url)), data);
+    }
   } finally {
     finishSession();
     await resetAgentSession(userId);

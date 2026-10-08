@@ -40,7 +40,7 @@ The broader saved-audio sections describe future work.
 
 Use Supabase Auth for email/password login and open registration with email confirmation.
 Use a private Cloudflare R2 bucket for generated music.
-Keep the React/Vite frontend, Express backend, existing AI providers, and local Python processors.
+Keep the React/Vite frontend, Express backend, existing AI providers, and local FFmpeg processing.
 
 The first release includes:
 
@@ -64,7 +64,7 @@ Chat history remains in memory for this release. Audio metadata and files surviv
 - `backend/src/index.ts` serves local audio from the verified user's directories.
 - Chat, generation, reset, and context requests use the verified user's conversation.
 - `backend/src/agent.ts` keeps agents in an in-memory map.
-- `backend/src/audio.ts` resolves local audio URLs and runs Python processors.
+- `backend/src/audio.ts` resolves local audio URLs and runs FFmpeg and ffprobe.
 - Music generation saves MP3 files in `backend/generated-music/<user-id>/`.
 - The audio player fetches private audio with a bearer token and plays a temporary blob URL.
 - Download buttons fetch private audio with a bearer token.
@@ -269,7 +269,7 @@ Keep playback URLs suitable for inline audio and range requests.
 1. Authenticate the existing `POST /api/audio` request.
 2. Enforce the current 50 MB limit and supported audio formats.
 3. Write the request into a private temporary directory.
-4. Inspect the actual audio with the existing Python runtime.
+4. Inspect the actual audio with ffprobe.
 5. Create server-owned metadata with `pending` status.
 6. Upload the inspected file to R2 with its correct content type.
 7. Set the metadata status to `ready`.
@@ -303,7 +303,7 @@ Delete recovery files after successful persistence or the agreed retention perio
 5. Delete temporary files in focused cleanup paths.
 
 Analysis conversion files remain temporary.
-The Python runtime remains on the backend host. It needs no GPU or model checkpoints.
+FFmpeg remains on the backend host.
 R2 stores audio but does not run analysis conversion.
 
 ## 7. API and UI changes
@@ -345,7 +345,7 @@ An already-issued signed URL remains usable until expiry unless the object is de
 | Durable usage limits | Implemented for chat, analysis, completed songs, and generated-song bytes. Apply the quota and beta allowance migrations before launch |
 | Request limits | Keep per-user action locks, upload limits, and model limits |
 | Retention and deletion | Decide how long ready assets, failed outputs, and recovery files remain |
-| Temporary disk capacity | Python processing needs local space despite R2 storage |
+| Temporary disk capacity | FFmpeg processing needs local space despite R2 storage |
 | Ownership migration | Existing local files have no user ownership |
 | Error visibility | Separate auth, provider, storage, and processing failures without exposing secrets |
 
@@ -360,7 +360,7 @@ Keep unassigned files outside authenticated access.
 Do not delete originals until the imported object and metadata pass the migration checks.
 
 Use the current backend host for the first release.
-Verify that the host supports analysis requests, Python, and sufficient disk space.
+Verify that the host supports analysis requests, FFmpeg, and sufficient disk space.
 If the hosting platform permits it, use same-origin `/api` routing in production.
 Otherwise, restrict backend CORS to the configured frontend origin.
 

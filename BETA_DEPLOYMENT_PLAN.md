@@ -63,7 +63,7 @@ Recommended starting configuration:
 - An x86 Linux server with two CPU cores and 4 GB RAM.
 - Ubuntu LTS.
 - Free, self-hosted Coolify for deployment, HTTPS, and container management.
-- One application container with the built frontend, Node.js backend, and remaining Python audio environment.
+- One application container with the built frontend, Node.js backend, and FFmpeg.
 - Persistent mounted directories for generated-song recovery and necessary temporary audio.
 
 Coolify is a recommendation, not a separate confirmed user choice.
@@ -89,8 +89,8 @@ Keep the existing external services:
 | Audio analysis | Existing Qwen integration |
 
 A GPU is unnecessary after deletion of stem separation and dereverb.
-Python remains necessary for audio validation and conversion.
-Keep the required `numpy`, `soundfile`, and `librosa` dependencies.
+The Node backend runs ffprobe for audio validation and FFmpeg for conversion.
+Install FFmpeg in the application container.
 
 Railway, Heroku, and Azure were alternatives. Hetzner replaces those options in this plan.
 The user has $312 Heroku student credits and $100 Azure student credits.
@@ -131,8 +131,8 @@ The landing page host remains undecided.
 - [x] Delete obsolete tests, fixtures, and documentation.
 - [x] Preserve upload validation, analysis conversion, playback, and failure recovery.
 
-Stem separation and dereverb are removed from the active code, Python runtime, and test fixtures.
-The Python manifest and lockfile retain only the dependencies needed for upload validation and analysis conversion.
+Stem separation and dereverb are removed from the active code and test fixtures.
+The Python runtime, scripts, manifest, and lockfile are removed.
 Upload validation, analysis conversion, private playback, and song recovery remain available.
 
 ### 2. Apply the agreed allowances
@@ -217,7 +217,7 @@ The interface shows daily allowances and states that shared daily limits also ap
 Uploads have a 50 MiB request limit. Local upload and analysis files share a 1 GiB disk limit.
 Account locks prevent overlapping actions for one user.
 `MAX_AUDIO_JOBS` (default 2) limits simultaneous uploads server-wide. Extra uploads receive `503` with `Retry-After`.
-The same limit applies to Python audio conversions, which queue instead of failing.
+The same limit applies to FFmpeg and ffprobe processes, which queue instead of failing.
 `ALLOWED_ORIGINS` limits cross-origin browser access. The default lists the local Vite origins. Same-origin production traffic needs no entry.
 Email confirmation and Turnstile are configured in the hosted Supabase and Cloudflare dashboards, as reported by the user. Provider spending controls remain unconfigured.
 The shared attempt limits still need a beta cash budget decision.
@@ -228,8 +228,8 @@ Keep a bounded attempt policy without changing the promised five-completed-song 
 
 ### 5. Prepare public authentication and private data
 
-- [ ] Configure custom SMTP for confirmation and password recovery emails.
-- [ ] Configure the mail provider’s domain records.
+- [x] Configure custom SMTP for confirmation and password recovery emails.
+- [x] Configure the mail provider’s domain records.
 - [ ] Exercise confirmation and recovery links on `studio.lau.lu`.
 - [ ] Keep Supabase secret keys, R2 credentials, and gateway credentials on the backend.
 - [ ] Preserve ownership checks for every song and local audio request.
@@ -243,11 +243,11 @@ Custom SMTP is a launch requirement for this registration flow.
 
 ### 6. Package and deploy on Hetzner
 
-- [ ] Select an available server and review its complete monthly price.
-- [ ] Configure SSH access, the firewall, and operating-system updates.
-- [ ] If the Coolify recommendation is accepted, install Coolify.
+- [x] Select an available server and review its complete monthly price.
+- [x] Configure SSH access, the firewall, and operating-system updates.
+- [x] If the Coolify recommendation is accepted, install Coolify.
 - [ ] Build a production image without local model weights or development secrets.
-- [ ] Install the remaining Python runtime at the location the backend expects.
+- [ ] Install FFmpeg in the application container, with `ffmpeg` and `ffprobe` on `PATH`.
 - [ ] Configure the frontend’s public values at build time.
 - [ ] Configure backend secrets at runtime.
 - [ ] Mount persistent recovery directories outside the replaceable container filesystem.

@@ -221,7 +221,6 @@ test('disk failures preserve storage retry and temporary processing files never 
   const directory = `${musicDirectory}${userId}`;
   const audio = Buffer.from('ID3-disk-failure-fixture');
   const originalWrite = fs.writeFile;
-  const originalAccess = fs.access;
   let diskFull = true;
   let audioWriteFails = false;
   let cacheWriteFails = false;
@@ -236,14 +235,9 @@ test('disk failures preserve storage retry and temporary processing files never 
     }
     return originalWrite(...args);
   });
-  const access = context.mock.method(fs, 'access', async (...args: Parameters<typeof fs.access>) => {
-    if (String(args[0]).endsWith('.venv/bin/python')) throw new Error('offline processor unavailable');
-    return originalAccess(...args);
-  });
   syncBuiltinESMExports();
   context.after(async () => {
     writes.mock.restore();
-    access.mock.restore();
     syncBuiltinESMExports();
     globalThis.fetch = originalFetch;
     storage.restore();

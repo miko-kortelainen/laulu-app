@@ -81,18 +81,15 @@ test('local audio retention protects readers and concurrent writes share the dis
     }
     await writeFile(path.join(directory, 'src/songs.ts'),
       'export const musicDirectory = "unused"; export async function localSongPath() { throw new Error("no song download in this check"); }');
-    const pythonDirectory = path.join(directory, 'audio-processing/.venv/bin');
-    await mkdir(pythonDirectory, { recursive: true });
-    await writeFile(path.join(pythonDirectory, 'python'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
     const audio: typeof import('../src/audio.js') = await import(pathToFileURL(path.join(directory, 'src/audio.ts')).href);
     const userId = '10000000-0000-4000-8000-000000000001';
     await assert.rejects(audio.uploadAudio('track.wav', Buffer.alloc(101), userId), storage.LocalAudioLimitError);
     const beforeFailure = await readdir(root);
-    await assert.rejects(audio.uploadAudio('invalid.wav', Buffer.alloc(100), userId), /local audio processing failed/);
+    await assert.rejects(audio.uploadAudio('invalid.wav', Buffer.alloc(100), userId), /Invalid data/);
     assert.deepEqual((await readdir(root)).sort(), [...beforeFailure, userId].sort());
     assert.deepEqual(await readdir(path.join(root, userId)), []);
     // Failed validation releases its full reservation, so another attempt reaches the processor.
-    await assert.rejects(audio.uploadAudio('invalid.wav', Buffer.alloc(100), userId), /local audio processing failed/);
+    await assert.rejects(audio.uploadAudio('invalid.wav', Buffer.alloc(100), userId), /Invalid data/);
     const source = path.join(root, userId, '10000000-0000-4000-8000-000000000002.wav');
     await writeFile(source, 'source');
     await utimes(source, old, old);

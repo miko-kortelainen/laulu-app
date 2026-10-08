@@ -1,16 +1,15 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { localSongPath, musicDirectory } from './songs.js';
 import { userDirectory } from './user-files.js';
 import { audioDirectory, reserveLocalAudio, retainLocalAudio } from './local-audio.js';
 
 export { audioDirectory } from './local-audio.js';
-const runtimeDirectory = fileURLToPath(new URL('../audio-processing/', import.meta.url));
 const runFile = promisify(execFile);
+const audioInputOptions = ['-v', 'error', '-protocol_whitelist', 'file', '-format_whitelist', 'wav,mp3,flac,ogg'];
 const audioExtensions = new Set(['.mp3', '.wav', '.flac', '.ogg']);
 const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 // One backend process serves all users, so these limits are server-wide.
@@ -72,14 +71,13 @@ async function resolveAudioPath(value: unknown, userId: unknown): Promise<{ file
   return { filename, temporary: false };
 }
 
-async function runProcessor(script: string, args: string[], timeout: number): Promise<void> {
-  const python = path.join(runtimeDirectory, '.venv', 'bin', 'python');
-  await access(python).catch(() => {
-    throw new Error('install local audio processing first: uv sync --project backend/audio-processing');
-  });
-  await withProcessorSlot(() => runFile(python, [path.join(runtimeDirectory, script), ...args], {
-    timeout, maxBuffer: 4 * 1024 * 1024,
+async function runProcessor(command: 'ffmpeg' | 'ffprobe', args: string[]): Promise<string> {
+  const result = await withProcessorSlot(() => runFile(command, args, {
+    timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
   })).catch((error: unknown) => {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+      throw new Error('install FFmpeg on the backend host. ffmpeg and ffprobe must be on PATH.');
+    }
     if (error && typeof error === 'object' && 'killed' in error && error.killed) {
       throw new Error('audio processing timed out. try a shorter track.');
     }
@@ -87,6 +85,18 @@ async function runProcessor(script: string, args: string[], timeout: number): Pr
       ? error.stderr.trim().split('\n').at(-1) : undefined;
     throw new Error(detail || 'local audio processing failed.');
   });
+  return result.stdout;
+}
+
+async function validateAudio(source: string): Promise<void> {
+  const stdout = await runProcessor('ffprobe', [...audioInputOptions, '-select_streams', 'a',
+    '-show_entries', 'stream=channels:format=duration', '-of', 'json', source]);
+  const info = JSON.parse(stdout) as { streams?: { channels?: number }[]; format?: { duration?: string } };
+  const channels = info.streams?.[0]?.channels;
+  const duration = Number(info.format?.duration);
+  if (info.streams?.length !== 1 || (channels !== 1 && channels !== 2) || !(duration > 0 && duration <= 600)) {
+    throw new Error('audio must be mono or stereo and between 0 and 10 minutes long.');
+  }
 }
 
 export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): Promise<{ data: string; format: 'mp3' | 'wav' }> {
@@ -105,7 +115,10 @@ export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): 
     const releaseTemporary = retainLocalAudio(directory);
     try {
       const output = path.join(directory, 'analysis.mp3');
-      await runProcessor('prepare_analysis.py', [source, output], 60_000);
+      await validateAudio(source);
+      // 80 kbps keeps a full ten-minute track below the provider's base64 limit.
+      await runProcessor('ffmpeg', [...audioInputOptions, '-nostdin', '-xerror', '-i', source,
+        '-map', '0:a:0', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '80k', output]);
       const data = (await readFile(output)).toString('base64');
       if (!data || data.length + 13 >= 10_000_000) throw new Error('audio is too large to analyze. try a shorter track.');
       return { data, format: 'mp3' };
@@ -134,7 +147,7 @@ export async function uploadAudio(name: unknown, data: unknown, userId: unknown)
   try {
     await mkdir(directory, { recursive: true });
     await writeFile(source, data, { flag: 'wx' });
-    await runProcessor('audio.py', [source], 60_000);
+    await validateAudio(source);
     return { url: `/api/audio/${filename}`, name: path.basename(name) };
   } catch (error: unknown) {
     await rm(source, { force: true });

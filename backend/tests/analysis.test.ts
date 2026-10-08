@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import type { ToolContext } from '@strands-agents/sdk';
@@ -22,7 +21,6 @@ const analyzeAudio = (url: unknown, question: unknown) => analyzeUserAudio(url, 
 const prepareAnalysisAudio = (url: unknown) => prepareUserAnalysisAudio(url, userId);
 
 const runFile = promisify(execFile);
-const python = fileURLToPath(new URL('../audio-processing/.venv/bin/python', import.meta.url));
 
 function wav(): Buffer {
   const data = Buffer.alloc(44 + 16_000 * 2);
@@ -202,22 +200,43 @@ test('FLAC, OGG, and a full ten-minute WAV fit inline analysis without replacing
       const source = path.join(audioDirectory, userId, filename);
       sources.push(source);
       const duration = format === 'wav' ? 600 : 2;
-      await runFile(python, ['-c',
-        'import sys,numpy as np,soundfile as sf; rate=32000; duration=int(sys.argv[2]); audio=(0.2*np.sin(2*np.pi*220*np.arange(rate*duration)/rate)).astype("float32"); sf.write(sys.argv[1],audio,rate)',
-        source, String(duration)]);
+      const channels = format === 'flac' ? 2 : 1;
+      await runFile('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i',
+        `sine=frequency=220:sample_rate=32000:duration=${duration}`, '-ac', String(channels), source]);
       const before = await stat(source);
       const prepared = await prepareAnalysisAudio(`/api/audio/${filename}`);
       assert.equal(prepared.format, 'mp3');
       assert.ok(prepared.data.length + 13 < 10_000_000);
       const output = path.join(directory, 'prepared.mp3');
       await writeFile(output, Buffer.from(prepared.data, 'base64'));
-      const { stdout } = await runFile(python, ['-c',
-        'import sys,soundfile as sf; info=sf.info(sys.argv[1]); print(info.duration)', output]);
+      const { stdout } = await runFile('ffprobe', ['-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1', output]);
       assert.ok(Math.abs(Number(stdout.trim()) - duration) < 0.1);
+      const { stdout: stream } = await runFile('ffprobe', ['-v', 'error', '-select_streams', 'a',
+        '-show_entries', 'stream=sample_rate,channels', '-of', 'json', output]);
+      assert.deepEqual(JSON.parse(stream).streams, [{ sample_rate: '44100', channels }]);
       const after = await stat(source);
       assert.equal(after.size, before.size);
       assert.equal(after.mtimeMs, before.mtimeMs);
+      assert.equal((await readdir(path.join(audioDirectory, userId))).some((name) => name.startsWith('.analysis-')), false);
     }
+    const filename = `${randomUUID()}.flac`;
+    const source = path.join(audioDirectory, userId, filename);
+    sources.push(source);
+    await writeFile(source, 'invalid audio');
+    await assert.rejects(prepareAnalysisAudio(`/api/audio/${filename}`), /audio must be/);
+    assert.equal(await readFile(source, 'utf8'), 'invalid audio');
+    assert.equal((await readdir(path.join(audioDirectory, userId))).some((name) => name.startsWith('.analysis-')), false);
+
+    const invalidFilename = `${randomUUID()}.wav`;
+    const invalidSource = path.join(audioDirectory, userId, invalidFilename);
+    sources.push(invalidSource);
+    await runFile('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i',
+      'aevalsrc=nan:s=32000:d=60', '-c:a', 'pcm_f32le', invalidSource]);
+    const invalidSamples = await readFile(invalidSource);
+    await assert.rejects(prepareAnalysisAudio(`/api/audio/${invalidFilename}`));
+    assert.deepEqual(await readFile(invalidSource), invalidSamples);
+    assert.equal((await readdir(path.join(audioDirectory, userId))).some((name) => name.startsWith('.analysis-')), false);
   } finally {
     for (const source of sources) await rm(source, { force: true });
     await rm(directory, { recursive: true, force: true });

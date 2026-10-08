@@ -41,7 +41,5 @@ complete-idea.txt
 backend/generated-music/
 backend/uploaded-audio/
 backend/separated-audio/
-backend/audio-processing/.venv/
 backend/cleaned-audio/
-__pycache__/
 :memory:.ses
