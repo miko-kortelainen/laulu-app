@@ -200,11 +200,12 @@ After local Supabase setup and migration, run `npx supabase test db supabase/tes
 
 1. Open the same Supabase project, then select **SQL Editor → New query**.
 2. Run [the quota migration](supabase/migrations/20261006150319_usage_quotas.sql) after the songs migration, then run [the global usage migration](supabase/migrations/20261007130543_global_usage_limits.sql).
+   Then run [the beta allowance migration](supabase/migrations/20261008141601_beta_allowances.sql) with the updated backend.
 3. Keep `SUPABASE_SECRET_KEY` in `backend/.env`. Chat and analysis now require this server-only key too.
 4. Add these allowance defaults to `backend/.env`, or use the same built-in values:
 
 ```env
-QUOTA_CHAT_DAILY=50
+QUOTA_CHAT_DAILY=20
 QUOTA_ANALYSIS_DAILY=10
 QUOTA_GENERATION_DAILY=5
 QUOTA_STORAGE_BYTES=536870912
@@ -226,7 +227,7 @@ Deploy the migration and updated backend together. An outdated backend fails bef
 Exhaustion returns the usual `429 quota_exceeded` response with an app-wide message and reset time.
 Storage retries remain available after generation limits are exhausted and do not consume another attempt.
 
-The per-user defaults allow 50 chat requests, 10 analyses, and 5 generation attempts per UTC day, subject to the global limits.
+The per-user defaults allow 20 chat messages, 10 analyses, and 5 completed songs per UTC day, subject to the global limits.
 Each user has 512 MiB of generated-song storage. Generation reserves 25 MiB before the paid Lyria call.
 The backend converts this reservation to the exact MP3 size when it inserts pending song metadata.
 An analysis also consumes its surrounding chat request. Bounded agent turns and lyric generation belong to that chat allowance.
@@ -236,20 +237,29 @@ Existing pending and ready song metadata counts immediately. No byte-counter bac
 The first usage request creates a row in `public.user_quotas` from these defaults.
 To change an existing user's allowances, open **Table Editor → user_quotas** and edit that user's row.
 Environment changes affect new rows only. Set a daily allowance to `0` to disable that operation for a user.
+The beta migration lowers existing chat allowances above 20. Disabled accounts and stricter allowances stay unchanged.
 Per-user allowance changes take effect on the next reservation.
 Credit balances, paid tiers, and payments remain separate work. Their debit logic can use the existing reservation transaction.
 
 Authenticated `GET /api/usage` returns limits, used counts, remaining allowances, reserved bytes, and the next UTC reset time.
+The chat page displays remaining allowances and the reset time in the user's local time.
+It refreshes after chat actions, page navigation, and the daily reset.
+Failed refreshes preserve the previous values and show a retry control.
 The database owns the date and counters. Backend restarts and conversation resets do not clear them.
 Quota exhaustion returns HTTP `429` with `code: "quota_exceeded"` and the exhausted `resource`.
 Daily exhaustion also returns `resetAt` and a `Retry-After` header.
 Database failures return HTTP `503` and prevent paid calls.
 An analysis quota failure after streaming starts returns a terminal NDJSON error with the same code and resource.
 
-Local validation occurs before reservation. Each accepted reservation counts as an attempt, including provider failures and lost database responses.
-No automatic refund occurs after reservation, because the paid operation can have an uncertain outcome.
-Failed generations release unused storage when the backend knows that no save occurred.
+Local validation occurs before reservation. Chat and analysis reservations count as attempts. Lyrics use their surrounding chat allowance.
+Generation reserves one personal song and its storage before the paid call.
+Confirmed provider rejections and terminal responses without valid audio restore that personal song and release unused storage exactly once.
+Global generation attempts stay charged after a personal refund.
+Timeouts, connection failures, interrupted responses, and unfinished provider statuses retain both reservations until the outcome is known.
+Completion and refunds use the original reservation date, including operations that cross UTC midnight.
+If refund settlement fails, the reservation stays charged and the error reports that the refund needs attention.
 Pending saves keep their capacity until storage succeeds or cleanup completes. Storage retries do not consume another generation attempt.
+Storage failures and song deletion do not restore generation allowance.
 Deletion releases bytes when the backend deletes metadata after object and local-file cleanup.
 If a track exceeds `MAX_GENERATED_SONG_BYTES`, its local recovery copy remains available.
 Increase that limit before storage retry. The exact track must still fit the user's storage allowance.

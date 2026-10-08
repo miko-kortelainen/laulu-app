@@ -24,7 +24,7 @@ function configuredLimit(name: string, fallback: number, maximum = Number.MAX_SA
 
 export function quotaDefaults(): { chat_daily: number; analysis_daily: number; generation_daily: number; storage_bytes: number } {
   return {
-    chat_daily: configuredLimit('QUOTA_CHAT_DAILY', 50, 2_147_483_647),
+    chat_daily: configuredLimit('QUOTA_CHAT_DAILY', 20, 2_147_483_647),
     analysis_daily: configuredLimit('QUOTA_ANALYSIS_DAILY', 10, 2_147_483_647),
     generation_daily: configuredLimit('QUOTA_GENERATION_DAILY', 5, 2_147_483_647),
     storage_bytes: configuredLimit('QUOTA_STORAGE_BYTES', 512 * 1024 * 1024),
@@ -85,8 +85,8 @@ export async function reserveUsage(userId: string, operation: PaidOperation, sto
   return id;
 }
 
-export async function releaseSongReservation(userId: string, id: string): Promise<void> {
-  await quotaRpc('release_song_reservation', { p_user_id: userId, p_id: id });
+export async function settleGeneration(userId: string, id: string, status: 'completed' | 'failed'): Promise<void> {
+  await quotaRpc('settle_generation', { p_user_id: userId, p_id: id, p_status: status });
 }
 
 interface Allowance { limit: number; used: number; remaining: number }

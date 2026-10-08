@@ -10,7 +10,7 @@ import { isMusicPrompt } from "./musicPrompt";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
-  const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, pendingSongId, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio } = chat;
+  const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, pendingSongId, context, contextError, usage, usageError, refreshUsage, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio } = chat;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,6 +110,28 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
         </button>
         {pendingSongId && <p className="text-xs text-zinc-400">this saves the song already generated.</p>}
         {musicError && <p role="alert" className="text-xs text-red-400">{musicError}</p>}
+        <section aria-labelledby="allowances-heading" className="space-y-2 border-t border-white/10 pt-4 text-xs text-zinc-400">
+          <h2 id="allowances-heading" className="font-medium text-zinc-300">daily allowances</h2>
+          {usage ? <>
+            <dl className="space-y-1 tabular-nums">
+              {([
+                ["chat messages", usage.chat], ["songs", usage.generation], ["audio analyses", usage.analysis],
+              ] as const).map(([label, allowance]) => (
+                <div key={label} className="flex justify-between gap-3">
+                  <dt>{label}</dt><dd>{allowance.remaining} / {allowance.limit} remaining</dd>
+                </div>
+              ))}
+              <div className="flex justify-between gap-3"><dt>saved-song space</dt><dd>{Math.floor(usage.storage.remaining / 1024 / 1024)} MiB remaining</dd></div>
+            </dl>
+            <p>resets <time dateTime={usage.resetAt}>{new Date(usage.resetAt).toLocaleString()}</time></p>
+            <p>pending songs reserve allowance. shared daily limits also apply.</p>
+          </> : !usageError && <p>loading allowances...</p>}
+          {usageError && <div className="space-y-1">
+            <p role="alert" className="text-red-400">{usageError} {usage && "shown allowances may be out of date."}</p>
+            <button type="button" disabled={loading} onClick={() => void refreshUsage()}
+              className="rounded underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">retry allowances</button>
+          </div>}
+        </section>
         <div className="space-y-2 border-t border-white/10 pt-4 text-xs text-zinc-400">
           <div className="flex items-center justify-between gap-3">
             <label htmlFor="chat-context">conversation context</label>

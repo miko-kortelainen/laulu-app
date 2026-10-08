@@ -12,6 +12,9 @@ const run = (...args) => execFileSync("agent-browser", ["--session", session, ..
 const opener = 'button[aria-label="Open prompt input"]';
 const send = 'button[aria-label="Send prompt"]';
 const uploadPath = `/tmp/musical-chat-upload-${process.pid}.wav`;
+const usage = { resetAt: '2099-01-01T00:00:00Z',
+  chat: { limit: 20, used: 0, remaining: 20 }, analysis: { limit: 10, used: 0, remaining: 10 },
+  generation: { limit: 5, used: 0, remaining: 5 }, storage: { limit: 536870912, used: 0, reserved: 0, remaining: 536870912 } };
 
 function openInput() {
   run("click", opener);
@@ -22,8 +25,13 @@ try {
   await seedAuth(run, url);
   run("open", "about:blank");
   run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
+  run("network", "route", "**/api/usage", "--body", JSON.stringify(usage));
   run("open", url);
   run("wait", "--text", "0 / 40 messages");
+  run("wait", "--text", "20 / 20 remaining");
+  run("wait", "--text", "5 / 5 remaining");
+  assert.equal(run("eval", 'document.querySelector("time").dateTime'), JSON.stringify(usage.resetAt));
+  assert.equal(run("eval", 'document.querySelector("time").textContent === new Date(document.querySelector("time").dateTime).toLocaleString()'), "true");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   run("set", "viewport", "1280", "900");
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
@@ -39,9 +47,12 @@ try {
   assert.equal(run("eval", 'document.activeElement.name'), '"genre"');
   assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().left >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().right'), "true");
   run("network", "route", "**/api/**", "--body", '{"reply":"e2e reply"}');
-  run("eval", `window.chatRequests = []; window.musicRequests = []; window.mediaRequests = []; window.contextMessages = 6; const originalFetch = window.fetch;
+  run("eval", `window.usage = ${JSON.stringify(usage)}; window.usageFailure = false;
+    window.chatRequests = []; window.musicRequests = []; window.mediaRequests = []; window.contextMessages = 6; const originalFetch = window.fetch;
     window.fetch = (input, options) => {
       if (input === "/api/context") return Promise.resolve(Response.json({ messages: window.contextMessages, limit: 40 }));
+      if (input === "/api/usage") return Promise.resolve(window.usageFailure
+        ? Response.json({ error: 'offline' }, { status: 503 }) : Response.json(window.usage));
       if (input === "/api/chat") window.chatRequests.push(JSON.parse(options.body));
       if (input === "/api/music") window.musicRequests.push(JSON.parse(options.body));
       if (/^\\/api\\/(audio|music)\\//.test(input)) window.mediaRequests.push({ url: input, authorization: new Headers(options.headers).get('authorization') });
@@ -56,16 +67,20 @@ try {
   run("mouse", "up");
   run("wait", "--fn", 'document.activeElement === document.querySelector("textarea:not([name])")');
   run("fill", "textarea:not([name])", "mouse message");
+  run("eval", 'window.usage.chat = { limit: 20, used: 1, remaining: 19 }');
   run("click", send);
   run("wait", "--text", "e2e reply");
   run("wait", "--text", "6 / 40 messages");
+  run("wait", "--text", "19 / 20 remaining");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "6");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
   run("find", "role", "link", "click", "--name", "profile", "--exact");
   run("wait", "--text", "member since");
+  run("eval", 'window.usage.storage.remaining = 268435456');
   run("find", "role", "link", "click", "--name", "chat", "--exact");
   run("wait", "--text", "6 / 40 messages");
+  run("wait", "--text", "256 MiB remaining");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("e2e reply")'), "true");
 
@@ -371,6 +386,25 @@ try {
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "0");
   assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
+  // Refresh failures preserve valid usage and offer recovery; malformed responses do too.
+  run("eval", 'window.usageFailure = true');
+  run("find", "role", "button", "click", "--name", "new session", "--exact");
+  run("wait", "--text", "could not load daily allowances. try again.");
+  run("wait", "--text", "19 / 20 remaining");
+  run("eval", 'window.usageFailure = false; window.usage.generation = { limit: 5, used: 1, remaining: -1 }');
+  run("find", "role", "button", "click", "--name", "retry allowances", "--exact");
+  run("wait", "--text", "invalid usage response.");
+  run("wait", "--text", "5 / 5 remaining");
+  run("eval", 'window.usage.generation.remaining = 4');
+  run("find", "role", "button", "click", "--name", "retry allowances", "--exact");
+  run("wait", "--text", "4 / 5 remaining");
+  assert.equal(run("eval", 'document.querySelector("aside").innerText.includes("invalid usage response.")'), "false");
+  // The reset timer refreshes server counts without another user action.
+  run("eval", 'window.usage.resetAt = new Date(Date.now() + 1200).toISOString()');
+  run("find", "role", "button", "click", "--name", "new session", "--exact");
+  run("wait", "--fn", 'document.querySelector("time").dateTime === window.usage.resetAt');
+  run("eval", `window.usage.resetAt = ${JSON.stringify(usage.resetAt)}; window.usage.generation = { limit: 5, used: 0, remaining: 5 }`);
+  run("wait", "--text", "5 / 5 remaining");
   console.log("Chat E2E passed: chat recovery, music confirmation, uploads, and private downloads.");
 } finally {
   try { unlinkSync(uploadPath); } catch { /* No upload fixture to remove. */ }

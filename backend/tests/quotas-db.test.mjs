@@ -102,14 +102,90 @@ test('database quotas serialize reservations, survive new connections, and prote
       }
       await assert.rejects(query(`set role ${role}; select public.reserve_usage('${owner}', 'chat', '${randomUUID()}', 0, '${defaults}', '${globalLimits}');`), /permission denied/);
       await assert.rejects(query(`set role ${role}; select public.get_usage('${owner}', '${defaults}');`), /permission denied/);
+      await assert.rejects(query(`set role ${role}; select public.settle_generation('${owner}', '${song.id}', 'failed');`), /permission denied/);
       await assert.rejects(query(`set role ${role}; select public.prepare_song_save('${JSON.stringify(song)}', '${defaults}');`), /permission denied/);
     }
     assert.equal(await query("select count(*) from pg_class where relname in ('user_quotas', 'daily_usage', 'usage_reservations', 'global_usage') and relrowsecurity;"), '4');
     assert.equal(await query("select to_regprocedure('public.reserve_usage(uuid,text,uuid,bigint,jsonb)') is null;"), 't');
-    assert.equal(await query("select count(*) from pg_proc where proname in ('quota_account', 'reserve_usage', 'release_song_reservation', 'prepare_song_save', 'get_usage') and prosecdef;"), '0');
+    assert.equal(await query("select count(*) from pg_proc where proname in ('quota_account', 'reserve_usage', 'release_song_reservation', 'settle_generation', 'prepare_song_save', 'get_usage') and prosecdef;"), '0');
   } finally {
     await query(`delete from public.songs where owner_id in ('${owner}', '${other}');
       delete from auth.users where id in ('${owner}', '${other}');`);
+  }
+});
+
+test('beta allows 20 chats and five completed songs, refunds once, and retains the original UTC date', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a disposable, migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  const owner = randomUUID();
+  const other = randomUUID();
+  const beta = JSON.stringify({ chat_daily: 20, analysis_daily: 10, generation_daily: 5, storage_bytes: 1000 });
+  const reserve = (operation) => query(`set role service_role; select public.reserve_usage('${owner}', '${operation}', '${randomUUID()}', ${operation === 'generation' ? 100 : 0}, '${beta}', '${globalLimits}');`).then(JSON.parse);
+  const usage = () => query(`set role service_role; select public.get_usage('${owner}', '${beta}');`).then(JSON.parse);
+  const settle = (id, status, user = owner) => query(`set role service_role; select public.settle_generation('${user}', '${id}', '${status}');`);
+  await query(`insert into auth.users(id) values ('${owner}'), ('${other}');`);
+  try {
+    const chats = await Promise.all(Array.from({ length: 25 }, () => reserve('chat')));
+    assert.equal(chats.filter((result) => result.allowed).length, 20);
+    assert.equal((await usage()).chat.remaining, 0);
+
+    const tracks = await Promise.all(Array.from({ length: 12 }, () => reserve('generation')));
+    const accepted = tracks.filter((result) => result.allowed);
+    assert.equal(accepted.length, 5, 'concurrent requests cannot overspend');
+    assert.equal((await usage()).storage.reserved, 500, 'unknown outcomes retain their storage');
+    const globalBefore = await query("select used from public.global_usage where operation = 'generation';");
+    const first = accepted[0].id;
+    await settle(first, 'failed', other);
+    assert.equal((await usage()).generation.used, 5, 'another owner cannot refund usage');
+    await Promise.all(Array.from({ length: 8 }, () => settle(first, 'failed')));
+    assert.equal((await usage()).generation.used, 4, 'concurrent refunds apply exactly once');
+    assert.equal((await usage()).storage.reserved, 400);
+    assert.equal(await query("select used from public.global_usage where operation = 'generation';"), globalBefore, 'global attempts are never refunded');
+    const replacement = await reserve('generation');
+    assert.equal(replacement.allowed, true);
+    for (const track of [...accepted.slice(1), replacement]) await settle(track.id, 'completed');
+    assert.equal((await reserve('generation')).resource, 'generation', 'five completed songs exhaust the allowance');
+    await settle(replacement.id, 'failed');
+    assert.equal((await usage()).generation.used, 5, 'completion cannot later become a failure');
+
+    const savedId = accepted[1].id;
+    const song = { id: savedId, owner_id: owner, object_key: `users/${owner}/${savedId}.mp3`,
+      prompt: 'offline folk', model: 'lyria-3.5', lyrics: '', size_bytes: 50, status: 'pending', created_at: new Date().toISOString() };
+    const save = () => query(`set role service_role; select public.prepare_song_save('${JSON.stringify(song)}', '${beta}');`).then(JSON.parse);
+    assert.equal((await save()).allowed, true);
+    assert.equal((await save()).allowed, true);
+    assert.equal((await usage()).generation.used, 5, 'save retries do not charge again');
+    await query(`delete from public.songs where id = '${savedId}';`);
+    await settle(savedId, 'failed');
+    assert.equal((await usage()).generation.used, 5, 'deleting a song never refunds generation');
+
+    // Simulate a request that started yesterday and completes or fails today.
+    await query(`update public.daily_usage set usage_date = usage_date - 1 where user_id = '${owner}' and operation = 'generation';
+      update public.usage_reservations set usage_date = usage_date - 1 where user_id = '${owner}' and operation = 'generation';`);
+    const yesterday = await reserve('generation');
+    await query(`update public.usage_reservations set usage_date = usage_date - 1 where id = '${yesterday.id}';
+      update public.daily_usage set used = used + 1 where user_id = '${owner}' and operation = 'generation' and usage_date = (clock_timestamp() at time zone 'UTC')::date - 1;
+      delete from public.daily_usage where user_id = '${owner}' and operation = 'generation' and usage_date = (clock_timestamp() at time zone 'UTC')::date;`);
+    const today = await reserve('generation');
+    await settle(today.id, 'completed');
+    await settle(yesterday.id, 'failed');
+    await settle(yesterday.id, 'failed');
+    assert.equal((await usage()).generation.used, 1, 'a late refund never changes today');
+    assert.equal(await query(`select used from public.daily_usage where user_id = '${owner}' and operation = 'generation' and usage_date = (clock_timestamp() at time zone 'UTC')::date - 1;`), '5');
+    const last = await reserve('generation');
+    await settle(last.id, 'failed');
+    await assert.rejects(settle(last.id, 'reserved'), /invalid generation status/);
+    const single = await query(`set role service_role; select public.reserve_usage('${other}', 'generation', '${randomUUID()}', 100, '${beta}', '${globalLimits}');`).then(JSON.parse);
+    await settle(single.id, 'failed', other);
+    await settle(single.id, 'failed', other);
+    const empty = await query(`set role service_role; select public.get_usage('${other}', '${beta}');`).then(JSON.parse);
+    assert.equal(empty.generation.used, 0, 'refunding the last song removes the daily counter without going negative');
+    assert.equal(empty.generation.remaining, 5);
+  } finally {
+    await query(`delete from public.songs where owner_id = '${owner}'; delete from auth.users where id in ('${owner}', '${other}');`);
   }
 });
 

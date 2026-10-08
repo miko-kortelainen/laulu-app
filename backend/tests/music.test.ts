@@ -31,6 +31,8 @@ test('music waits for confirmation, validates responses, and saves only valid au
   let expectedModel = 'lyria-3.5';
   let tokenResponse = async () => Response.json({ totalTokens: 100 });
   let response = new Response();
+  let providerError: Error | undefined;
+  let refundUnavailable = false;
   globalThis.fetch = async (url, options) => {
     const request = new Request(url, options);
     const database = await storage.databaseResponse(request);
@@ -52,6 +54,8 @@ test('music waits for confirmation, validates responses, and saves only valid au
     assert.deepEqual(JSON.parse(await request.text()), {
       model: expectedModel, input: prompt, store: false,
     });
+    if (providerError) throw providerError;
+    if (refundUnavailable) storage.quotas.failures.unavailable = true;
     return response;
   };
   let savedPath: string | undefined;
@@ -140,9 +144,34 @@ test('music waits for confirmation, validates responses, and saves only valid au
     await assert.rejects(generateMusic(prompt), /music generation failed.*Prompt rejected by music service/);
     assert.equal(calls, previousErrorCalls + 1);
     assert.equal(storage.quotas.reservations.size, 1);
-    assert.equal([...storage.quotas.reservations.values()][0].storageBytes, 0, 'failed provider call releases storage but keeps usage');
+    assert.equal([...storage.quotas.reservations.values()][0].storageBytes, 0);
+    assert.equal([...storage.quotas.reservations.values()][0].status, 'failed', 'confirmed rejection refunds personal usage');
+    refundUnavailable = true;
     response = Response.json({ status: 'failed', steps: [] });
-    await assert.rejects(generateMusic(prompt), /completed track/);
+    await assert.rejects(generateMusic(prompt), /could not restore your song allowance/);
+    assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved', 'failed refund keeps the reservation');
+    storage.quotas.failures.unavailable = false;
+    refundUnavailable = false;
+    for (const status of ['failed', 'cancelled', 'incomplete']) {
+      response = Response.json({ status, steps: [] });
+      await assert.rejects(generateMusic(prompt), /completed track/);
+      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'failed');
+    }
+    for (const status of [408, 500, 502, 504]) {
+      response = Response.json({ error: { message: 'uncertain outcome' } }, { status });
+      await assert.rejects(generateMusic(prompt), /outcome is unknown/);
+      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved');
+      assert.ok([...storage.quotas.reservations.values()].at(-1)!.storageBytes > 0);
+    }
+    for (const error of [new TypeError('offline'), new DOMException('timeout', 'TimeoutError'), new DOMException('disconnected', 'AbortError')]) {
+      providerError = error;
+      await assert.rejects(generateMusic(prompt), /outcome is unknown/);
+      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved');
+    }
+    providerError = undefined;
+    response = Response.json({ status: 'in_progress', steps: [] });
+    await assert.rejects(generateMusic(prompt), /outcome is unknown/);
+    assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved');
     response = Response.json({ status: 'completed', steps: [] });
     await assert.rejects(generateMusic(prompt), /no audio/);
     for (const data of ['invalid!', 'AAAAA', 'A===', 'AA=A', 'AA==AAAA']) {
@@ -169,6 +198,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
       const previousTokenCalls = tokenCalls;
       const previousCalls = calls;
       const track = await generateMusic(`  ${prompt}  `, model);
+      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'completed');
       assert.equal(tokenCalls, previousTokenCalls + 1);
       assert.equal(calls, previousCalls + 1);
       assert.match(track.url, /^\/api\/music\/[0-9a-f-]{36}\.mp3$/);
@@ -195,6 +225,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
       assert.equal(calls, beforeOversize + 1);
       assert.equal(storage.writes, beforeWrites, 'oversized output never reaches R2');
       assert.equal(storage.quotas.reservations.get(oversizedId)?.storageBytes, bytes.length - 1);
+      assert.equal(storage.quotas.reservations.get(oversizedId)?.status, 'completed', 'storage failure never refunds completed generation');
       assert.deepEqual(await readFile(`${musicDirectory}${userId}/${oversizedId}.mp3`), bytes, 'paid output remains recoverable');
       process.env.MAX_GENERATED_SONG_BYTES = String(bytes.length);
       const retried = await retrySongStorage(userId, oversizedId);

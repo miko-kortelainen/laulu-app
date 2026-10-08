@@ -342,7 +342,7 @@ An already-issued signed URL remains usable until expiry unless the object is de
 | --- | --- |
 | Custom SMTP and sender DNS | Public confirmation and recovery emails need reliable delivery |
 | Production origin and HTTPS | Auth redirects, API access, and bucket CORS need the actual deployment origin |
-| Durable usage limits | Implemented for chat, analysis, generation attempts, and generated-song bytes. Apply the quota migration before launch |
+| Durable usage limits | Implemented for chat, analysis, completed songs, and generated-song bytes. Apply the quota and beta allowance migrations before launch |
 | Request limits | Keep per-user action locks, upload limits, and model limits |
 | Retention and deletion | Decide how long ready assets, failed outputs, and recovery files remain |
 | Temporary disk capacity | Python processing needs local space despite R2 storage |

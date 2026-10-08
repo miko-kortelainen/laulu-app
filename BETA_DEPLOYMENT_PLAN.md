@@ -2,7 +2,8 @@
 
 Date: 2026-10-08
 
-Status: Planning only. Hetzner is the selected host. This document does not authorize implementation or deployment.
+Status: Item 2 is implemented in the repository. Its database migration is not applied to hosted Supabase. The remaining items are planned.
+Hetzner is the selected host. This document does not authorize deployment.
 
 ## Goal
 
@@ -135,15 +136,19 @@ Preserve uploaded audio and generated songs that the retained flows need.
 
 ### 2. Apply the agreed allowances
 
-- [ ] Change the chat default from 50 to 20 user messages daily.
-- [ ] Apply the chat limit to existing accounts as well as new accounts.
-- [ ] Keep lyrics inside the chat allowance.
-- [ ] Change generation accounting from attempts to completed songs.
-- [ ] Reserve allowance before a paid request to prevent concurrent overspending.
-- [ ] Restore personal song allowance exactly once after a confirmed generation failure.
-- [ ] Preserve the reservation while the provider outcome remains unknown.
-- [ ] Keep the original quota date for operations that cross UTC midnight.
-- [ ] Display remaining allowances and the reset time.
+- [x] Change the chat default from 50 to 20 user messages daily.
+- [x] Prepare a migration to lower existing chat allowances above 20. Preserve disabled and stricter accounts.
+- [x] Keep lyrics inside the chat allowance.
+- [x] Change generation accounting from attempts to completed songs.
+- [x] Reserve allowance before a paid request to prevent concurrent overspending.
+- [x] Restore personal song allowance exactly once after a confirmed generation failure.
+- [x] Preserve the reservation while the provider outcome remains unknown.
+- [x] Keep the original quota date for operations that cross UTC midnight.
+- [x] Display remaining allowances and the reset time.
+
+Apply `supabase/migrations/20261008141601_beta_allowances.sql` with the updated backend.
+Update an existing `QUOTA_CHAT_DAILY=50` environment setting to `20` before restart.
+Historical unknown outcomes stay reserved. Item 3 will add automatic reconciliation after interrupted operations.
 
 If storage fails after a completed generation, the generation still counts once.
 A save retry uses the same song and reservation.
@@ -297,6 +302,8 @@ Hosting prices and offers reflect the discussion on 2026-10-08. Review them befo
 
 ## Verification status
 
-This document records the plan. It does not certify production readiness.
-Repository reads support the current quota, recovery, and single-instance notes.
-No application changes, deployments, paid calls, builds, or tests ran for this document.
+This document records the plan and item 2 implementation. It does not certify production readiness.
+Item 2 passes backend quota, music, authentication, and song tests against offline services and a disposable local database.
+The local database checks cover concurrent reservations, repeated refunds, ownership, global limits, and UTC date changes.
+Both builds and the frontend linter pass. Browser checks cover allowance refresh and failure recovery.
+No hosted migrations, deployments, or paid provider calls ran.

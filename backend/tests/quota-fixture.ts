@@ -6,14 +6,14 @@ export function configureTestQuotas() {
   const previousLimits = globalKeys.map((key) => process.env[key]);
   for (const key of globalKeys) process.env[key] = '100';
   process.env.SUPABASE_SECRET_KEY = 'sb_secret_offline';
-  const reservations = new Map<string, { userId: string; operation: string; storageBytes: number }>();
+  const reservations = new Map<string, { userId: string; operation: string; storageBytes: number; status: 'reserved' | 'completed' | 'failed' }>();
   const failures: { unavailable: boolean; resource?: string; scope?: 'global'; invalid: boolean } = { unavailable: false, invalid: false };
 
   async function databaseResponse(request: Request): Promise<Response | undefined> {
     const url = new URL(request.url);
     if (url.origin !== process.env.SUPABASE_URL || !url.pathname.startsWith('/rest/v1/rpc/')) return undefined;
     const name = url.pathname.split('/').at(-1);
-    if (!['reserve_usage', 'release_song_reservation', 'get_usage'].includes(name ?? '')) return undefined;
+    if (!['reserve_usage', 'settle_generation', 'get_usage'].includes(name ?? '')) return undefined;
     assert.equal(request.headers.get('apikey'), 'sb_secret_offline');
     const input: Record<string, unknown> = await request.json();
     assert.equal(typeof input.p_user_id, 'string');
@@ -29,20 +29,24 @@ export function configureTestQuotas() {
       assert.ok(['chat', 'analysis', 'generation'].includes(input.p_operation as string));
       assert.ok(Number.isSafeInteger(input.p_storage_bytes));
       reservations.set(input.p_id as string, { userId: input.p_user_id as string,
-        operation: input.p_operation as string, storageBytes: input.p_storage_bytes as number });
+        operation: input.p_operation as string, storageBytes: input.p_storage_bytes as number, status: 'reserved' });
       return Response.json({ allowed: true, id: input.p_id, created: true });
     }
-    if (name === 'release_song_reservation') {
+    if (name === 'settle_generation') {
       const reservation = reservations.get(input.p_id as string);
-      assert.ok(reservation);
-      assert.equal(reservation?.userId, input.p_user_id);
-      reservation.storageBytes = 0;
+      assert.ok(input.p_status === 'completed' || input.p_status === 'failed');
+      if (reservation?.userId === input.p_user_id && reservation.status === 'reserved') {
+        reservation.status = input.p_status;
+        if (input.p_status === 'failed') reservation.storageBytes = 0;
+      }
       return new Response(null, { status: 204 });
     }
     const owned = [...reservations.values()].filter((entry) => entry.userId === input.p_user_id);
     const allowance = (operation: string) => {
-      const used = owned.filter((entry) => entry.operation === operation).length;
-      return { limit: 50, used, remaining: Math.max(0, 50 - used) };
+      const used = owned.filter((entry) => entry.operation === operation && entry.status !== 'failed').length;
+      const defaults = input.p_defaults as Record<string, number>;
+      const limit = defaults[`${operation}_daily`];
+      return { limit, used, remaining: Math.max(0, limit - used) };
     };
     return Response.json({ resetAt: '2099-01-01T00:00:00Z', chat: allowance('chat'), analysis: allowance('analysis'),
       generation: allowance('generation'), storage: { limit: 536870912, used: 0,

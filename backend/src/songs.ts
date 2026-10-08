@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { deleteSongObject, putSongObject, r2Storage, readSongObject } from './r2.js';
 import { userDirectory } from './user-files.js';
 import { database } from './database.js';
-import { checkAllowance, quotaDefaults, quotaRpc, songOutputLimit } from './quotas.js';
+import { checkAllowance, quotaDefaults, quotaRpc, settleGeneration, songOutputLimit } from './quotas.js';
 
 export const musicDirectory = fileURLToPath(new URL('../generated-music/', import.meta.url));
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -143,6 +143,7 @@ export async function listSongRecovery(userId: string): Promise<string[]> {
 }
 
 async function persistSong(song: Song, audio: Buffer): Promise<SavedSong> {
+  await settleGeneration(song.owner_id, song.id, 'completed');
   const existing = await findSong(song.owner_id, song.id);
   if (existing?.status === 'ready') return publicSong(existing);
   if (!existing) {

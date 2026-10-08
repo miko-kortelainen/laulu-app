@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { generateMusic, getChatContext, resetChat, retrySongStorage, sendMessage, SongStorageError, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack } from "./api";
+import { useLocation } from "react-router";
+import { generateMusic, getChatContext, getUsage, resetChat, retrySongStorage, sendMessage, SongStorageError, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack, type Usage } from "./api";
 import { emptyMusicPrompt, isMusicPrompt, musicPromptFields, type MusicPrompt } from "./musicPrompt";
 
 export interface Message {
@@ -14,6 +15,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function useChat() {
+  const { pathname } = useLocation();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
@@ -32,8 +34,40 @@ export function useChat() {
   const [context, setContext] = useState<ChatContext>();
   const [contextError, setContextError] = useState<string>();
   const contextRequest = useRef(0);
+  const [usage, setUsage] = useState<Usage>();
+  const [usageError, setUsageError] = useState<string>();
+  const usageRequest = useRef(0);
   const busy = useRef(false);
   const currentAudio = useRef<string | undefined>(undefined);
+
+  const refreshUsage = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    const request = ++usageRequest.current;
+    const result = await getUsage(signal).catch((error: unknown) => new Error(errorMessage(error)));
+    if (signal?.aborted || request !== usageRequest.current) return;
+    if (result instanceof Error) {
+      setUsageError(result.message);
+    } else {
+      setUsage(result);
+      setUsageError(undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!loading) {
+      // oxlint-disable-next-line react/set-state-in-effect -- state updates after the usage fetch resolves.
+      void refreshUsage(controller.signal);
+    }
+    return () => controller.abort();
+  }, [loading, pathname, refreshUsage]);
+
+  useEffect(() => {
+    if (!usage || loading) return;
+    const delay = Date.parse(usage.resetAt) - Date.now();
+    if (delay <= 0) return;
+    const timeout = window.setTimeout(() => void refreshUsage(), Math.min(delay + 1000, 2_147_483_647));
+    return () => window.clearTimeout(timeout);
+  }, [usage, loading, refreshUsage]);
 
   const refreshContext = useCallback(async (): Promise<void> => {
     const request = ++contextRequest.current;
@@ -182,5 +216,5 @@ export function useChat() {
     setActivity(undefined);
   }
 
-  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, pendingSongId, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio };
+  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, pendingSongId, context, contextError, usage, usageError, refreshUsage, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio };
 }

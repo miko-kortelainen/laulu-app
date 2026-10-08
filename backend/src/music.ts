@@ -6,7 +6,7 @@ import { generateLyrics } from './lyrics.js';
 import { getAiGateway } from './gateway.js';
 import { userDirectory } from './user-files.js';
 import { checkSongStorage, musicDirectory, saveSong } from './songs.js';
-import { releaseSongReservation, reserveUsage, songOutputLimit } from './quotas.js';
+import { reserveUsage, settleGeneration, songOutputLimit } from './quotas.js';
 
 export { musicDirectory };
 
@@ -122,11 +122,13 @@ export const generateMusic = traceable(async (
 
   const songId = await reserveUsage(userId, 'generation', songOutputLimit());
   let audio: Buffer | undefined;
+  let confirmedFailure = false;
   const lyrics: string[] = [];
   try {
     const data = await client.interactions.create({
       model, input, store: false,
     }, { timeout: 300_000, maxRetries: 0 });
+    confirmedFailure = ['completed', 'failed', 'cancelled', 'incomplete', 'budget_exceeded'].includes(data.status);
     if (data.status !== 'completed' || !Array.isArray(data.steps)) {
       throw new Error('music service did not return a completed track.');
     }
@@ -149,9 +151,17 @@ export const generateMusic = traceable(async (
     }
     if (!audio?.length) throw new Error('music service returned no audio.');
   } catch (error: unknown) {
-    // No save was attempted. Keep the paid attempt, but release its unused storage.
-    await releaseSongReservation(userId, songId).catch((cause: unknown) => console.error('could not release unused song storage:', cause));
-    throw new Error(`music generation failed. ${error instanceof Error ? error.message : 'unknown service error.'}`);
+    const rejected = error instanceof Error && 'status' in error && typeof error.status === 'number' &&
+      [400, 401, 403, 404, 422, 429].includes(error.status);
+    let settlementError: string | undefined;
+    if (confirmedFailure || rejected) {
+      await settleGeneration(userId, songId, 'failed').catch((cause: unknown) => {
+        console.error('could not refund failed generation:', cause);
+        settlementError = ' could not restore your song allowance. contact support.';
+      });
+    }
+    throw new Error(`music generation failed. ${error instanceof Error ? error.message : 'unknown service error.'}` +
+      (settlementError ?? (confirmedFailure || rejected ? '' : ' the outcome is unknown; your song allowance remains reserved.')));
   }
 
   const text = lyrics.join('\n')
