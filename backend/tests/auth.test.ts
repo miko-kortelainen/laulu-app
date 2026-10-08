@@ -71,6 +71,9 @@ test('verified users own their API session and local media', async (t) => {
       assert.equal((await fetch(`${url}/api/${endpoint}`)).status, 401);
     }
     assert.equal(authRequests, 0);
+    const missingEndpoint = await fetch(`${url}/api/unknown`, { headers: headersA });
+    assert.equal(missingEndpoint.status, 404);
+    assert.deepEqual(await missingEndpoint.json(), { error: 'endpoint not found.' });
     const valid = token(userA);
     for (const invalid of ['malformed', token(userA, { exp: 1 }), token(userA, { iss: 'https://another-project.supabase.co/auth/v1' }),
       token(userA, { aud: 'wrong' }), token(userA, { role: 'service_role' }), token(userA, { sub: '../../secrets' }),

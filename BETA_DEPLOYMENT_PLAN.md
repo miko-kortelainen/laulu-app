@@ -3,7 +3,8 @@
 Date: 2026-10-08
 
 Status: Items 1–4 are implemented. The user reports that hosted migrations, production spending controls, and production flow checks are complete.
-Item 5 includes the public privacy notice and disabled production tracing. Deployment packaging and operating safeguards in item 6 remain unfinished.
+Item 5 includes the public privacy notice and disabled production tracing. The Coolify deployment files and setup instructions are prepared.
+Local container verification is complete. Production deployment and the remaining operating safeguards in item 6 are unfinished.
 Hetzner is the selected host. This document does not authorize deployment.
 
 ## Goal
@@ -19,7 +20,7 @@ Billing and paid tiers come later.
 | Hosting | Hetzner |
 | Domain | The user owns `lau.lu` |
 | Landing page | `lau.lu`, preferably hosted separately |
-| Studio address | Recommend `studio.lau.lu` |
+| Studio address | `studio.lau.lu`, confirmed by the user |
 | Registration | Email/password accounts with email confirmation |
 | Free generation | Five completed songs per account per day |
 | Generation failures | Restore personal allowance after a confirmed generation failure |
@@ -64,9 +65,9 @@ Recommended starting configuration:
 - Ubuntu LTS.
 - Free, self-hosted Coolify for deployment, HTTPS, and container management.
 - One application container with the built frontend, Node.js backend, and FFmpeg.
-- Persistent mounted directories for generated-song recovery and necessary temporary audio.
+- A persistent volume for generated-song recovery. Session uploads stay in the replaceable container filesystem.
 
-Coolify is a recommendation, not a separate confirmed user choice.
+Coolify is the selected deployment tool. See [COOLIFY.md](COOLIFY.md) for setup instructions.
 Its documented minimum is two CPU cores, 2 GB RAM, and 10 GB disk space.
 The 4 GB recommendation provides space for the application and audio conversion.
 Measure memory use before public launch.
@@ -231,10 +232,10 @@ Keep a bounded attempt policy without changing the promised five-completed-song 
 - [x] Configure custom SMTP for confirmation and password recovery emails.
 - [x] Configure the mail provider’s domain records.
 - [x] Exercise confirmation and recovery links on `studio.lau.lu`.
-- [ ] Keep Supabase secret keys, R2 credentials, and gateway credentials on the backend.
-- [ ] Preserve ownership checks for every song and local audio request.
-- [ ] Keep R2 public access disabled.
-- [ ] Preserve RLS and server-only quota writes.
+- [x] Keep Supabase secret keys, R2 credentials, and gateway credentials on the backend.
+- [x] Preserve ownership checks for every song and local audio request.
+- [x] Keep R2 public access disabled.
+- [x] Preserve RLS and server-only quota writes.
 - [x] Add short privacy and beta-limit information that matches actual data handling.
 - [x] Decide whether production tracing can send chat and prompt text to LangSmith.
 
@@ -251,11 +252,12 @@ Custom SMTP is a launch requirement for this registration flow.
 
 ### 6. Package and deploy on Hetzner
 
+- [x] Prepare the production Dockerfile, Compose definition, build-context exclusions, and Coolify instructions.
 - [x] Select an available server and review its complete monthly price.
 - [x] Configure SSH access, the firewall, and operating-system updates.
 - [x] If the Coolify recommendation is accepted, install Coolify.
-- [ ] Build a production image without local model weights or development secrets.
-- [ ] Install FFmpeg in the application container, with `ffmpeg` and `ffprobe` on `PATH`.
+- [x] Build a production image without local model weights or development secrets.
+- [x] Install FFmpeg in the application container, with `ffmpeg` and `ffprobe` on `PATH`.
 - [ ] Configure the frontend’s public values at build time.
 - [ ] Configure backend secrets at runtime.
 - [ ] Mount persistent recovery directories outside the replaceable container filesystem.
@@ -264,6 +266,11 @@ Custom SMTP is a launch requirement for this registration flow.
 - [ ] Configure health checks, bounded logs, and disk monitoring.
 - [ ] Configure backups for recovery data and a database backup procedure.
 - [ ] Exercise restore and rollback procedures.
+
+The package builds both applications, installs FFmpeg, serves frontend routes, and configures runtime secrets, a recovery volume, a health check, and bounded app logs.
+The image builds locally on Node.js 24 and Debian 13 (Trixie), with FFmpeg 7.1.5.
+Container checks use dummy settings and no external networking. Apply the real configuration on Hetzner before marking the remaining deployment steps complete.
+The user requested files and instructions only. No Coolify resource or production server was changed.
 
 Coolify does not remove responsibility for server updates, backups, and disk capacity.
 The initial single-server deployment can have short maintenance interruptions.
@@ -274,8 +281,8 @@ Use offline backend tests and frontend end-to-end tests first.
 Use isolated temporary directories for tests that modify audio files.
 Do not make paid provider calls without explicit authorization.
 
-- [ ] Production frontend and backend builds pass.
-- [ ] The frontend linter passes.
+- [x] Production frontend and backend builds pass.
+- [x] The frontend linter passes.
 - [x] Registration, confirmation, resend, login, recovery, and logout work on the production domain.
 - [ ] A user can send 20 messages, and the next message stops before paid work.
 - [ ] A user can complete five songs, and the next generation stops before paid work.
@@ -302,7 +309,6 @@ Adjust the global limits before accepting more traffic.
 ## Items still to finalize
 
 - Exact Hetzner server, location, availability, and final price.
-- Coolify or a smaller Docker deployment managed directly.
 - Separate landing page host.
 - Maximum generation attempts before a temporary account limit.
 - Whether to retain the proposed 10-analysis daily limit.
@@ -351,3 +357,10 @@ The existing database tests cover global limits across accounts and preservation
 Upload size and local disk limits, server-wide upload and conversion limits, and restricted API origins are implemented.
 Offline backend audio and authentication tests cover queued conversions, busy uploads, and CORS origins.
 No hosted configuration changes or paid calls ran.
+
+The deployment package passes the Docker build and production entry-point checks with dummy settings.
+The container health check, frontend routes, private API boundary, assets, non-root writes, and OGG/Speex conversion pass.
+A temporary recovery volume survives container replacement.
+Both applications use TypeScript 7.0.2 and Node.js 24 typings. The reviewed Vite, Supabase, Google SDK, and Strands updates are installed with matching lockfiles.
+All 13 selected offline backend tests and the browser authentication flow pass. Both builds and the frontend linter pass.
+No production deployment, hosted data changes, or paid provider calls ran.

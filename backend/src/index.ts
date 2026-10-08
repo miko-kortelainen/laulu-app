@@ -1,5 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
 import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from './agent.js';
 import { getModelConfig } from './model.js';
@@ -281,6 +283,15 @@ app.post('/api/reset', locked(async (req: Request, res: Response) => {
   });
   if (!res.headersSent) res.json({ status: 'ok' });
 }));
+
+app.use('/api', (_req, res) => res.status(404).json({ error: 'endpoint not found.' }));
+
+const frontendDirectory = fileURLToPath(new URL('../../frontend/dist/', import.meta.url));
+app.use(express.static(frontendDirectory, { index: false }));
+app.get('/{*path}', (req, res, next) => {
+  if (path.extname(req.path) || !req.accepts('html')) return next();
+  res.sendFile(path.join(frontendDirectory, 'index.html'), { headers: { 'Cache-Control': 'no-cache' } });
+});
 
 if (process.env.NODE_ENV !== 'test') {
   const cleanup = () => Promise.all([recoverOperations(), cleanupLocalAudio()]).catch((error: unknown) => console.error('local audio cleanup failed:', error));
