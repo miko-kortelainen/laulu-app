@@ -5,7 +5,7 @@ import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Agent, AgentResult } from '@strands-agents/sdk';
 import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from '../src/agent.js';
-import { audioDirectory } from '../src/local-audio.js';
+import { audioDirectory, clearUploadedAudio } from '../src/local-audio.js';
 import { configureTestGateway } from './gateway-environment.js';
 
 test('idle agents expire independently while active invocations remain available', async (t) => {
@@ -110,6 +110,8 @@ test('uploads end with their session, including upload-only sessions and active 
       assert.ok(Date.now() < deadline, 'expired session uploads must be deleted');
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
+    // Wait for serialized cleanup to finish before starting another session.
+    await clearUploadedAudio(userId);
     const finishNext = retainUploadSession(userId);
     await mkdir(directory, { recursive: true });
     await writeFile(filename, 'next session');
@@ -127,6 +129,7 @@ test('uploads end with their session, including upload-only sessions and active 
       assert.ok(Date.now() < logoutDeadline, 'logout deletes uploads as soon as the active job finishes');
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
+    await clearUploadedAudio(userId);
   } finally {
     await resetAgentSession(userId);
     await rm(directory, { recursive: true, force: true });

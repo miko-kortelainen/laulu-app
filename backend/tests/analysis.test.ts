@@ -164,13 +164,12 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
 
     // Failures preserve existing feature state and cannot trigger a second Qwen attempt.
     for (mode of ['http', 'empty', 'truncated', 'reasoning', 'brokenStream']) {
-      const invocationState = { userId, musicPrompt: { genre: 'folk' }, cleanedAudio: { url: audioUrl, name: 'original' } };
+      const invocationState = { userId, musicPrompt: { genre: 'folk' } };
       const beforeFailure = qwenCalls;
       await assert.rejects(analyzeAudioTool.invoke({ audio_url: audioUrl, question }, { invocationState } as ToolContext),
         mode === 'http' ? /offline quota exhausted/ : /complete answer/);
       assert.equal(qwenCalls, beforeFailure + 1);
       assert.deepEqual(invocationState.musicPrompt, { genre: 'folk' });
-      assert.deepEqual(invocationState.cleanedAudio, { url: audioUrl, name: 'original' });
       await assert.rejects(analyzeAudioTool.invoke({ audio_url: audioUrl, question }, { invocationState } as ToolContext), /only one audio analysis attempt/);
       assert.equal(qwenCalls, beforeFailure + 1);
     }

@@ -10,7 +10,7 @@
     "test:music": "tsx --test tests/music.test.ts",
     "test:lyrics": "node --import tsx tests/lyrics.test.ts",
     "test:analysis": "node --import tsx tests/analysis.test.ts",
-    "test:stems": "tsx --test tests/stems.test.ts",
+    "test:audio": "tsx --test tests/audio.test.ts",
     "test:tracing": "node --import tsx tests/tracing.test.ts",
     "test:auth": "node --import tsx --test tests/auth.test.ts",
     "test:agent": "node --import tsx tests/agent.test.ts",

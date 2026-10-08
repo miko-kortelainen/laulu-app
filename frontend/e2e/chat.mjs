@@ -44,7 +44,7 @@ try {
       if (input === "/api/context") return Promise.resolve(Response.json({ messages: window.contextMessages, limit: 40 }));
       if (input === "/api/chat") window.chatRequests.push(JSON.parse(options.body));
       if (input === "/api/music") window.musicRequests.push(JSON.parse(options.body));
-      if (/^\\/api\\/(audio|music|stems|cleaned)\\//.test(input)) window.mediaRequests.push({ url: input, authorization: new Headers(options.headers).get('authorization') });
+      if (/^\\/api\\/(audio|music)\\//.test(input)) window.mediaRequests.push({ url: input, authorization: new Headers(options.headers).get('authorization') });
       return originalFetch(input, options);
     };`);
 
@@ -266,7 +266,6 @@ try {
   run("click", "summary");
   assert.equal(run("eval", 'document.querySelector("details > div").textContent.trim()'), JSON.stringify(lyrics));
 
-  assert.equal(run("eval", 'Array.from(document.querySelectorAll("button")).some(button => button.textContent.includes("separate stems") || button.textContent.includes("remove echo/reverb"))'), "false");
   assert.equal(run("eval", 'window.mediaRequests.length >= 1 && window.mediaRequests.every(request => request.authorization?.startsWith("Bearer "))'), "true");
 
   // Private downloads report HTTP failure and retry with an authenticated blob.
@@ -334,7 +333,6 @@ try {
   assert.equal(run("eval", 'document.querySelector("footer audio")'), "null");
   assert.equal(run("eval", 'document.querySelector(\'main audio[aria-label^="uploaded audio:"]\').closest("main > div").textContent.includes("here is my track")'), "true");
   assert.equal(run("eval", 'window.chatRequests.at(-1).audioUrl'), JSON.stringify(audioUrl));
-  assert.equal(run("eval", 'Array.from(document.querySelectorAll("button")).some(button => button.textContent.includes("separate stems") || button.textContent.includes("remove echo/reverb"))'), "false");
   // A failed send retains the attachment for a retry, and reset failures preserve it.
   run("network", "unroute", "**/api/audio?*");
   run("network", "route", "**/api/audio?*", "--body", JSON.stringify({
@@ -373,7 +371,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "0");
   assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
-  console.log("Chat E2E passed: chat recovery, music confirmation, uploads, private downloads, and deferred processing controls.");
+  console.log("Chat E2E passed: chat recovery, music confirmation, uploads, and private downloads.");
 } finally {
   try { unlinkSync(uploadPath); } catch { /* No upload fixture to remove. */ }
   run("close");

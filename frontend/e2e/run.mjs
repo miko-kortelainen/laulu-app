@@ -30,7 +30,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(204);
     return res.end();
   }
-  if (req.method === "GET" && /^\/api\/(audio|music|stems|cleaned)\/.+\.(wav|mp3)$/.test(pathname)) {
+  if (req.method === "GET" && /^\/api\/(audio|music)\/.+\.(wav|mp3)$/.test(pathname)) {
     res.setHeader("Content-Type", "audio/wav");
     return res.end(wav);
   }

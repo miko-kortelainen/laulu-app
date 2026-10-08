@@ -29,13 +29,10 @@ A simple full-stack AI chatbot built with:
 │   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
 │   │   ├── songs.ts       # Generated-song ownership, metadata, and storage recovery
 │   │   ├── r2.ts          # Private Cloudflare R2 object reads and writes
-│   │   ├── audio.ts       # Audio storage, validation, and shared processing jobs
+│   │   ├── audio.ts       # Audio uploads, validation, and analysis conversion
 │   │   ├── analysis.ts    # QwenCloud listening analysis tool
-│   │   ├── stems.ts       # Local vocal/instrumental separation tool
-│   │   ├── dereverb.ts    # Local echo/reverb removal tool
 │   │   └── index.ts       # Express server with /api/chat and /api/health endpoints
-│   ├── audio-processing/ # Shared Python runtime, model runners, and local weights
-│   │   └── models/        # Local model weights and checkpoints (.ckpt, .cpt, .pth; ignored by Git)
+│   ├── audio-processing/ # Python upload validation and analysis conversion
 │   ├── .env.example       # Sample environment variables
 │   ├── .env               # Active Cloudflare gateway configuration
 │   ├── package.json
@@ -106,7 +103,7 @@ Configure production hosting to serve `index.html` for frontend routes such as `
 Keep `/api/` requests on the backend.
 Local audio playback and downloads use authenticated requests.
 Existing audio without an owner remains on disk but has no public route.
-Generated songs use private R2 storage and Supabase metadata. Uploads, stems, and cleaned audio stay in local user directories.
+Generated songs use private R2 storage and Supabase metadata. Uploads stay in local user directories for the current session.
 Use **my songs** to see your newest 100 saved songs, creation dates, prompts, and lyrics.
 Select **listen** to play a song or download its MP3. Only the selected song loads audio.
 The page reads songs for the signed-in user. It loads the list again when you return or select **refresh**.
@@ -233,7 +230,7 @@ The per-user defaults allow 50 chat requests, 10 analyses, and 5 generation atte
 Each user has 512 MiB of generated-song storage. Generation reserves 25 MiB before the paid Lyria call.
 The backend converts this reservation to the exact MP3 size when it inserts pending song metadata.
 An analysis also consumes its surrounding chat request. Bounded agent turns and lyric generation belong to that chat allowance.
-Uploads, stems, cleaned audio, and local recovery copies do not count toward this storage quota.
+Uploads and local recovery copies do not count toward this storage quota.
 Existing pending and ready song metadata counts immediately. No byte-counter backfill is necessary.
 
 The first usage request creates a row in `public.user_quotas` from these defaults.
@@ -324,15 +321,6 @@ In a second terminal:
 npm run dev:frontend
 ```
 The frontend dev server runs on `http://localhost:5173`. Open your browser at `http://localhost:5173` to chat with the agent!
-
-### 4. Audio Processing Checkpoints (Optional)
-
-Stem separation and reverb removal require local model checkpoints placed under `backend/audio-processing/models/`. Checkpoint files (`*.ckpt`, `*.cpt`, `*.pth`) are excluded from Git via `.gitignore`:
-
-- **Stem separation:** `backend/audio-processing/models/stems/vocals_mel_band_roformer.ckpt`
-- **Reverb removal:** `backend/audio-processing/models/dereverb/UVR-DeEcho-DeReverb.pth`
-
-See [Stem separation](#stem-separation) and [Echo and reverb removal](#echo-and-reverb-removal) below for setup instructions and download details.
 
 ---
 
@@ -430,7 +418,7 @@ Fields changed by the agent glow briefly. Manual edits do not trigger the glow.
 With reduced motion enabled, changed fields show a steady highlight for the same time.
 Music advice and prompt preparation do not call Lyria.
 The chat spinner shows the current action: thinking, editing fields or lyrics,
-generating a track, uploading audio, separating stems, or removing echo and reverb.
+generating a track, uploading audio, or analyzing audio.
 Chat requests stream tool activity before the final reply.
 
 Prompt preparation follows Google's [Lyria prompt guide](https://ai.google.dev/gemini-api/docs/lyria-prompt-guide)
@@ -500,8 +488,7 @@ Analysis uses `qwen3.8-omni-flash` through Cloudflare AI Gateway with the instal
 Nebius still runs the producer agent and lyric agent. Google still generates music.
 
 Upload or generate a track, then ask the copilot to analyze it or give production
-feedback. You can also ask about an available stem or cleaned result. The agent
-calls `analyze_audio`, shows **analyzing audio...**, and uses the returned
+feedback. The agent calls `analyze_audio`, shows **analyzing audio...**, and uses the returned
 observations in its chat reply. Uploading or generating audio does not start analysis.
 Analysis sends audio to QwenCloud and makes a paid inference call.
 
@@ -527,129 +514,43 @@ Offline analysis and failure recovery check: `npm --prefix backend run test:anal
 It mocks inference and makes no paid calls. Its format-conversion checks require
 the Python audio environment.
 
-## Stem separation
+## Audio uploads and local storage
 
-The agent's `separate_stems` tool uses **MelBand Roformer | Vocals by Kimberley
-Jensen** to produce vocals and instrumental WAV files. It runs locally with
-CUDA when available and falls back to CPU. It does not separate drums, bass,
-or other individual instruments.
-
-Separation uses segment size **256** (112,455 samples at a 441-sample STFT hop),
-overlap **8**, and batch size **1**. The model YAML sets the segment and overlap;
-the runner processes one chunk per model call. Input audio and each output stem
-use a normalization peak ceiling of **0.9** and an amplification peak floor of
-**0.7**. Silent audio stays silent. These peak thresholds are set in `normalize_audio`
-in `backend/audio-processing/audio.py`. Run separation again to use these settings;
-existing stems keep their original audio.
-
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run
-this command from the repository root:
+Install the Python 3.13 environment from the repository root:
 
 ```bash
 uv sync --frozen --project backend/audio-processing
 ```
 
-The environment uses Python 3.13 and
-[`melband-roformer-infer`](https://github.com/openmirlab/melband-roformer-infer).
-Keep the supplied checkpoint and config at:
+The environment uses NumPy, SoundFile, and librosa for upload validation and analysis conversion.
+It needs no GPU or model checkpoints.
 
-```text
-backend/audio-processing/models/stems/vocals_mel_band_roformer.ckpt
-backend/audio-processing/models/stems/vocals_mel_band_roformer.yaml
-```
+Use **upload audio** to add an MP3, WAV, FLAC, or OGG file.
+Uploads must be mono or stereo, at most 50 MB, and no longer than 10 minutes.
+The attachment area shows the filename and an audio player.
+You can replace or remove the attachment before sending.
+A failed upload or send preserves the previous attachment.
+Chat requests use the latest sent attachment or generated track.
 
-The checkpoint is excluded from Git. For a fresh checkout, download the
-[Kimberley Jensen checkpoint](https://huggingface.co/KimberleyJSN/melbandroformer)
-and save `MelBandRoformer.ckpt` under the checkpoint filename above.
-Its SHA-256 is `87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e`.
-The runner loads these local files and does not download models during separation.
+Uploads stay in `backend/uploaded-audio/` for session analysis and playback. Git ignores this directory.
+The backend reserves disk space before each upload, with a **1 GiB limit across all users**.
+If capacity is insufficient, the upload endpoint returns HTTP 507 and preserves existing files.
 
-Use **upload audio** to add an MP3, WAV, FLAC, or OGG file. Uploads must be mono
-or stereo, at most 50 MB, and no longer than 10 minutes. The attachment area shows
-the filename and an audio player. You can replace or remove it before sending.
-Send a message to attach the audio to that message. A failed upload or send keeps
-the previous attachment available. Chat requests use the latest sent attachment or generated
-track. Stem separation and echo/reverb cleanup controls and result players are
-removed from the frontend pending backend cost planning. The backend agent tools
-remain available through typed requests.
+A new session, logout, or 30 minutes of inactivity deletes session uploads.
+Active uploads and agent requests pause expiration.
+A backend restart ends all in-memory sessions. Startup cleanup deletes uploads from those sessions.
+Cleanup runs at startup, hourly, and before new writes.
+Active sessions and analysis operations protect their input files until they finish.
 
-Sources stay intact
-when separation fails. One audio processing job runs at a time, with a 20-minute
-timeout. CPU processing can be slow. Uploads are saved in `backend/uploaded-audio/`
-and completed stems in `backend/separated-audio/`; Git ignores both directories.
-The **new session** button resets chat and deletes uploaded audio for that session.
-
-Local uploads, stems, and cleaned files share a **1 GiB disk limit across all users**.
-The backend reserves space before each upload or processing job.
-Processing reserves the maximum output for ten minutes of stereo audio: approximately 404 MiB for stems or 202 MiB for cleaned audio.
-If space is unavailable, the operation fails and existing files stay intact.
-The upload endpoint returns HTTP 507 when the disk limit prevents an upload.
-
-Uploaded audio stays only for the current session, for analysis and playback.
-Starting a new session or logging out deletes those uploads.
-The existing 30-minute session timeout also deletes uploads from idle sessions.
-Uploads made before the first chat message use the same timeout. Active uploads and agent requests pause expiration.
-A backend restart ends all in-memory sessions. Startup cleanup deletes uploads left by those sessions.
-
-The backend deletes stems and cleaned files seven days after their last modification.
-Playback and analysis do not extend this period for stems and cleaned files.
-Cleanup runs at startup, hourly, and before new writes. Expired files can remain until the next cleanup.
-Active sessions protect their uploads. Active analysis sources, processing sources, and pending outputs stay protected until the operation ends.
-Cleanup also deletes expired files from abandoned jobs, legacy directories, and empty subdirectories.
-
-This policy covers `uploaded-audio/`, `separated-audio/`, and `cleaned-audio/` only.
-Generated-song recovery files, temporary analysis files, Python working files, and model files are outside this limit.
-Existing files can exceed the limit at deployment. The backend rejects new writes until retention frees sufficient space.
-One backend process must own these directories. Concurrent backend processes require a shared disk lock.
+The disk policy covers `uploaded-audio/` only.
+Generated-song recovery files and temporary analysis files remain outside this limit.
+One backend process must own the upload directory. Concurrent processes require a shared disk lock.
 The limits are defined in `backend/src/local-audio.ts`.
 
+Upload validation and session cleanup check: `npm --prefix backend run test:audio`.
+This check requires the Python environment and makes no paid calls.
 Disk policy check: `cd backend` then `node --import tsx --test tests/local-audio.test.ts`.
 This check uses isolated temporary directories and makes no model calls.
-
-Local integration check: `npm --prefix backend run test:stems`. This requires
-the installed Python environment and model files. It separates synthetic audio
-and checks upload validation, saved stems, echo removal on tracks and stems,
-and failure recovery. It makes no
-paid model calls. To check CPU fallback on Linux:
-
-```bash
-OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 CUDA_VISIBLE_DEVICES='' npm --prefix backend run test:stems
-```
-
-Peak adjustment check: `backend/audio-processing/.venv/bin/python backend/audio-processing/test_audio.py`.
-
-## Echo and reverb removal
-
-The agent's `remove_echo_reverb` tool uses the supplied **UVR-DeEcho-DeReverb**
-VR model. It accepts generated tracks, uploads, separated stems, and previous
-cleaned results. Its frontend controls and result player are removed pending
-backend cost planning. The backend agent tool remains available through typed requests.
-
-The backend result is one cleaned 44.1 kHz floating-point WAV.
-The model reduces echo and reverb together; it does not guarantee complete removal.
-Sources remain intact. Completed results are saved in `backend/cleaned-audio/`
-and survive a restart. CPU processing can be slow.
-
-Both audio tools use the environment installed with the command above. The lock
-includes audioread for the VR loader and samplerate 0.2.4, whose wheels include
-libsamplerate. Model
-files are grouped by task:
-
-```text
-backend/audio-processing/models/stems/vocals_mel_band_roformer.ckpt
-backend/audio-processing/models/stems/vocals_mel_band_roformer.yaml
-backend/audio-processing/models/dereverb/UVR-DeEcho-DeReverb.pth
-```
-
-Weights are excluded from Git. Copy the supplied `.pth` file to its location
-above on a fresh checkout. The runner loads local weights through
-[`audio-separator`](https://github.com/nomadkaraoke/python-audio-separator)'s VR loader
-and uses the [UVR model metadata](https://github.com/Anjok07/ultimatevocalremovergui/blob/master/models/VR_Models/model_data/model_data.json)
-(`4band_v3`, primary stem `No Reverb`). It downloads no model registry at runtime
-and uses soundfile without requiring ffmpeg. CUDA or Apple MPS is selected when
-available, with CPU fallback. VR uses window size 512 and batch size 1; Roformer
-keeps its existing segment size 256 and overlap 8. Both use the 0.9 normalization
-ceiling and 0.7 amplification floor.
 
 ## LangSmith tracing
 
@@ -659,7 +560,7 @@ restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.
 `https://eu.api.smith.langchain.com` for an EU workspace.
 
 Each agent invocation records its input, reply, errors, and duration. Model calls,
-`update_music_form`, `separate_stems`, `remove_echo_reverb`, and `analyze_audio` appear as child runs, including model token
+`update_music_form` and `analyze_audio` appear as child runs, including model token
 usage and tool inputs and results. Conversation session IDs group runs into LangSmith threads.
 Confirmed audio generation records a separate `generate_audio` run in the same
 thread, with the prompt, download URL, and lyrics. Audio bytes and API keys are

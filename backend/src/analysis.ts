@@ -57,7 +57,7 @@ export async function analyzeAudio(audioUrl: unknown, question: unknown, userId:
 
 export const analyzeAudioTool = tool({
   name: 'analyze_audio',
-  description: 'Listen to an available generated track, upload, stem, or cleaned audio using Qwen Omni. ' +
+  description: 'Listen to an available generated or uploaded track using Qwen Omni. ' +
     'Call when the user requests analysis, feedback, or a description of the actual audio. ' +
     'Use an exact available audio URL and a specific question in the user\'s language. Never invent URLs. ' +
     'Makes one paid QwenCloud call; at most one attempt per user message. ' +

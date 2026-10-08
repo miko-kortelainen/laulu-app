@@ -14,29 +14,27 @@ test('local audio retention protects readers and concurrent writes share the dis
   await copyFile(new URL('../src/user-files.ts', import.meta.url), path.join(directory, 'src/user-files.ts'));
   await copyFile(new URL('../src/local-audio.ts', import.meta.url), modulePath);
   const storage: typeof import('../src/local-audio.js') = await import(pathToFileURL(modulePath).href);
-  const roots = [storage.audioDirectory, storage.stemsDirectory, storage.cleanedDirectory];
+  const root = storage.audioDirectory;
   const expired: string[] = [];
   const retained: string[] = [];
-  const old = new Date(Date.now() - storage.localAudioRetention - 60_000);
+  const old = new Date(Date.now() - 8 * 24 * 60 * 60_000);
   let releaseUpload: (() => void) | undefined;
   try {
-    for (const root of roots) {
-      const owner = path.join(root, 'owner');
-      await mkdir(path.join(owner, '.pending-crashed'), { recursive: true });
-      for (const filename of [path.join(root, 'legacy.wav'), path.join(owner, '.pending-crashed/partial.wav')]) {
-        await writeFile(filename, 'expired');
-        await utimes(filename, old, old);
-        expired.push(filename);
-      }
-      const current = path.join(owner, 'current.wav');
-      await writeFile(current, 'kept');
-      retained.push(current);
+    const owner = path.join(root, 'owner');
+    await mkdir(path.join(owner, '.pending-crashed'), { recursive: true });
+    for (const filename of [path.join(root, 'legacy.wav'), path.join(owner, '.pending-crashed/partial.wav')]) {
+      await writeFile(filename, 'expired');
+      await utimes(filename, old, old);
+      expired.push(filename);
     }
+    const current = path.join(owner, 'current.wav');
+    await writeFile(current, 'kept');
+    retained.push(current);
     releaseUpload = storage.retainLocalAudio(retained[0]);
     const outside = path.join(directory, 'generated-song.mp3');
     await writeFile(outside, 'saved song');
     await utimes(outside, old, old);
-    await symlink(outside, path.join(roots[0], 'link.mp3'));
+    await symlink(outside, path.join(root, 'link.mp3'));
     const releaseReader = storage.retainLocalAudio(expired[0]);
     const releaseSecondReader = storage.retainLocalAudio(expired[0]);
     await storage.cleanupLocalAudio();
@@ -52,9 +50,9 @@ test('local audio retention protects readers and concurrent writes share the dis
     await assert.rejects(stat(expired[0]), { code: 'ENOENT' });
 
     // Sparse files exercise the 1 GiB limit without allocating 1 GiB on disk.
-    await truncate(retained[0], storage.localAudioLimit - 108);
-    const pending = path.join(roots[1], 'owner/.pending-active');
-    const competing = path.join(roots[2], 'owner/competing.wav');
+    await truncate(retained[0], storage.localAudioLimit - 100);
+    const pending = path.join(root, 'owner/.pending-active');
+    const competing = path.join(root, 'owner/competing.wav');
     const attempts = await Promise.allSettled([
       storage.reserveLocalAudio(pending, 100), storage.reserveLocalAudio(competing, 1),
     ]);
@@ -62,7 +60,7 @@ test('local audio retention protects readers and concurrent writes share the dis
     assert.equal(attempts[1].status, 'rejected');
     if (attempts[0].status !== 'fulfilled') throw attempts[0].reason;
     await mkdir(pending);
-    const partial = path.join(pending, 'source_vocals.wav');
+    const partial = path.join(pending, 'partial.wav');
     await writeFile(partial, Buffer.alloc(100));
     await utimes(partial, old, old);
     await storage.cleanupLocalAudio();
@@ -89,31 +87,19 @@ test('local audio retention protects readers and concurrent writes share the dis
     const audio: typeof import('../src/audio.js') = await import(pathToFileURL(path.join(directory, 'src/audio.ts')).href);
     const userId = '10000000-0000-4000-8000-000000000001';
     await assert.rejects(audio.uploadAudio('track.wav', Buffer.alloc(101), userId), storage.LocalAudioLimitError);
-    const beforeFailure = await readdir(roots[0]);
+    const beforeFailure = await readdir(root);
     await assert.rejects(audio.uploadAudio('invalid.wav', Buffer.alloc(100), userId), /local audio processing failed/);
-    assert.deepEqual((await readdir(roots[0])).sort(), [...beforeFailure, userId].sort());
-    assert.deepEqual(await readdir(path.join(roots[0], userId)), []);
+    assert.deepEqual((await readdir(root)).sort(), [...beforeFailure, userId].sort());
+    assert.deepEqual(await readdir(path.join(root, userId)), []);
     // Failed validation releases its full reservation, so another attempt reaches the processor.
     await assert.rejects(audio.uploadAudio('invalid.wav', Buffer.alloc(100), userId), /local audio processing failed/);
-    const source = path.join(roots[0], userId, '10000000-0000-4000-8000-000000000002.wav');
+    const source = path.join(root, userId, '10000000-0000-4000-8000-000000000002.wav');
     await writeFile(source, 'source');
     await utimes(source, old, old);
-    const url = '/api/audio/10000000-0000-4000-8000-000000000002.wav';
-    for (const operation of ['stems', 'cleaned'] as const) {
-      await assert.rejects(audio.processAudio(url, operation, userId), storage.LocalAudioLimitError);
-      assert.equal(await readFile(source, 'utf8'), 'source', 'capacity failures preserve the active source');
-    }
     await truncate(retained[0], 4);
-    await writeFile(source, 'source');
-    for (const operation of ['stems', 'cleaned'] as const) {
-      await assert.rejects(audio.processAudio(url, operation, userId), /local audio processing failed/);
-      const root = operation === 'stems' ? roots[1] : roots[2];
-      assert.deepEqual(await readdir(path.join(root, userId)), [], 'processor failures delete pending output');
-      assert.equal(await readFile(source, 'utf8'), 'source');
-    }
     const userB = '10000000-0000-4000-8000-000000000003';
-    const sessionDirectory = path.join(roots[0], userId);
-    const otherDirectory = path.join(roots[0], userB);
+    const sessionDirectory = path.join(root, userId);
+    const otherDirectory = path.join(root, userB);
     await mkdir(otherDirectory);
     await writeFile(path.join(otherDirectory, 'other.wav'), 'other session');
     const releaseSession = storage.retainLocalAudio(sessionDirectory);
@@ -132,7 +118,6 @@ test('local audio retention protects readers and concurrent writes share the dis
     releaseUpload = undefined;
     await storage.cleanupLocalAudio();
     await assert.rejects(stat(retained[0]), { code: 'ENOENT' });
-    assert.equal(await readFile(retained[1], 'utf8'), 'kept', 'completed stems keep their separate retention policy');
   } finally {
     releaseUpload?.();
     await rm(directory, { recursive: true, force: true });

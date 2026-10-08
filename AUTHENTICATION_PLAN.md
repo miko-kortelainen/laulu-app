@@ -16,8 +16,8 @@ The saved-song page supports playback, downloads, and confirmed deletion through
 Deletion verifies ownership and removes the R2 object and local recovery copies before it deletes metadata.
 If cleanup fails, metadata remains available for another deletion attempt. A deleted R2 object can make playback unavailable during this retry.
 Generated-song retention and abandoned-save cleanup remain planned.
-Uploads, stems, and cleaned audio remain local, with a shared 1 GiB limit.
-Uploads end with their session. Stems and cleaned audio have seven-day retention.
+Uploads remain local, with a 1 GiB limit across all users.
+Uploads end with their session.
 Session reset, logout, idle expiration, and backend restart delete uploads. Active jobs complete before logout cleanup deletes their input.
 The broader sections below describe the remaining target architecture.
 
@@ -39,7 +39,7 @@ The broader saved-audio sections describe future work.
 ## Goal and scope
 
 Use Supabase Auth for email/password login and open registration with email confirmation.
-Use a private Cloudflare R2 bucket for uploaded audio, generated music, separated stems, and cleaned audio.
+Use a private Cloudflare R2 bucket for generated music.
 Keep the React/Vite frontend, Express backend, existing AI providers, and local Python processors.
 
 The first release includes:
@@ -185,7 +185,7 @@ Pass the trusted user ID into agent invocation state.
 Read that ID inside audio tool callbacks.
 Never accept tool-generated user IDs, arbitrary storage keys, filesystem paths, or remote URLs as authority.
 
-Keep NDJSON progress, existing request limits, explicit music confirmation, and the global GPU lock.
+Keep NDJSON progress, existing request limits, and explicit music confirmation.
 Idle agents expire after 30 minutes. Agent access renews the timeout; context reads do not.
 Running invocations pause expiration. The timeout restarts after success or failure.
 Use one backend instance initially because conversation state and processing locks remain in memory.
@@ -199,12 +199,11 @@ The existing Supabase Auth user record supplies the owner ID. A separate profile
 | --- | --- |
 | `id` | Server-generated UUID and stable asset reference |
 | `owner_id` | Reference to the Supabase user |
-| `kind` | `upload`, `music`, `vocals`, `instrumental`, or `cleaned` |
+| `kind` | `upload` or `music` |
 | `object_key` | Unique backend-generated R2 key |
 | `name` | Display filename |
 | `content_type` | Verified audio content type |
 | `size_bytes` | Actual object size |
-| `parent_asset_id` | Optional source asset for processed outputs |
 | `lyrics` | Optional generated lyrics |
 | `status` | `pending`, `ready`, or `deleting` |
 | `created_at` | Creation timestamp |
@@ -295,27 +294,17 @@ Report the persistence failure clearly.
 Retry storage from the retained output. Do not repeat the paid generation call.
 Delete recovery files after successful persistence or the agreed retention period.
 
-### Analysis, stems, and cleanup
+### Analysis
 
-1. Resolve the source asset with the trusted user ID.
-2. Download the source from R2 through the backend SDK.
+1. Resolve the source with the trusted user ID.
+2. Read the session upload or download the owned song from R2 through the backend SDK.
 3. Enforce file-size and temporary-disk limits during the download.
-4. Run the existing analysis conversion, stem separation, or reverb processor.
-5. Persist each durable output as a new asset with the same owner.
-6. Set `parent_asset_id` to the source asset.
-7. Delete temporary input and output files in focused cleanup paths.
+4. Run analysis conversion only when the input requires it.
+5. Delete temporary files in focused cleanup paths.
 
 Analysis conversion files remain temporary.
-For stem separation, expose neither output until both objects and metadata are ready.
-On partial failure, delete incomplete objects or retain a recovery reference.
-Never return a successful asset that points to a missing object.
-
-R2 and Postgres do not share a transaction.
-Use explicit pending state, compensating cleanup, and a small reconciliation task for abandoned operations.
-Do not add a general storage framework or a distributed job queue for this release.
-
-The Python runtime, model checkpoints, and GPU remain on the backend host.
-R2 stores audio but does not run these processors.
+The Python runtime remains on the backend host. It needs no GPU or model checkpoints.
+R2 stores audio but does not run analysis conversion.
 
 ## 7. API and UI changes
 
@@ -332,10 +321,10 @@ R2 stores audio but does not run these processors.
 | `GET /api/assets/:id/download` | Return a signed attachment URL after an ownership check |
 | `DELETE /api/assets/:id` | Mark the owned asset as deleting, delete its object, then delete its metadata |
 
-Return stable asset references in upload, music, stems, and cleanup responses.
+Return stable asset references in upload and music responses.
 Update frontend response checks for the new asset shape.
 Update audio tools to accept asset IDs instead of local URLs.
-Remove the four public audio static routes.
+Keep audio playback and download routes authenticated.
 
 Keep saved-audio UI, state, and API functions in `frontend/src/features/audio/`.
 Provide a small list with play, download, and delete actions.
@@ -354,7 +343,7 @@ An already-issued signed URL remains usable until expiry unless the object is de
 | Custom SMTP and sender DNS | Public confirmation and recovery emails need reliable delivery |
 | Production origin and HTTPS | Auth redirects, API access, and bucket CORS need the actual deployment origin |
 | Durable usage limits | Implemented for chat, analysis, generation attempts, and generated-song bytes. Apply the quota migration before launch |
-| Request limits | Keep per-user action locks, upload limits, model limits, and the global GPU limit |
+| Request limits | Keep per-user action locks, upload limits, and model limits |
 | Retention and deletion | Decide how long ready assets, failed outputs, and recovery files remain |
 | Temporary disk capacity | Python processing needs local space despite R2 storage |
 | Ownership migration | Existing local files have no user ownership |
@@ -362,7 +351,7 @@ An already-issued signed URL remains usable until expiry unless the object is de
 
 Supabase stores per-user allowances, daily counters, and atomic reservations for concurrent requests.
 Configure allowances for chat, analysis, music generation, and generated-song bytes before public launch.
-The quota records survive backend restarts. Uploads, stems, and cleaned audio remain outside the storage quota.
+The quota records survive backend restarts. Uploads remain outside the storage quota.
 Keep existing turn and token limits. A per-request limit does not enforce a daily allowance.
 
 Preserve existing local files during migration.
@@ -371,7 +360,7 @@ Keep unassigned files outside authenticated access.
 Do not delete originals until the imported object and metadata pass the migration checks.
 
 Use the current backend host for the first release.
-Verify that the host supports long processing requests, Python, checkpoints, and sufficient disk space.
+Verify that the host supports analysis requests, Python, and sufficient disk space.
 If the hosting platform permits it, use same-origin `/api` routing in production.
 Otherwise, restrict backend CORS to the configured frontend origin.
 
@@ -436,7 +425,6 @@ Mock paid AI operations in automated checks.
 - Logout during a pending request without updating another user's screen.
 - Upload audio, play it, display its waveform, and download it.
 - Generate mocked music, persist it, and recover after a storage failure without another generation call.
-- Separate stems and clean audio without exposing partial outputs.
 - Renew an expired signed URL and preserve playback position.
 - Access saved audio after logout, another login, and a backend restart.
 - Delete an asset and recover from partial deletion failure.
@@ -445,7 +433,7 @@ Backend and storage checks:
 
 - Reject missing, expired, malformed, and wrong-project tokens.
 - Separate two users' chats, context counters, resets, and action locks.
-- Reject another user's asset in listing, signing, deletion, analysis, stems, and cleanup.
+- Reject another user's asset in listing, signing, deletion, and analysis.
 - Reject oversized uploads and disguised non-audio files.
 - Enforce usage reservations under overlapping requests.
 - Preserve pending output after storage failure and clean abandoned objects.

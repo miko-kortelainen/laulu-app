@@ -62,7 +62,7 @@ test('verified users own their API session and local media', async (t) => {
 
   try {
     assert.deepEqual(await (await fetch(`${url}/api/health`)).json(), { status: 'ok' });
-    for (const endpoint of ['context', 'usage', 'chat', 'music', 'reset', 'session/end', 'audio', `audio/${filename}`, 'stems/fixture', 'cleaned/fixture']) {
+    for (const endpoint of ['context', 'usage', 'chat', 'music', 'reset', 'session/end', 'audio', `audio/${filename}`]) {
       assert.equal((await fetch(`${url}/api/${endpoint}`)).status, 401);
     }
     assert.equal(authRequests, 0);

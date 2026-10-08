@@ -3,8 +3,6 @@ import { traceable } from 'langsmith/traceable';
 import { readFileSync } from 'node:fs';
 import { createNebiusModel } from './model.js';
 import { updateMusicFormTool } from './music.js';
-import { separateStemsTool } from './stems.js';
-import { removeEchoTool } from './dereverb.js';
 import { analyzeAudioTool } from './analysis.js';
 import { audioDirectory, clearUploadedAudio, retainLocalAudio } from './local-audio.js';
 import { userDirectory } from './user-files.js';
@@ -64,7 +62,7 @@ export function getOrCreateAgent(sessionId: string): Agent {
   model.updateConfig({ maxTokens: 4096 });
   const agent = new Agent({
     model: model,
-    tools: [updateMusicFormTool, separateStemsTool, removeEchoTool, analyzeAudioTool],
+    tools: [updateMusicFormTool, analyzeAudioTool],
     systemPrompt: readFileSync(new URL('../prompts/system.md', import.meta.url), 'utf8').trim(),
     printer: false,
     retryStrategy: null,

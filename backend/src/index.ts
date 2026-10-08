@@ -4,7 +4,7 @@ import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
 import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from './agent.js';
 import { getModelConfig } from './model.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
-import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
+import { audioDirectory, audioPath, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
 import { userDirectory } from './user-files.js';
 import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
@@ -30,15 +30,10 @@ app.use(['/api/audio', '/api/chat', '/api/music', '/api/reset', '/api/songs'], (
   res.once('finish', () => busySessions.delete(sessionId));
   next();
 });
-for (const [route, directory] of [
-  ['/api/audio', audioDirectory],
-  ['/api/stems', stemsDirectory], ['/api/cleaned', cleanedDirectory],
-]) {
-  app.use(route, (req, res, next) => {
-    res.set('Cache-Control', 'private, no-store');
-    express.static(userDirectory(directory, res.locals.userId), { dotfiles: 'deny', index: false })(req, res, next);
-  });
-}
+app.use('/api/audio', (req, res, next) => {
+  res.set('Cache-Control', 'private, no-store');
+  express.static(userDirectory(audioDirectory, res.locals.userId), { dotfiles: 'deny', index: false })(req, res, next);
+});
 
 function storageFailure(res: Response, error: unknown): void {
   if (error instanceof QuotaError) return quotaFailure(res, error);
@@ -158,9 +153,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
         const lyricRequest = input && typeof input === 'object' && 'lyricRequest' in input ? input.lyricRequest : undefined;
         const status = toolUse.name === 'update_music_form'
           ? typeof lyricRequest === 'string' && lyricRequest.trim() ? 'editing lyrics...' : 'editing fields...'
-          : toolUse.name === 'separate_stems' ? 'separating stems...'
-          : toolUse.name === 'analyze_audio' ? 'analyzing audio...'
-          : toolUse.name === 'remove_echo_reverb' ? 'removing echo and reverb...' : 'working...';
+          : toolUse.name === 'analyze_audio' ? 'analyzing audio...' : 'working...';
         send({ status });
       }));
     }
@@ -175,7 +168,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     const reply = result.stopReason.startsWith('limit')
       ? 'stopped at the request limit. send a new message to continue.'
       : result.toString();
-    send({ reply, musicPrompt: result.invocationState.musicPrompt, stems: result.invocationState.stems, cleanedAudio: result.invocationState.cleanedAudio });
+    send({ reply, musicPrompt: result.invocationState.musicPrompt });
   } catch (error: unknown) {
     if (error instanceof QuotaError && !res.headersSent) {
       quotaFailure(res, error);

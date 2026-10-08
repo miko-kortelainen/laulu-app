@@ -6,7 +6,7 @@ import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
 import { checkSongStorage, deleteSong, listSongRecovery, localSongPath, musicDirectory, retrySongStorage, saveSong, SongStorageError } from '../src/songs.js';
-import { prepareAnalysisAudio, processAudio } from '../src/audio.js';
+import { prepareAnalysisAudio } from '../src/audio.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 import { configureTestSongStorage } from './song-fixture.js';
 
@@ -297,8 +297,6 @@ test('disk failures preserve storage retry and temporary processing files never 
 
   const url = `/api/music/${saved.id}.mp3`;
   assert.equal((await prepareAnalysisAudio(url, userId)).data, audio.toString('base64'));
-  assert.deepEqual(await fs.readdir(directory), []);
-  await assert.rejects(processAudio(url, 'stems', userId), /install local audio processing/);
   assert.deepEqual(await fs.readdir(directory), []);
 
   await writeFile(`${directory}/${saved.id}.mp3`, audio);

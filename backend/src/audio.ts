@@ -1,22 +1,20 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { localSongPath, musicDirectory } from './songs.js';
 import { userDirectory } from './user-files.js';
-import { audioDirectory, cleanedDirectory, reserveLocalAudio, retainLocalAudio, stemsDirectory } from './local-audio.js';
+import { audioDirectory, reserveLocalAudio, retainLocalAudio } from './local-audio.js';
 
-export { audioDirectory, cleanedDirectory, stemsDirectory } from './local-audio.js';
+export { audioDirectory } from './local-audio.js';
 const runtimeDirectory = fileURLToPath(new URL('../audio-processing/', import.meta.url));
 const runFile = promisify(execFile);
 const audioExtensions = new Set(['.mp3', '.wav', '.flac', '.ogg']);
 const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const audioUrlPattern = new RegExp(`^/api/(music|audio)/(${uuidPattern}\\.(mp3|wav|flac|ogg))$`);
-
-const processedUrlPattern = new RegExp(`^/api/(stems|cleaned)/(${uuidPattern})/(source_(vocals|instrumental|cleaned)\\.wav)$`);
 
 export interface AudioTrack {
   url: string;
@@ -24,11 +22,6 @@ export interface AudioTrack {
 }
 
 export function audioPath(value: unknown, userId: unknown): string {
-  const processed = typeof value === 'string' ? processedUrlPattern.exec(value) : null;
-  if (processed && ((processed[1] === 'stems' && processed[4] !== 'cleaned') ||
-      (processed[1] === 'cleaned' && processed[4] === 'cleaned'))) {
-    return path.join(userDirectory(processed[1] === 'stems' ? stemsDirectory : cleanedDirectory, userId), processed[2], processed[3]);
-  }
   const match = typeof value === 'string' ? audioUrlPattern.exec(value) : null;
   if (!match || (match[1] === 'music' && match[3] !== 'mp3')) {
     throw new Error('choose a generated track or upload an MP3, WAV, FLAC, or OGG file first.');
@@ -109,52 +102,5 @@ export async function uploadAudio(name: unknown, data: unknown, userId: unknown)
     throw error;
   } finally {
     await release();
-  }
-}
-
-// ponytail: one GPU job at a time; add a queue only when concurrent users need it.
-let processing = false;
-
-export async function processAudio(audioUrl: unknown, operation: 'stems' | 'cleaned', userId: unknown): Promise<string> {
-  if (processing) throw new Error('another track is being processed. try again when it finishes.');
-  processing = true;
-  const names = operation === 'stems' ? ['vocals', 'instrumental'] : ['cleaned'];
-  let pending: string | undefined;
-  let source: string | undefined;
-  let temporary = false;
-  let releaseSource: (() => void) | undefined;
-  let releaseOutput: (() => Promise<void>) | undefined;
-
-  try {
-    ({ filename: source, temporary } = await resolveAudioPath(audioUrl, userId));
-    releaseSource = retainLocalAudio(source);
-    await access(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
-    const directory = userDirectory(operation === 'stems' ? stemsDirectory : cleanedDirectory, userId);
-    const id = randomUUID();
-    pending = path.join(directory, `.pending-${id}`);
-    // Maximum ten-minute stereo float WAV output, plus space for each WAV header.
-    const outputLimit = names.length * (600 * 44100 * 2 * 4 + 4096);
-    releaseOutput = await reserveLocalAudio(pending, outputLimit);
-    await mkdir(pending, { recursive: true });
-    await runProcessor(operation === 'stems' ? 'separate.py' : 'dereverb.py', [source, pending], 20 * 60_000);
-    let outputBytes = 0;
-    for (const stem of names) {
-      const file = await stat(path.join(pending, `source_${stem}.wav`));
-      if (!file.isFile() || file.size <= 44) throw new Error('audio processor did not return the expected WAV files.');
-      outputBytes += file.size;
-    }
-    if (outputBytes > outputLimit) throw new Error('audio processor exceeded the reserved disk space.');
-    await rename(pending, path.join(directory, id));
-    pending = undefined;
-    return `/api/${operation}/${id}`;
-  } finally {
-    processing = false;
-    try {
-      if (pending) await rm(pending, { recursive: true, force: true });
-    } finally {
-      await releaseOutput?.();
-      releaseSource?.();
-      if (temporary && source) await rm(source, { force: true }).catch((error: unknown) => console.error('could not clear song processing file:', error));
-    }
   }
 }

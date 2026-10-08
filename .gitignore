@@ -42,11 +42,6 @@ backend/generated-music/
 backend/uploaded-audio/
 backend/separated-audio/
 backend/audio-processing/.venv/
-backend/audio-processing/models/**/*.ckpt
-backend/audio-processing/models/**/*.cpt
-backend/audio-processing/models/**/*.pth
-*.ckpt
-*.cpt
 backend/cleaned-audio/
 __pycache__/
 :memory:.ses

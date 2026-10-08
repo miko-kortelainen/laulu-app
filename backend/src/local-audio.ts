@@ -4,10 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { userDirectory } from './user-files.js';
 
 export const audioDirectory = fileURLToPath(new URL('../uploaded-audio/', import.meta.url));
-export const stemsDirectory = fileURLToPath(new URL('../separated-audio/', import.meta.url));
-export const cleanedDirectory = fileURLToPath(new URL('../cleaned-audio/', import.meta.url));
 export const localAudioLimit = 1024 * 1024 * 1024;
-export const localAudioRetention = 7 * 24 * 60 * 60_000;
 
 export class LocalAudioLimitError extends Error {
   constructor() {
@@ -40,7 +37,7 @@ export function retainLocalAudio(filename: string): () => void {
   };
 }
 
-async function scanLocalAudio(directory: string, cutoff: number): Promise<number> {
+async function scanLocalAudio(directory: string): Promise<number> {
   const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
     throw error;
@@ -49,7 +46,7 @@ async function scanLocalAudio(directory: string, cutoff: number): Promise<number
   for (const entry of entries) {
     const filename = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      bytes += await scanLocalAudio(filename, cutoff);
+      bytes += await scanLocalAudio(filename);
       const active = [...readers.keys(), ...reservations.keys()].some((file) => contains(filename, file));
       if (!active) await rmdir(filename).catch((error: unknown) => {
         if (!(error instanceof Error && 'code' in error && (error.code === 'ENOTEMPTY' || error.code === 'ENOENT'))) throw error;
@@ -62,7 +59,7 @@ async function scanLocalAudio(directory: string, cutoff: number): Promise<number
       if (!file) continue;
       const reserved = [...reservations.keys()].some((directory) => contains(directory, filename));
       const retained = [...readers.keys()].some((directory) => contains(directory, filename));
-      if (file.mtimeMs <= cutoff && !retained && !reserved) {
+      if (!retained && !reserved) {
         await rm(filename, { force: true });
       } else if (!reserved) bytes += file.size;
     }
@@ -71,11 +68,7 @@ async function scanLocalAudio(directory: string, cutoff: number): Promise<number
 }
 
 async function localAudioUsage(): Promise<number> {
-  const cutoff = Date.now() - localAudioRetention;
-  let bytes = 0;
-  for (const directory of [audioDirectory, stemsDirectory, cleanedDirectory]) {
-    bytes += await scanLocalAudio(directory, directory === audioDirectory ? Infinity : cutoff);
-  }
+  let bytes = await scanLocalAudio(audioDirectory);
   for (const reserved of reservations.values()) bytes += reserved;
   return bytes;
 }
@@ -87,7 +80,7 @@ export async function cleanupLocalAudio(): Promise<void> {
 export async function clearUploadedAudio(userId: string): Promise<void> {
   const directory = userDirectory(audioDirectory, userId);
   await serialized(async () => {
-    await scanLocalAudio(directory, Infinity);
+    await scanLocalAudio(directory);
     await rmdir(directory).catch((error: unknown) => {
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
     });
@@ -97,7 +90,7 @@ export async function clearUploadedAudio(userId: string): Promise<void> {
 export async function reserveLocalAudio(filename: string, bytes: number): Promise<() => Promise<void>> {
   return serialized(async () => {
     if (!Number.isSafeInteger(bytes) || bytes <= 0 || reservations.has(filename) ||
-        ![audioDirectory, stemsDirectory, cleanedDirectory].some((directory) => contains(directory, filename))) {
+        !contains(audioDirectory, filename)) {
       throw new Error('invalid local audio reservation.');
     }
     if ((await localAudioUsage()) + bytes > localAudioLimit) throw new LocalAudioLimitError();
