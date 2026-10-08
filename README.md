@@ -600,6 +600,11 @@ Chat requests use the latest sent attachment or generated track.
 Uploads stay in `backend/uploaded-audio/` for session analysis and playback. Git ignores this directory.
 The backend reserves disk space before each upload, with a **1 GiB limit across all users**.
 If capacity is insufficient, the upload endpoint returns HTTP 507 and preserves existing files.
+The server accepts `MAX_AUDIO_JOBS` simultaneous uploads (default `2`) and returns HTTP 503 with `Retry-After: 5` when all slots are busy.
+The same limit applies to simultaneous Python audio conversions. Extra conversions wait for a free slot.
+
+The backend lets browsers from the `ALLOWED_ORIGINS` list (comma-separated) read cross-origin API responses.
+The default is the local Vite origins. Production on one origin needs no entry; set it to the studio origin only if another origin calls the API.
 
 A new session, logout, or 30 minutes of inactivity deletes session uploads.
 Active uploads and agent requests pause expiration.

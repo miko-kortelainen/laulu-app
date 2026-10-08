@@ -2,7 +2,8 @@
 
 Date: 2026-10-08
 
-Status: Items 2 and 3 are implemented in the repository. Their database migrations are not applied to hosted Supabase. The remaining items are planned.
+Status: Items 1–3 are implemented in the repository. Item 4 is complete except for the budget decision and provider spending controls. Items 5 and 6 remain planned.
+The database migrations for items 2 and 3 are not applied to hosted Supabase.
 Hetzner is the selected host. This document does not authorize deployment.
 
 ## Goal
@@ -122,17 +123,17 @@ The landing page host remains undecided.
 
 ### 1. Delete unused audio features
 
-- [ ] Delete stem and dereverb tools from the agent configuration and prompts.
-- [ ] Delete their backend modules, HTTP routes, result types, and progress labels.
-- [ ] Delete their Python runners, model references, and heavy dependencies.
-- [ ] Delete obsolete frontend contracts and references.
-- [ ] Update package manifests and lockfiles together.
-- [ ] Delete obsolete tests, fixtures, and documentation.
-- [ ] Preserve upload validation, analysis conversion, playback, and failure recovery.
+- [x] Delete stem and dereverb tools from the agent configuration and prompts.
+- [x] Delete their backend modules, HTTP routes, result types, and progress labels.
+- [x] Delete their Python runners, model references, and heavy dependencies.
+- [x] Delete obsolete frontend contracts and references.
+- [x] Update package manifests and lockfiles together.
+- [x] Delete obsolete tests, fixtures, and documentation.
+- [x] Preserve upload validation, analysis conversion, playback, and failure recovery.
 
-Hiding controls is insufficient. The current backend still exposes these features through agent tools.
-Delete only obsolete model files and outputs during the agreed cleanup.
-Preserve uploaded audio and generated songs that the retained flows need.
+Stem separation and dereverb are removed from the active code, Python runtime, and test fixtures.
+The Python manifest and lockfile retain only the dependencies needed for upload validation and analysis conversion.
+Upload validation, analysis conversion, private playback, and song recovery remain available.
 
 ### 2. Apply the agreed allowances
 
@@ -185,6 +186,8 @@ Apply `supabase/migrations/20261008150439_recover_operations.sql` before startin
 Keep one backend instance and mount `backend/generated-music/` on persistent storage.
 Chat operations also cover Qwen analysis. Progress and unacknowledged results are available through `/api/operations`.
 The browser restores operation results and its account-specific draft after a reload.
+Recovered chat updates apply only to the linked draft. Older results preserve later form edits and attachments.
+Discovery and polling retry temporary connection failures. Acknowledgement retries do not block other results.
 
 Startup and hourly maintenance reconcile up to 100 operations per pass.
 Unknown outcomes stay charged. Completed metadata, local audio, or a result journal permits recovery without another paid request.
@@ -196,20 +199,28 @@ If disk and remote storage both fail, memory-only audio recovery still requires 
 ### 4. Control total spending and resource use
 
 - [ ] Select an affordable app-wide daily limit for chat, analysis, and generation.
-- [ ] Keep global generation attempts charged after personal failure refunds.
-- [ ] If the global limit is exhausted, stop paid operations.
-- [ ] If quota storage is unavailable, keep paid operations disabled.
+- [x] Keep global generation attempts charged after personal failure refunds.
+- [x] If the global limit is exhausted, stop paid operations.
+- [x] If quota storage is unavailable, keep paid operations disabled.
 - [ ] Configure provider spending controls where available.
-- [ ] Enable email confirmation and the existing Turnstile integration for public registration.
-- [ ] Bound concurrent uploads and audio conversion.
-- [ ] Reject oversized uploads before they exhaust server memory or disk.
-- [ ] Restrict API origins to the intended production and development origins.
+- [x] Enable email confirmation and the existing Turnstile integration for public registration.
+- [x] Bound concurrent uploads and audio conversion.
+- [x] Reject oversized uploads before they exhaust server memory or disk.
+- [x] Restrict API origins to the intended production and development origins.
 
 The example configuration currently lists global daily caps of 200 chats, 30 analyses, and 20 generation attempts.
 These values are a starting reference, not an agreed cash budget for this beta.
 The backend defaults missing global limits to zero, which disables paid operations.
 Personal allowances never override global safety limits.
-The interface must explain this limit to users.
+The interface shows daily allowances and states that shared daily limits also apply.
+
+Uploads have a 50 MiB request limit. Local upload and analysis files share a 1 GiB disk limit.
+Account locks prevent overlapping actions for one user.
+`MAX_AUDIO_JOBS` (default 2) limits simultaneous uploads server-wide. Extra uploads receive `503` with `Retry-After`.
+The same limit applies to Python audio conversions, which queue instead of failing.
+`ALLOWED_ORIGINS` limits cross-origin browser access. The default lists the local Vite origins. Same-origin production traffic needs no entry.
+Email confirmation and Turnstile are configured in the hosted Supabase and Cloudflare dashboards, as reported by the user. Provider spending controls remain unconfigured.
+The shared attempt limits still need a beta cash budget decision.
 
 Five songs per user daily does not limit total spending across an unlimited number of accounts.
 Failed or uncertain calls can still cost money.
@@ -314,7 +325,10 @@ Hosting prices and offers reflect the discussion on 2026-10-08. Review them befo
 
 ## Verification status
 
-This document records the plan and implementations of items 2 and 3. It does not certify production readiness.
+This document records the completed repository work for items 1–3 and the completed parts of item 4.
+It does not certify production readiness.
+Item 1 removes stem and dereverb tools, routes, runners, heavy dependencies, and obsolete tests.
+Repository inspection confirms that the retained upload and analysis paths remain present.
 Item 2 passes backend quota, music, authentication, and song tests against offline services and a disposable local database.
 The local database checks cover concurrent reservations, repeated refunds, ownership, global limits, and UTC date changes.
 Both builds and the frontend linter pass. Browser checks cover allowance refresh and failure recovery.
@@ -322,5 +336,12 @@ No hosted migrations, deployments, or paid provider calls ran.
 
 Item 3 passes offline backend recovery, song, quota, audio, authentication, and tracing checks.
 The recovery database checks cover server-only access, bounded expiration, active capacity, and preservation of uncertain charges.
-Browser checks cover a lost start response, generation and analysis reloads, reconnects, unknown outcomes, and account isolation.
+Browser checks cover lost start responses, reloads, reconnects, unknown outcomes, and account isolation.
+They also cover draft protection, discovery retries, and independent acknowledgement retries.
 Both builds and the frontend linter pass. No hosted migrations, deployments, or paid calls ran for item 3.
+
+Item 4 has configurable shared attempt limits, unchanged global charges after refunds, and quota failure checks.
+The existing database tests cover global limits across accounts and preservation of global attempts after personal refunds.
+Upload size and local disk limits, server-wide upload and conversion limits, and restricted API origins are implemented.
+Offline backend audio and authentication tests cover queued conversions, busy uploads, and CORS origins.
+No hosted configuration changes or paid calls ran.

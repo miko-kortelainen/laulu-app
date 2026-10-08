@@ -4,7 +4,7 @@ import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
 import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from './agent.js';
 import { getModelConfig } from './model.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
-import { audioDirectory, audioPath, uploadAudio } from './audio.js';
+import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
 import { userDirectory } from './user-files.js';
 import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
@@ -15,7 +15,11 @@ import { acknowledgeOperation, busySessions, getOperation, operationId, listOper
 export const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// The frontend and API share one origin in production and use the Vite proxy in development.
+// Browsers from other origins cannot read API responses unless listed here.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
+  .split(',').map((origin) => origin.trim()).filter(Boolean);
+app.use(cors({ origin: allowedOrigins }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api', requireAuth);
 app.use(express.json());
@@ -88,8 +92,17 @@ app.get('/api/songs/recovery', async (_req, res) => {
 
 const parseAudioUpload = express.raw({ type: 'application/octet-stream', limit: '50mb' });
 app.post('/api/audio', locked(async (req, res) => {
-  const release = retainUploadSession(res.locals.userId);
+  let releaseUpload: () => void;
   try {
+    releaseUpload = startAudioUpload();
+  } catch (error: unknown) {
+    if (!(error instanceof AudioBusyError)) throw error;
+    res.set('Retry-After', '5').status(503).json({ error: error.message });
+    return;
+  }
+  let release: (() => void) | undefined;
+  try {
+    release = retainUploadSession(res.locals.userId);
     await new Promise<void>((resolve, reject) => {
       parseAudioUpload(req, res, (error: unknown) => {
         if (error) reject(error);
@@ -101,7 +114,8 @@ app.post('/api/audio', locked(async (req, res) => {
     });
     if (audio) res.json({ audio });
   } finally {
-    release();
+    release?.();
+    releaseUpload();
   }
 }));
 app.use('/api/audio', (error: unknown, _req: Request, res: Response, _next: NextFunction) => {

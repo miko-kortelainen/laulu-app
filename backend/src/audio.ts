@@ -13,11 +13,47 @@ const runtimeDirectory = fileURLToPath(new URL('../audio-processing/', import.me
 const runFile = promisify(execFile);
 const audioExtensions = new Set(['.mp3', '.wav', '.flac', '.ogg']);
 const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+// One backend process serves all users, so these limits are server-wide.
+const maxAudioJobs = Math.max(1, Number.parseInt(process.env.MAX_AUDIO_JOBS ?? '', 10) || 2);
+let activeUploads = 0;
+let activeProcessors = 0;
+const waitingProcessors: (() => void)[] = [];
 const audioUrlPattern = new RegExp(`^/api/(music|audio)/(${uuidPattern}\\.(mp3|wav|flac|ogg))$`);
 
 export interface AudioTrack {
   url: string;
   name: string;
+}
+
+export class AudioBusyError extends Error {
+  constructor() {
+    super('audio uploads are busy. try again in a moment.');
+  }
+}
+
+// Call before reading an upload body, which is held in memory.
+export function startAudioUpload(): () => void {
+  if (activeUploads >= maxAudioJobs) throw new AudioBusyError();
+  activeUploads++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeUploads--;
+  };
+}
+
+async function withProcessorSlot<T>(task: () => Promise<T>): Promise<T> {
+  if (activeProcessors < maxAudioJobs) activeProcessors++;
+  else await new Promise<void>((resolve) => waitingProcessors.push(resolve));
+  try {
+    return await task();
+  } finally {
+    // Hand the slot straight to the next waiting conversion.
+    const next = waitingProcessors.shift();
+    if (next) next();
+    else activeProcessors--;
+  }
 }
 
 export function audioPath(value: unknown, userId: unknown): string {
@@ -41,9 +77,9 @@ async function runProcessor(script: string, args: string[], timeout: number): Pr
   await access(python).catch(() => {
     throw new Error('install local audio processing first: uv sync --project backend/audio-processing');
   });
-  await runFile(python, [path.join(runtimeDirectory, script), ...args], {
+  await withProcessorSlot(() => runFile(python, [path.join(runtimeDirectory, script), ...args], {
     timeout, maxBuffer: 4 * 1024 * 1024,
-  }).catch((error: unknown) => {
+  })).catch((error: unknown) => {
     if (error && typeof error === 'object' && 'killed' in error && error.killed) {
       throw new Error('audio processing timed out. try a shorter track.');
     }

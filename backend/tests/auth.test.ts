@@ -12,6 +12,7 @@ import { syncBuiltinESMExports } from 'node:module';
 test('verified users own their API session and local media', async (t) => {
   process.env.NODE_ENV = 'test';
   process.env.LANGSMITH_TRACING = 'false';
+  process.env.MAX_AUDIO_JOBS = '2';
   process.env.SUPABASE_URL = 'https://offline-auth.supabase.co';
   process.env.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_offline';
   const quotas = configureTestQuotas();
@@ -33,7 +34,7 @@ test('verified users own their API session and local media', async (t) => {
   };
   const { app } = await import('../src/index.js');
   const { getOrCreateAgent, getChatContext, resetAgentSession, retainUploadSession } = await import('../src/agent.js');
-  const { audioDirectory, audioPath, prepareAnalysisAudio } = await import('../src/audio.js');
+  const { audioDirectory, audioPath, prepareAnalysisAudio, startAudioUpload } = await import('../src/audio.js');
   const userA = randomUUID();
   const userB = randomUUID();
   const filename = `${randomUUID()}.wav`;
@@ -62,6 +63,10 @@ test('verified users own their API session and local media', async (t) => {
 
   try {
     assert.deepEqual(await (await fetch(`${url}/api/health`)).json(), { status: 'ok' });
+    const allowed = await fetch(`${url}/api/health`, { headers: { Origin: 'http://localhost:5173' } });
+    assert.equal(allowed.headers.get('access-control-allow-origin'), 'http://localhost:5173');
+    const foreign = await fetch(`${url}/api/health`, { headers: { Origin: 'https://example.com' } });
+    assert.equal(foreign.headers.get('access-control-allow-origin'), null);
     for (const endpoint of ['context', 'usage', 'chat', 'music', 'reset', 'session/end', 'audio', `audio/${filename}`]) {
       assert.equal((await fetch(`${url}/api/${endpoint}`)).status, 401);
     }
@@ -200,6 +205,50 @@ test('verified users own their API session and local media', async (t) => {
         upload.destroy();
       }
     }
+
+    const finishClosingSession = retainUploadSession(userA);
+    await mkdir(directory, { recursive: true });
+    finishClosingSession();
+    let cleanupStarted!: () => void;
+    let finishCleanup!: () => void;
+    const startedCleanup = new Promise<void>((resolve) => { cleanupStarted = resolve; });
+    const pendingCleanup = new Promise<void>((resolve) => { finishCleanup = resolve; });
+    const originalRmdir = fs.rmdir;
+    const pausedCleanup = t.mock.method(fs, 'rmdir', async (...args: Parameters<typeof fs.rmdir>) => {
+      if (String(args[0]) === directory) {
+        cleanupStarted();
+        await pendingCleanup;
+      }
+      return originalRmdir(...args);
+    });
+    syncBuiltinESMExports();
+    const endingSession = fetch(`${url}/api/session/end`, { method: 'POST', headers: headersA });
+    try {
+      await startedCleanup;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const rejected = await fetch(`${url}/api/audio?name=track.wav`, { method: 'POST',
+          headers: { ...headersA, 'Content-Type': 'application/octet-stream' }, body: 'audio' });
+        assert.equal(rejected.status, 400, 'session cleanup failures release the server-wide upload slot');
+      }
+    } finally {
+      finishCleanup();
+      await endingSession;
+      pausedCleanup.mock.restore();
+      syncBuiltinESMExports();
+    }
+
+    const releases = [startAudioUpload(), startAudioUpload()];
+    assert.throws(startAudioUpload, /audio uploads are busy/);
+    const busy = await fetch(`${url}/api/audio?name=track.wav`, { method: 'POST',
+      headers: { ...headersA, 'Content-Type': 'application/octet-stream' }, body: 'audio' });
+    assert.equal(busy.status, 503);
+    assert.equal(busy.headers.get('retry-after'), '5');
+    assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA })).status, 200,
+      'a rejected upload releases the request lock');
+    for (const release of releases) release();
+    for (const release of releases) release();
+    startAudioUpload()();
+    startAudioUpload()();
   } finally {
     t.mock.restoreAll();
     syncBuiltinESMExports();

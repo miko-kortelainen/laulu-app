@@ -1,15 +1,12 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import childProcess, { execFileSync, type ExecFileException, type ExecFileOptions } from 'node:child_process';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+import { syncBuiltinESMExports } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { audioDirectory, audioPath as userAudioPath, uploadAudio as uploadUserAudio } from '../src/audio.js';
-import { resetAgentSession, retainUploadSession } from '../src/agent.js';
 
 const userId = '10000000-0000-4000-8000-000000000003';
-const audioPath = (url: unknown) => userAudioPath(url, userId);
-const uploadAudio = (name: unknown, data: unknown) => uploadUserAudio(name, data, userId);
 
 const python = fileURLToPath(new URL('../audio-processing/.venv/bin/python', import.meta.url));
 
@@ -23,8 +20,29 @@ sys.stdout.buffer.write(wav.getvalue())
 `]);
 }
 
-test('audio uploads validate files, preserve valid state, and end with their session', async () => {
+test('audio uploads validate files, preserve valid state, and end with their session', async (t) => {
   process.env.LANGSMITH_TRACING = 'false';
+  process.env.MAX_AUDIO_JOBS = '2';
+  let activeProcessors = 0;
+  let peakProcessors = 0;
+  const originalExecFile = childProcess.execFile;
+  childProcess.execFile = t.mock.fn((file: string, args: readonly string[], options: ExecFileOptions,
+    callback: (error: ExecFileException | null, stdout: string | Buffer, stderr: string | Buffer) => void) => {
+    activeProcessors++;
+    peakProcessors = Math.max(peakProcessors, activeProcessors);
+    return originalExecFile(file, args, options, (error, stdout, stderr) => {
+      activeProcessors--;
+      // Match the stderr attached by execFile's custom promise implementation.
+      if (error) Object.assign(error, { stdout, stderr });
+      callback(error, stdout, stderr);
+    });
+  }) as typeof childProcess.execFile;
+  syncBuiltinESMExports();
+  t.after(() => { childProcess.execFile = originalExecFile; syncBuiltinESMExports(); });
+  const { audioDirectory, audioPath: userAudioPath, uploadAudio: uploadUserAudio } = await import('../src/audio.js');
+  const { resetAgentSession, retainUploadSession } = await import('../src/agent.js');
+  const audioPath = (url: unknown) => userAudioPath(url, userId);
+  const uploadAudio = (name: unknown, data: unknown) => uploadUserAudio(name, data, userId);
   for (const url of ['https://example.com/song.mp3', '/etc/passwd', '/api/audio/../../.env',
     '/api/music/00000000-0000-0000-0000-000000000000.wav', '/api/audio/not-a-uuid.mp3',
     '/api/audio/00000000-0000-0000-0000-000000000000.wav/extra']) {
@@ -38,6 +56,14 @@ test('audio uploads validate files, preserve valid state, and end with their ses
   assert.deepEqual(await readdir(path.join(audioDirectory, userId)), before);
 
   const input = sampleAudio();
+  const queued = await Promise.allSettled([
+    uploadAudio('broken.wav', Buffer.from('not audio')),
+    ...Array.from({ length: 4 }, (_, index) => uploadAudio(`queued ${index}.wav`, input)),
+  ]);
+  assert.deepEqual(queued.map((result) => result.status), ['rejected', 'fulfilled', 'fulfilled', 'fulfilled', 'fulfilled'],
+    'a failed processor releases its slot and queued conversions finish');
+  assert.equal(peakProcessors, 2, 'Python processors never exceed the configured limit');
+  assert.equal(activeProcessors, 0);
   const audio = await uploadAudio('my voice.wav', input);
   const finishSession = retainUploadSession(userId);
   try {
