@@ -1,9 +1,26 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { Client } from 'langsmith';
 import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { generateMusic } from '../src/music.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
+
+test('production beta disables tracing even when deployment settings enable it', async () => {
+  await promisify(execFile)(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { Client } from 'langsmith';
+    import { traceable } from 'langsmith/traceable';
+    await import(${JSON.stringify(new URL('../src/model.js', import.meta.url).href)});
+    assert.equal(process.env.LANGSMITH_TRACING, 'false');
+    let runs = 0;
+    Client.prototype.createRun = async () => { runs++; };
+    Client.prototype.updateRun = async () => { runs++; };
+    assert.equal(await traceable(async () => 'private beta reply')(), 'private beta reply');
+    assert.equal(runs, 0);
+  `], { env: { ...process.env, NODE_ENV: 'production', LANGSMITH_TRACING: 'true', LANGCHAIN_TRACING: 'true' } });
+});
 
 test('agent traces contain model and tool runs, errors, and conversation metadata', async () => {
   const originalFetch = globalThis.fetch;

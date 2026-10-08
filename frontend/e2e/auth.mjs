@@ -50,6 +50,23 @@ try {
   await run("press", "Tab");
   assert.equal(await run("eval", "document.activeElement.id"), '"auth-password"');
 
+  // The notice is public, survives a direct reload, and links back to login.
+  await run("find", "role", "link", "click", "--name", "privacy and beta limits", "--exact");
+  await run("wait", "--text", "AI processing");
+  assert.equal(await run("eval", "location.pathname"), '"/privacy"');
+  assert.equal(await run("eval", 'document.querySelector("#auth-email")'), "null");
+  assert.equal(await run("eval", "document.querySelector('a[href^=mailto]').getAttribute('href')"), '"mailto:miko@kortelainen.dev"');
+  assert.equal(await run("eval", "document.documentElement.scrollWidth <= innerWidth"), "true");
+  await run("eval", "location.reload()");
+  await run("wait", "--text", "privacy and beta limits");
+  for (const pathname of ["/privacy/", "/PRIVACY"]) {
+    await run("open", `${url}${pathname}`);
+    await run("wait", "--text", "AI processing");
+    assert.equal(await run("eval", 'document.querySelector("#auth-email")'), "null");
+  }
+  await run("find", "role", "link", "click", "--name", "back to app", "--exact");
+  await run("wait", "--text", "log in");
+
   await run("find", "role", "button", "click", "--name", "register", "--exact");
   if (captcha) {
     await run("wait", "--fn", "Boolean(window.captchaOptions)");
@@ -134,6 +151,12 @@ try {
   await run("back");
   await run("wait", "--text", "0 / 40 messages");
   assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
+  await run("find", "role", "link", "click", "--name", "privacy", "--exact");
+  await run("wait", "--text", "LangSmith tracing is disabled in the production beta.");
+  assert.equal(await run("eval", "document.documentElement.scrollWidth <= innerWidth"), "true");
+  await run("find", "role", "link", "click", "--name", "back to app", "--exact");
+  await run("wait", "--text", "0 / 40 messages");
+  assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
   await run("find", "role", "link", "click", "--name", "profile", "--exact");
   await run("eval", "location.reload()");
   await run("wait", "--text", "member since");
@@ -215,7 +238,7 @@ try {
   await run("wait", "--text", "link expired");
   assert.equal(await run("eval", "location.hash"), '""');
   assert.equal(await run("eval", 'document.querySelector("h1").innerText'), '"log in"');
-  console.log(`Auth E2E passed: ${captcha ? "CAPTCHA expiry, failure recovery and token reset, " : ""}registration, confirmation, resend, login recovery, profile navigation and reload, retained song form, logout cancellation, account isolation, password recovery, and expired links.`);
+  console.log(`Auth E2E passed: ${captcha ? "CAPTCHA expiry, failure recovery and token reset, " : ""}public privacy notice and reload, registration, confirmation, resend, login recovery, profile navigation and reload, retained song form across privacy navigation, logout cancellation, account isolation, password recovery, and expired links.`);
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);
   throw error;

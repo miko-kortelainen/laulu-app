@@ -4,6 +4,7 @@ import { ChatPage } from "@/features/chat/ChatPage";
 import { useChat } from "@/features/chat/useChat";
 import { ProfilePage } from "@/features/profile/ProfilePage";
 import { SongsPage } from "@/features/songs/SongsPage";
+import { PrivacyPage } from "@/features/auth/PrivacyPage";
 
 interface AuthenticatedAppProps {
   user: User;
@@ -37,6 +38,9 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
               <NavLink to="/profile" className={linkClass}>
                 profile
               </NavLink>
+              <NavLink to="/privacy" className={linkClass}>
+                privacy
+              </NavLink>
             </nav>
             <button type="button" disabled={signingOut} onClick={() => void onLogout()}
               className="min-h-10 rounded-lg border border-white/10 px-3 py-1.5 text-xs hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
@@ -50,6 +54,7 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
         <Route path="/" element={<ChatPage chat={chat} />} />
         <Route path="/songs" element={<SongsPage />} />
         <Route path="/profile" element={<ProfilePage user={user} />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

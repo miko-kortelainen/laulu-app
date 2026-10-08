@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import type { useAuth } from "./useAuth";
 import { Turnstile } from "./Turnstile";
 
@@ -54,6 +55,9 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
           {view === "register" && notice && <button type="button" className={buttonClass} disabled={busy || !configured || !email.trim() || verificationPending} onClick={() => void resend()}>resend confirmation</button>}
           {view === "update" && session && <button type="button" className={buttonClass} disabled={busy} onClick={() => void logout()}>log out</button>}
         </div>
+        <p className="text-xs text-zinc-400">
+          <Link to="/privacy" className="inline-flex min-h-11 items-center rounded underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">privacy and beta limits</Link>
+        </p>
       </section>
     </main>
   );

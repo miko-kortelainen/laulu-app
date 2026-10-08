@@ -2,8 +2,8 @@
 
 Date: 2026-10-08
 
-Status: Items 1–3 are implemented in the repository. Item 4 is complete except for the budget decision and provider spending controls. Items 5 and 6 remain planned.
-The database migrations for items 2 and 3 are not applied to hosted Supabase.
+Status: Items 1–4 are implemented. The user reports that hosted migrations, production spending controls, and production flow checks are complete.
+Item 5 includes the public privacy notice and disabled production tracing. Deployment packaging and operating safeguards in item 6 remain unfinished.
 Hetzner is the selected host. This document does not authorize deployment.
 
 ## Goal
@@ -198,18 +198,19 @@ If disk and remote storage both fail, memory-only audio recovery still requires 
 
 ### 4. Control total spending and resource use
 
-- [ ] Select an affordable app-wide daily limit for chat, analysis, and generation.
+- [x] Select an affordable app-wide daily limit for chat, analysis, and generation.
 - [x] Keep global generation attempts charged after personal failure refunds.
 - [x] If the global limit is exhausted, stop paid operations.
 - [x] If quota storage is unavailable, keep paid operations disabled.
-- [ ] Configure provider spending controls where available.
+- [x] Configure provider spending controls where available.
 - [x] Enable email confirmation and the existing Turnstile integration for public registration.
 - [x] Bound concurrent uploads and audio conversion.
 - [x] Reject oversized uploads before they exhaust server memory or disk.
 - [x] Restrict API origins to the intended production and development origins.
 
 The example configuration currently lists global daily caps of 200 chats, 30 analyses, and 20 generation attempts.
-These values are a starting reference, not an agreed cash budget for this beta.
+These are example values. The user reports that production spending controls are configured.
+This change does not inspect their actual settings.
 The backend defaults missing global limits to zero, which disables paid operations.
 Personal allowances never override global safety limits.
 The interface shows daily allowances and states that shared daily limits also apply.
@@ -219,8 +220,7 @@ Account locks prevent overlapping actions for one user.
 `MAX_AUDIO_JOBS` (default 2) limits simultaneous uploads server-wide. Extra uploads receive `503` with `Retry-After`.
 The same limit applies to FFmpeg and ffprobe processes, which queue instead of failing.
 `ALLOWED_ORIGINS` limits cross-origin browser access. The default lists the local Vite origins. Same-origin production traffic needs no entry.
-Email confirmation and Turnstile are configured in the hosted Supabase and Cloudflare dashboards, as reported by the user. Provider spending controls remain unconfigured.
-The shared attempt limits still need a beta cash budget decision.
+Email confirmation, Turnstile, and production spending controls are configured, as reported by the user.
 
 Five songs per user daily does not limit total spending across an unlimited number of accounts.
 Failed or uncertain calls can still cost money.
@@ -230,13 +230,21 @@ Keep a bounded attempt policy without changing the promised five-completed-song 
 
 - [x] Configure custom SMTP for confirmation and password recovery emails.
 - [x] Configure the mail provider’s domain records.
-- [ ] Exercise confirmation and recovery links on `studio.lau.lu`.
+- [x] Exercise confirmation and recovery links on `studio.lau.lu`.
 - [ ] Keep Supabase secret keys, R2 credentials, and gateway credentials on the backend.
 - [ ] Preserve ownership checks for every song and local audio request.
 - [ ] Keep R2 public access disabled.
 - [ ] Preserve RLS and server-only quota writes.
-- [ ] Add short privacy and beta-limit information that matches actual data handling.
-- [ ] Decide whether production tracing can send chat and prompt text to LangSmith.
+- [x] Add short privacy and beta-limit information that matches actual data handling.
+- [x] Decide whether production tracing can send chat and prompt text to LangSmith.
+
+The public `/privacy` page is available before registration and from the authenticated navigation.
+It describes private songs, temporary uploads, recovery records, AI providers, and configurable beta limits.
+Contact for privacy and account deletion requests: `miko@kortelainen.dev`.
+LangSmith tracing is disabled in the production beta.
+Deploy with `NODE_ENV=production`.
+The backend overrides any enabled tracing setting.
+Hosted migrations, spending controls, and production flows are complete according to the user. They were not rechecked in this change.
 
 Supabase’s default mail service does not support public registration emails to arbitrary addresses.
 Custom SMTP is a launch requirement for this registration flow.
@@ -251,7 +259,7 @@ Custom SMTP is a launch requirement for this registration flow.
 - [ ] Configure the frontend’s public values at build time.
 - [ ] Configure backend secrets at runtime.
 - [ ] Mount persistent recovery directories outside the replaceable container filesystem.
-- [ ] Apply the required database migrations with the matching backend version.
+- [x] Apply the required database migrations with the matching backend version.
 - [ ] Configure the studio domain, HTTPS, and frontend route fallback.
 - [ ] Configure health checks, bounded logs, and disk monitoring.
 - [ ] Configure backups for recovery data and a database backup procedure.
@@ -268,7 +276,7 @@ Do not make paid provider calls without explicit authorization.
 
 - [ ] Production frontend and backend builds pass.
 - [ ] The frontend linter passes.
-- [ ] Registration, confirmation, resend, login, recovery, and logout work on the production domain.
+- [x] Registration, confirmation, resend, login, recovery, and logout work on the production domain.
 - [ ] A user can send 20 messages, and the next message stops before paid work.
 - [ ] A user can complete five songs, and the next generation stops before paid work.
 - [ ] Concurrent generation requests cannot exceed the allowance.
@@ -296,11 +304,9 @@ Adjust the global limits before accepting more traffic.
 - Exact Hetzner server, location, availability, and final price.
 - Coolify or a smaller Docker deployment managed directly.
 - Separate landing page host.
-- Daily provider budget and global caps.
 - Maximum generation attempts before a temporary account limit.
 - Whether to retain the proposed 10-analysis daily limit.
-- SMTP provider and sender address.
-- Backup retention and production tracing policy.
+- Backup retention.
 
 These choices do not authorize billing work or extra product features.
 

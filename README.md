@@ -625,7 +625,14 @@ This check uses isolated temporary directories and makes no model calls.
 
 ## LangSmith tracing
 
-Set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `backend/.env`, then
+Production beta tracing is disabled. Deploy with `NODE_ENV=production`.
+In production, the backend overrides `LANGSMITH_TRACING` to `false`.
+Old environment settings cannot enable tracing.
+The public `/privacy` page explains storage, AI processing, temporary data, and beta limits.
+It is linked from login and the authenticated navigation. Privacy and account deletion requests go to `miko@kortelainen.dev`.
+Serve `index.html` for `/privacy`, as for the other frontend routes.
+
+For development tracing, set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `backend/.env`, then
 restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.
 `LANGSMITH_ENDPOINT` defaults to `https://api.smith.langchain.com`; use
 `https://eu.api.smith.langchain.com` for an EU workspace.

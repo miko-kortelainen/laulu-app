@@ -14,6 +14,9 @@ dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+// Keep production beta conversations out of LangSmith even if an old setting enables tracing.
+if (process.env.NODE_ENV === 'production') process.env.LANGSMITH_TRACING = 'false';
+
 export function getModelId(): string {
   return (process.env.NEBIUS_MODEL || 'nvidia/nemotron-3-super-120b-a12b').trim();
 }
