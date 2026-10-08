@@ -66,8 +66,7 @@ export function checkAllowance(data: unknown): void {
   }
 }
 
-export async function reserveUsage(userId: string, operation: PaidOperation, storageBytes = 0): Promise<string> {
-  const id = randomUUID();
+export async function reserveUsage(userId: string, operation: PaidOperation, storageBytes = 0, id: string = randomUUID()): Promise<string> {
   const data = await quotaRpc('reserve_usage', {
     p_user_id: userId, p_operation: operation, p_id: id,
     p_storage_bytes: storageBytes, p_defaults: quotaDefaults(),

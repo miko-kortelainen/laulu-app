@@ -16,6 +16,9 @@ export interface MusicTrack {
 }
 
 export class MusicPromptTokenLimitError extends Error {}
+export class MusicGenerationError extends Error {
+  constructor(message: string, readonly confirmedFailure: boolean) { super(message); }
+}
 
 export function validateMusicModel(value: unknown = 'lyria-3.5'): 'lyria-3.5' | 'lyria-3-clip-preview' {
   if (value !== 'lyria-3.5' && value !== 'lyria-3-clip-preview') {
@@ -93,6 +96,7 @@ export const generateMusic = traceable(async (
   prompt: string,
   modelId: unknown = 'lyria-3.5',
   userId: string,
+  operationId?: string,
   _traceConfig?: { metadata: { thread_id: string; ls_model_name?: string } },
 ): Promise<MusicTrack> => {
   const input = validateMusicPrompt(prompt);
@@ -120,7 +124,7 @@ export const generateMusic = traceable(async (
     throw new MusicPromptTokenLimitError(`music prompt contains ${totalTokens.toLocaleString('en-US')} tokens; the ${model} input limit is 131,072. shorten the prompt and try again.`);
   }
 
-  const songId = await reserveUsage(userId, 'generation', songOutputLimit());
+  const songId = await reserveUsage(userId, 'generation', songOutputLimit(), operationId);
   let audio: Buffer | undefined;
   let confirmedFailure = false;
   const lyrics: string[] = [];
@@ -160,8 +164,8 @@ export const generateMusic = traceable(async (
         settlementError = ' could not restore your song allowance. contact support.';
       });
     }
-    throw new Error(`music generation failed. ${error instanceof Error ? error.message : 'unknown service error.'}` +
-      (settlementError ?? (confirmedFailure || rejected ? '' : ' the outcome is unknown; your song allowance remains reserved.')));
+    throw new MusicGenerationError(`music generation failed. ${error instanceof Error ? error.message : 'unknown service error.'}` +
+      (settlementError ?? (confirmedFailure || rejected ? '' : ' the outcome is unknown; your song allowance remains reserved.')), confirmedFailure || rejected);
   }
 
   const text = lyrics.join('\n')
@@ -173,6 +177,6 @@ export const generateMusic = traceable(async (
 }, {
   name: 'generate_audio',
   run_type: 'tool',
-  argsConfigPath: [3],
+  argsConfigPath: [4],
   metadata: { ls_provider: 'google' },
 });

@@ -2,7 +2,7 @@
 
 Date: 2026-10-08
 
-Status: Item 2 is implemented in the repository. Its database migration is not applied to hosted Supabase. The remaining items are planned.
+Status: Items 2 and 3 are implemented in the repository. Their database migrations are not applied to hosted Supabase. The remaining items are planned.
 Hetzner is the selected host. This document does not authorize deployment.
 
 ## Goal
@@ -148,7 +148,7 @@ Preserve uploaded audio and generated songs that the retained flows need.
 
 Apply `supabase/migrations/20261008141601_beta_allowances.sql` with the updated backend.
 Update an existing `QUOTA_CHAT_DAILY=50` environment setting to `20` before restart.
-Historical unknown outcomes stay reserved. Item 3 will add automatic reconciliation after interrupted operations.
+Historical unknown outcomes stay charged. Item 3 adds restart reconciliation and expiration of abandoned storage capacity.
 
 If storage fails after a completed generation, the generation still counts once.
 A save retry uses the same song and reservation.
@@ -165,21 +165,33 @@ They do not count as saved-song storage.
 
 ### 3. Recover long operations and interrupted requests
 
-- [ ] Give each generation a durable operation ID and database state.
-- [ ] Return the operation ID promptly instead of holding one request for the whole generation.
-- [ ] Let the frontend read progress and recover the result after a reload.
-- [ ] Apply the same approach to long analysis requests where necessary.
-- [ ] Preserve completed audio on the server volume before reliance on a save retry.
-- [ ] Reconcile unfinished operations after a backend restart.
-- [ ] Add bounded cleanup for abandoned reservations, recovery files, and temporary analysis files.
-- [ ] Fix operation locks after aborted requests, including saved-song deletion.
-- [ ] Keep locks until server work ends. A browser disconnect does not end server work.
-- [ ] Preserve the music form and attachment after failures.
+- [x] Give each generation a durable operation ID and database state.
+- [x] Return the operation ID promptly instead of holding one request for the whole generation.
+- [x] Let the frontend read progress and recover the result after a reload.
+- [x] Apply the same approach to long analysis requests where necessary.
+- [x] Preserve completed audio on the server volume before reliance on a save retry.
+- [x] Reconcile unfinished operations after a backend restart.
+- [x] Add bounded cleanup for abandoned reservations, recovery files, and temporary analysis files.
+- [x] Fix operation locks after aborted requests, including saved-song deletion.
+- [x] Keep locks until server work ends. A browser disconnect does not end server work.
+- [x] Preserve the music form and attachment after failures.
 
 Current Lyria requests can run for five minutes before the storage step.
 Provider timeouts, browser disconnects, and server restarts need explicit handling.
 Unknown provider outcomes must not trigger automatic paid generation retries.
 The plan needs no new Redis service or general queue framework for the initial single-server beta.
+
+Apply `supabase/migrations/20261008150439_recover_operations.sql` before starting the updated backend.
+Keep one backend instance and mount `backend/generated-music/` on persistent storage.
+Chat operations also cover Qwen analysis. Progress and unacknowledged results are available through `/api/operations`.
+The browser restores operation results and its account-specific draft after a reload.
+
+Startup and hourly maintenance reconcile up to 100 operations per pass.
+Unknown outcomes stay charged. Completed metadata, local audio, or a result journal permits recovery without another paid request.
+Recovery files and final operation records expire after seven days.
+Cleanup preserves active accounts and ready songs. Partial writes and abandoned processing caches expire after one hour.
+Zero-capacity reservations expire after 30 days, after their operation records expire.
+If disk and remote storage both fail, memory-only audio recovery still requires the backend to keep running.
 
 ### 4. Control total spending and resource use
 
@@ -302,8 +314,13 @@ Hosting prices and offers reflect the discussion on 2026-10-08. Review them befo
 
 ## Verification status
 
-This document records the plan and item 2 implementation. It does not certify production readiness.
+This document records the plan and implementations of items 2 and 3. It does not certify production readiness.
 Item 2 passes backend quota, music, authentication, and song tests against offline services and a disposable local database.
 The local database checks cover concurrent reservations, repeated refunds, ownership, global limits, and UTC date changes.
 Both builds and the frontend linter pass. Browser checks cover allowance refresh and failure recovery.
 No hosted migrations, deployments, or paid provider calls ran.
+
+Item 3 passes offline backend recovery, song, quota, audio, authentication, and tracing checks.
+The recovery database checks cover server-only access, bounded expiration, active capacity, and preservation of uncertain charges.
+Browser checks cover a lost start response, generation and analysis reloads, reconnects, unknown outcomes, and account isolation.
+Both builds and the frontend linter pass. No hosted migrations, deployments, or paid calls ran for item 3.

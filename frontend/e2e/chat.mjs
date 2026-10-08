@@ -1,4 +1,4 @@
-import { seedAuth } from "./auth-fixture.mjs";
+import { authSession, seedAuth } from "./auth-fixture.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
@@ -95,7 +95,7 @@ try {
   run("eval", 'window.contextMessages = -1');
 
   run("network", "unroute", "**/api/**");
-  run("network", "route", "**/api/**", "--abort");
+  run("network", "route", "**/api/**", "--body", '{"error":"Failed to fetch"}');
   openInput();
   run("fill", "textarea:not([name])", "failed message");
   run("click", send);
@@ -114,34 +114,42 @@ try {
   run("wait", "--text", "40 / 40 messages");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
 
-  // Progress follows streamed activity, even when a record is split across chunks.
+  // Progress and errors follow durable operation polling.
   run("eval", `window.fetchBeforeProgress = window.fetch;
-    window.fetch = (input, options) => input === "/api/chat"
-      ? Promise.resolve(new Response(new ReadableStream({ start(controller) {
-          window.chatProgress = controller;
-        } }), { headers: { "content-type": "application/x-ndjson" } }))
-      : window.fetchBeforeProgress(input, options);`);
+    window.fetch = (input, options) => {
+      if (input === "/api/chat") {
+        window.progressOperation = { id: JSON.parse(options.body).operationId, kind: "chat",
+          state: "running", status: "thinking...", result: null };
+        return Promise.resolve(Response.json({ operation: window.progressOperation }, { status: 202 }));
+      }
+      if (input === '/api/operations/' + window.progressOperation?.id) {
+        return Promise.resolve(Response.json({ operation: window.progressOperation }));
+      }
+      if (input === '/api/operations/' + window.progressOperation?.id + '/acknowledge') {
+        return Promise.resolve(Response.json({}));
+      }
+      return window.fetchBeforeProgress(input, options);
+    };`);
   openInput();
   run("fill", "textarea:not([name])", "edit the fields and lyrics");
   run("click", send);
   run("wait", "--text", "thinking...");
-  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'{"status":"editing fi\'))');
-  assert.equal(run("eval", 'document.querySelector("[role=status]").textContent.trim()'), '"thinking..."');
-  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'elds..."}\\n\'))');
+  assert.equal(run("eval", `JSON.parse(sessionStorage.getItem('music-draft:${authSession().user.id}')).pendingChatId === window.progressOperation.id`), "true");
+  run("eval", 'window.progressOperation.status = "editing fields..."');
   run("wait", "--text", "editing fields...");
-  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'{"status":"editing lyrics..."}\\n\'))');
+  run("eval", 'window.progressOperation.status = "editing lyrics..."');
   run("wait", "--text", "editing lyrics...");
   assert.equal(run("eval", 'document.querySelector("fieldset").disabled'), "true");
-  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'{"reply":"progress complete."}\\n\')); window.chatProgress.close()');
+  run("eval", 'Object.assign(window.progressOperation, { state: "completed", status: "", result: { reply: "progress complete." } })');
   run("wait", "--text", "progress complete.");
   run("wait", "--fn", 'document.querySelector("[role=status]") === null');
+  assert.equal(run("eval", `JSON.parse(sessionStorage.getItem('music-draft:${authSession().user.id}')).pendingChatId === undefined`), "true");
 
-  // A streamed error clears progress and lets the user retry.
   openInput();
   run("fill", "textarea:not([name])", "try another edit");
   run("click", send);
   run("wait", "--text", "thinking...");
-  run("eval", 'window.chatProgress.enqueue(new TextEncoder().encode(\'{"status":"editing lyrics..."}\\n{"error":"lyric service failed"}\\n\')); window.chatProgress.close()');
+  run("eval", 'Object.assign(window.progressOperation, { state: "failed", status: "", result: { error: "lyric service failed" } })');
   run("wait", "--text", "Error: lyric service failed");
   run("wait", "--fn", '!document.querySelector("fieldset").disabled && document.querySelector("[role=status]") === null');
   run("eval", 'window.fetch = window.fetchBeforeProgress');
@@ -212,7 +220,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().top >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().bottom'), "true");
   run("set", "viewport", "1280", "900");
   run("network", "unroute", "**/api/music");
-  run("network", "route", "**/api/music", "--abort");
+  run("network", "route", "**/api/music", "--body", '{"error":"Failed to fetch"}');
   run("eval", `window.fetchBeforeGeneration = window.fetch;
     window.fetch = (input, options) => input === "/api/music"
       ? new Promise(resolve => { window.finishGeneration = () => resolve(window.fetchBeforeGeneration(input, options)); })
@@ -356,7 +364,7 @@ try {
   run("upload", 'input[type="file"]', uploadPath);
   run("wait", "--text", "attached to your next message");
   run("network", "unroute", "**/api/chat");
-  run("network", "route", "**/api/chat", "--abort");
+  run("network", "route", "**/api/chat", "--body", '{"error":"Failed to fetch"}');
   openInput();
   run("fill", "textarea:not([name])", "check this attachment");
   run("click", send);

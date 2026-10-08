@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 const frontend = fileURLToPath(new URL("../", import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "musical-auth-e2e-"));
 const target = process.argv[2];
-if (!["auth", "chat", "audio-player", "songs", "all"].includes(target)) throw new Error("unknown E2E target");
+if (!["auth", "chat", "audio-player", "songs", "operations", "all"].includes(target)) throw new Error("unknown E2E target");
 const wav = Buffer.alloc(44 + 16000);
 wav.write("RIFF", 0);
 wav.writeUInt32LE(wav.length - 8, 4);
@@ -26,6 +26,10 @@ wav.write("data", 36);
 wav.writeUInt32LE(16000, 40);
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
+  if (req.method === "GET" && pathname === "/api/operations") {
+    res.setHeader("Content-Type", "application/json");
+    return res.end('{"operations":[]}');
+  }
   if (req.method === "POST" && pathname === "/api/session/end") {
     res.writeHead(204);
     return res.end();
@@ -53,7 +57,7 @@ try {
       VITE_TURNSTILE_SITE_KEY: target === "auth" ? "offline-site-key" : "" },
   });
   process.stdout.write(build.stdout);
-  for (const name of target === "all" ? ["auth", "chat", "audio-player", "songs"] : [target]) {
+  for (const name of target === "all" ? ["auth", "chat", "audio-player", "songs", "operations"] : [target]) {
     const result = await exec(process.execPath, [join(frontend, `e2e/${name}.mjs`)], {
       cwd: frontend, env: { ...process.env, E2E_URL: url, E2E_AUTH_ORIGIN: url, E2E_DIST: directory,
         E2E_CAPTCHA: target === "auth" ? "1" : "" }, timeout: 240000, maxBuffer: 2 * 1024 * 1024,

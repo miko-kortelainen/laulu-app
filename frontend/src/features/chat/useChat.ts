@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router";
-import { generateMusic, getChatContext, getUsage, resetChat, retrySongStorage, sendMessage, SongStorageError, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack, type Usage } from "./api";
+import { acknowledgeOperation, getOperations, readOperationResult, waitForOperation, generateMusic, getChatContext, getUsage, resetChat, retrySongStorage, sendMessage, OperationError, SongStorageError, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack, type Usage } from "./api";
 import { emptyMusicPrompt, isMusicPrompt, musicPromptFields, type MusicPrompt } from "./musicPrompt";
 
 export interface Message {
@@ -14,22 +14,58 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Request failed.";
 }
 
-export function useChat() {
+interface Draft {
+  musicPrompt?: MusicPrompt;
+  musicModel?: string;
+  pendingAudio?: AudioTrack;
+  pendingSongId?: string;
+  currentAudio?: string;
+  pendingChatId?: string;
+}
+
+function readDraft(userId: string): Draft {
+  const value: unknown = (() => {
+    try { return JSON.parse(sessionStorage.getItem(`music-draft:${userId}`) || "null"); }
+    catch { return null; }
+  })();
+  if (!value || typeof value !== "object") return {};
+  const fields = value as Record<string, unknown>;
+  const audio = fields.pendingAudio;
+  const validAudio = (url: unknown) => typeof url === "string" && /^\/api\/(audio|music)\/[0-9a-f-]{36}\.(mp3|wav|flac|ogg)$/.test(url);
+  return {
+    musicPrompt: isMusicPrompt(fields.musicPrompt) ? fields.musicPrompt : undefined,
+    musicModel: fields.musicModel === "lyria-3-clip-preview" ? fields.musicModel : "lyria-3.5",
+    pendingSongId: typeof fields.pendingSongId === "string" && /^[0-9a-f-]{36}$/.test(fields.pendingSongId) ? fields.pendingSongId : undefined,
+    pendingAudio: audio && typeof audio === "object" && "url" in audio && validAudio(audio.url) &&
+      "name" in audio && typeof audio.name === "string" ? { url: audio.url as string, name: audio.name } : undefined,
+    currentAudio: validAudio(fields.currentAudio) ? fields.currentAudio as string : undefined,
+    pendingChatId: typeof fields.pendingChatId === "string" && /^[0-9a-f-]{36}$/.test(fields.pendingChatId) ? fields.pendingChatId : undefined,
+  };
+}
+
+function saveDraft(userId: string, draft: Draft): void {
+  try { sessionStorage.setItem(`music-draft:${userId}`, JSON.stringify(draft)); }
+  catch (error: unknown) { console.error("could not preserve the music draft:", error); }
+}
+
+export function useChat(userId: string) {
   const { pathname } = useLocation();
+  const [draft] = useState(() => readDraft(userId));
+  const requests = useRef(new AbortController());
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
       text: "Hello! I am your AI assistant powered by NVIDIA Nemotron Super on Nebius Token Factory. How can I help you?",
     },
   ]);
-  const [activity, setActivity] = useState<string>();
+  const [activity, setActivity] = useState<string | undefined>("recovering requests...");
   const loading = activity !== undefined;
-  const [musicPrompt, setMusicPrompt] = useState<MusicPrompt>(emptyMusicPrompt);
+  const [musicPrompt, setMusicPrompt] = useState<MusicPrompt>(draft.musicPrompt ?? emptyMusicPrompt);
   const [updatedMusicFields, setUpdatedMusicFields] = useState<(keyof MusicPrompt)[]>([]);
-  const [musicModel, setMusicModel] = useState("lyria-3.5");
+  const [musicModel, setMusicModel] = useState(draft.musicModel ?? "lyria-3.5");
   const [musicError, setMusicError] = useState<string>();
-  const [pendingSongId, setPendingSongId] = useState<string>();
-  const [pendingAudio, setPendingAudio] = useState<AudioTrack>();
+  const [pendingSongId, setPendingSongId] = useState<string | undefined>(draft.pendingSongId);
+  const [pendingAudio, setPendingAudio] = useState<AudioTrack | undefined>(draft.pendingAudio);
   const [uploadError, setUploadError] = useState<string>();
   const [context, setContext] = useState<ChatContext>();
   const [contextError, setContextError] = useState<string>();
@@ -37,8 +73,62 @@ export function useChat() {
   const [usage, setUsage] = useState<Usage>();
   const [usageError, setUsageError] = useState<string>();
   const usageRequest = useRef(0);
-  const busy = useRef(false);
-  const currentAudio = useRef<string | undefined>(undefined);
+  const busy = useRef(true);
+  const sendingAudio = useRef<AudioTrack | undefined>(undefined);
+  const currentAudio = useRef<string | undefined>(draft.currentAudio);
+  const pendingChatId = useRef(draft.pendingChatId);
+
+  useEffect(() => {
+    saveDraft(userId, {
+      musicPrompt, musicModel, pendingAudio: pendingAudio ?? sendingAudio.current, pendingSongId,
+      currentAudio: currentAudio.current, pendingChatId: pendingChatId.current,
+    });
+  }, [userId, musicPrompt, musicModel, pendingAudio, pendingSongId, messages]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    requests.current = controller;
+    busy.current = true;
+    const recover = async () => {
+      const operations = await getOperations(controller.signal, setActivity);
+      for (const pending of operations) {
+        const operation = await waitForOperation(pending.id, setActivity, controller.signal);
+        if (controller.signal.aborted) return;
+        const result = await readOperationResult(operation).catch((error: unknown) =>
+          error instanceof Error ? error : new Error(errorMessage(error)));
+        if (result instanceof Error) {
+          if (operation.kind === "music") {
+            if (result instanceof SongStorageError) setPendingSongId(result.songId);
+            setMusicError(result.message);
+          } else setMessages((previous) => [...previous, { role: "agent", text: `Error: ${result.message}` }]);
+        } else if ("reply" in result) {
+          setMessages((previous) => [...previous, { role: "agent", text: result.reply }]);
+          if (operation.id === pendingChatId.current) {
+            if (result.musicPrompt) setMusicPrompt(result.musicPrompt);
+            setPendingAudio(undefined);
+          }
+        } else {
+          currentAudio.current = result.url;
+          setPendingSongId(undefined);
+          setMusicError(undefined);
+          setMessages((previous) => [...previous, { role: "agent", text: "your track is ready.", track: result }]);
+        }
+        if (operation.id === pendingChatId.current) pendingChatId.current = undefined;
+        void acknowledgeOperation(operation.id, controller.signal).catch((error: unknown) => {
+          if (!controller.signal.aborted) console.error(error);
+        });
+      }
+    };
+    void recover().catch((error: unknown) => {
+      if (!controller.signal.aborted) setMusicError(errorMessage(error));
+    }).finally(() => {
+      if (!controller.signal.aborted) {
+        busy.current = false;
+        setActivity(undefined);
+      }
+    });
+    return () => controller.abort();
+  }, []);
 
   const refreshUsage = useCallback(async (signal?: AbortSignal): Promise<void> => {
     const request = ++usageRequest.current;
@@ -92,6 +182,15 @@ export function useChat() {
     return () => window.clearTimeout(timeout);
   }, [updatedMusicFields]);
 
+  function finishOperation(result: { operationId?: string } | Error): void {
+    if ("operationId" in result && typeof result.operationId === "string") {
+      const signal = requests.current.signal;
+      void acknowledgeOperation(result.operationId, signal).catch((error: unknown) => {
+        if (!signal.aborted) console.error(error);
+      });
+    }
+  }
+
   async function send(text: string): Promise<void> {
     const message = text.trim();
     if (!message || busy.current) return;
@@ -99,6 +198,7 @@ export function useChat() {
     busy.current = true;
     const attachment = pendingAudio;
     if (attachment) {
+      sendingAudio.current = attachment;
       setPendingAudio(undefined);
       setUploadError(undefined);
     }
@@ -107,10 +207,17 @@ export function useChat() {
     setMessages((previous) => [...previous, { role: "user", text: message, audio: attachment }]);
 
     if (attachment) currentAudio.current = attachment.url;
-    const result = await sendMessage(message, currentAudio.current, musicPrompt, setActivity).catch(
-      (error: unknown) => ({ reply: `Error: ${errorMessage(error)}`, failed: true }),
+    const id = crypto.randomUUID();
+    pendingChatId.current = id;
+    saveDraft(userId, { musicPrompt, musicModel, pendingAudio: attachment, pendingSongId,
+      currentAudio: currentAudio.current, pendingChatId: id });
+    const result = await sendMessage(message, currentAudio.current, musicPrompt, setActivity, requests.current.signal, id).catch(
+      (error: unknown) => ({ reply: `Error: ${errorMessage(error)}`, failed: true, operationId: error instanceof OperationError ? error.operationId : undefined }),
     );
 
+    if (requests.current.signal.aborted) return;
+    pendingChatId.current = undefined;
+    sendingAudio.current = undefined;
     if (attachment && "failed" in result) setPendingAudio(attachment);
     if ("musicPrompt" in result && result.musicPrompt) {
       const nextPrompt = result.musicPrompt;
@@ -121,6 +228,7 @@ export function useChat() {
       setMusicError(undefined);
     }
     setMessages((previous) => [...previous, { role: "agent", text: result.reply }]);
+    finishOperation(result);
     await refreshContext();
     busy.current = false;
     setActivity(undefined);
@@ -165,8 +273,9 @@ export function useChat() {
 
     busy.current = true;
     setActivity(pendingSongId ? 'saving track...' : 'generating track...');
-    const result = await (pendingSongId ? retrySongStorage(pendingSongId) : generateMusic(musicPrompt, musicModel))
+    const result = await (pendingSongId ? retrySongStorage(pendingSongId) : generateMusic(musicPrompt, musicModel, setActivity, requests.current.signal))
       .catch((error: unknown) => error instanceof Error ? error : new Error(errorMessage(error)));
+    if (requests.current.signal.aborted) return;
     if (result instanceof Error) {
       if (result instanceof SongStorageError) setPendingSongId(result.songId);
       setMusicError(result.message);
@@ -176,6 +285,7 @@ export function useChat() {
       setMusicError(undefined);
       setMessages((previous) => [...previous, { role: "agent", text: "your track is ready.", track: result }]);
     }
+    finishOperation(result);
     busy.current = false;
     setActivity(undefined);
   }

@@ -15,7 +15,7 @@ interface AuthenticatedAppProps {
 const linkClass = "rounded-lg px-3 py-2 text-sm hover:bg-white/10 aria-[current=page]:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400";
 
 export function AuthenticatedApp({ user, onLogout, signingOut, authError }: AuthenticatedAppProps) {
-  const chat = useChat();
+  const chat = useChat(user.id);
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-7xl flex-col px-4 py-4 font-sans text-zinc-100 sm:px-6 sm:py-6 lg:h-dvh">

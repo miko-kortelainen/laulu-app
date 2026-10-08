@@ -22,6 +22,7 @@ A simple full-stack AI chatbot built with:
 │   │   ├── auth.ts        # Supabase access token verification
 │   │   ├── database.ts    # Server-only Supabase database client
 │   │   ├── quotas.ts      # Durable paid-operation allowances and storage reservations
+│   │   ├── operations.ts  # Background requests, results, and restart recovery
 │   │   ├── user-files.ts  # Per-user local audio directories
 │   │   ├── model.ts       # Shared Nebius configuration and model setup
 │   │   ├── gateway.ts     # Required Cloudflare AI Gateway BYOK routing
@@ -187,7 +188,7 @@ Successful storage deletes the local recovery audio and metadata.
 Local processing downloads each owned song into a separate temporary file.
 The backend checks its size and renames the completed download before use. It deletes the file after processing, including failure.
 The current implementation needs one backend instance because its request locks and recovery files are local.
-Recovery retention, song deletion, pagination, and a saved-song interface are separate work.
+Unfinished saves expire after seven days. Saved-song pagination remains separate work.
 Existing owned local songs keep their private playback and processing URLs. They are not imported or included in the saved-song list automatically.
 Account deletion requires song cleanup first. The ownership foreign key prevents database rows from becoming ownerless.
 
@@ -196,11 +197,64 @@ These checks mock Supabase, R2, and model responses. They make no paid calls.
 The database policy checks are in `supabase/tests/songs.sql`.
 After local Supabase setup and migration, run `npx supabase test db supabase/tests/songs.sql --local`.
 
+### Recover interrupted requests
+
+Apply [the operation recovery migration](supabase/migrations/20261008150439_recover_operations.sql) after the existing quota migrations.
+Keep one backend instance and mount `backend/generated-music/` on persistent storage.
+The volume contains unfinished audio, metadata, and temporary operation result journals.
+Database operation records have RLS enabled. Only the backend service role can read or change them.
+See the [Supabase RLS guide](https://supabase.com/docs/guides/database/postgres/row-level-security).
+
+The frontend sends a UUID `operationId` with each confirmed generation or chat request.
+The backend returns HTTP 202 with `{ operation }` before the paid work completes.
+Repeated submissions with the same ID cannot start another provider request.
+Legacy callers without `operationId` retain their synchronous response format.
+
+| Endpoint | Result |
+| --- | --- |
+| `GET /api/operations` | The owner's unacknowledged operations, up to 100 |
+| `GET /api/operations/<id>` | Current activity, final result, or failure |
+| `POST /api/operations/<id>/acknowledge` | Mark a delivered final result as acknowledged |
+
+The browser polls progress. Discovery and polling retry temporary connection failures.
+A reload restores unfinished requests and unacknowledged results.
+Acknowledgement retries do not block other results.
+Recovered chat updates apply only to the draft linked to that request. Older results preserve later edits and attachments.
+Music fields, model selection, and attachment references stay in session storage, separate for each account.
+This storage preserves the draft in the same browser tab. It does not store chat history or audio bytes.
+Expired session uploads require another upload after a backend restart.
+
+The backend holds account locks until server work ends, including deletion after a browser disconnect.
+Audio analysis runs inside the recoverable chat operation. Logout defers upload deletion until active work ends.
+Completed results get an atomic local journal before their database update.
+Generation writes its local MP3 and metadata before the remote save attempt.
+If both disk and remote storage fail, existing memory recovery requires the backend to keep running.
+
+Startup and hourly maintenance reconcile unfinished operations, up to 100 per pass.
+Saved metadata or complete recovery audio restores a generated track without a new model call.
+A journaled confirmed failure restores personal allowance exactly once.
+If no result proves the provider outcome, the operation becomes `unknown` and keeps its paid allowance charge.
+Uncertain operations never cause automatic paid retries. A backend restart can end an unfinished chat without a result.
+
+Cleanup removes at most 100 expired recovery entries per pass and skips active accounts.
+Unfinished songs and final operation records expire after seven days.
+Partial writes and abandoned processing caches expire after one hour.
+Cleanup releases abandoned storage capacity after seven days, while personal and global usage charges remain unchanged.
+Zero-capacity reservation records expire after 30 days, after their operation records expire.
+Ready saved songs are retained until the owner deletes them.
+
+Offline recovery checks:
+
+- `cd backend` then `node --import tsx --test tests/operations.test.ts`.
+- `node frontend/e2e/run.mjs operations` from the repository root.
+- `npm --prefix backend run test:quotas:db` with a disposable local database and `QUOTA_TEST_DATABASE_URL`.
+
 ### Configure usage quotas
 
 1. Open the same Supabase project, then select **SQL Editor → New query**.
 2. Run [the quota migration](supabase/migrations/20261006150319_usage_quotas.sql) after the songs migration, then run [the global usage migration](supabase/migrations/20261007130543_global_usage_limits.sql).
    Then run [the beta allowance migration](supabase/migrations/20261008141601_beta_allowances.sql) with the updated backend.
+   Run [the operation recovery migration](supabase/migrations/20261008150439_recover_operations.sql) before starting this backend version.
 3. Keep `SUPABASE_SECRET_KEY` in `backend/.env`. Chat and analysis now require this server-only key too.
 4. Add these allowance defaults to `backend/.env`, or use the same built-in values:
 
@@ -264,7 +318,8 @@ Deletion releases bytes when the backend deletes metadata after object and local
 If a track exceeds `MAX_GENERATED_SONG_BYTES`, its local recovery copy remains available.
 Increase that limit before storage retry. The exact track must still fit the user's storage allowance.
 
-Interrupted generations can leave storage reservations after a restart. These reservations do not expire automatically.
+Interrupted generations can leave storage reservations after a restart. Abandoned storage capacity expires after seven days.
+Cleanup preserves uncertain personal usage and global attempts. It never refunds a generation because its browser disconnected.
 To find them, inspect `usage_reservations` rows with `storage_bytes > 0` in the SQL Editor.
 Before release, make sure that the operation stopped and that no song metadata, R2 object, or local recovery copy needs this capacity.
 Then run this server-administrator query with the actual owner and reservation IDs:
@@ -553,7 +608,9 @@ Cleanup runs at startup, hourly, and before new writes.
 Active sessions and analysis operations protect their input files until they finish.
 
 The disk policy covers `uploaded-audio/` only.
-Generated-song recovery files and temporary analysis files remain outside this limit.
+Generated-song recovery files remain outside this limit.
+Temporary analysis conversion uses protected `.analysis-*` directories inside `uploaded-audio/`.
+Normal completion deletes these directories. Startup cleanup deletes conversion files from interrupted sessions.
 One backend process must own the upload directory. Concurrent processes require a shared disk lock.
 The limits are defined in `backend/src/local-audio.ts`.
 

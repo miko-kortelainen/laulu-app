@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -64,7 +63,10 @@ export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): 
     if ((extension === '.mp3' || extension === '.wav') && file.size > 0 && file.size < 7_499_000) {
       return { data: (await readFile(source)).toString('base64'), format: extension === '.mp3' ? 'mp3' : 'wav' };
     }
-    const directory = await mkdtemp(path.join(tmpdir(), 'music-analysis-'));
+    const temporaryRoot = userDirectory(audioDirectory, userId);
+    await mkdir(temporaryRoot, { recursive: true });
+    const directory = await mkdtemp(path.join(temporaryRoot, '.analysis-'));
+    const releaseTemporary = retainLocalAudio(directory);
     try {
       const output = path.join(directory, 'analysis.mp3');
       await runProcessor('prepare_analysis.py', [source, output], 60_000);
@@ -72,6 +74,7 @@ export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): 
       if (!data || data.length + 13 >= 10_000_000) throw new Error('audio is too large to analyze. try a shorter track.');
       return { data, format: 'mp3' };
     } finally {
+      releaseTemporary();
       await rm(directory, { recursive: true, force: true });
     }
   } finally {

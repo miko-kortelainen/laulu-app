@@ -230,3 +230,49 @@ test('global limits serialize different accounts and survive account deletion an
     await query(`delete from auth.users where id in (${users.map((id) => `'${id}'`).join(',')});`);
   }
 });
+
+test('operation records are server-only and bounded cleanup preserves unknown charges and active capacity', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a disposable, migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  const owner = randomUUID();
+  const unknown = randomUUID();
+  const running = randomUUID();
+  const settings = JSON.stringify({ chat_daily: 20, analysis_daily: 10, generation_daily: 5, storage_bytes: 1000 });
+  await query(`insert into auth.users(id) values ('${owner}');`);
+  try {
+    for (const id of [unknown, running]) {
+      const reservation = await query(`set role service_role; select public.reserve_usage('${owner}', 'generation', '${id}', 100, '${settings}', '${globalLimits}');`).then(JSON.parse);
+      assert.equal(reservation.allowed, true);
+    }
+    const before = await query(`set role service_role; select public.get_usage('${owner}', '${settings}');`).then(JSON.parse);
+    const globalBefore = await query("select used from public.global_usage where operation = 'generation';");
+    await query(`insert into public.operations(id, owner_id, kind, state, created_at) values
+      ('${unknown}', '${owner}', 'music', 'unknown', now() - interval '8 days'),
+      ('${running}', '${owner}', 'music', 'running', now() - interval '8 days');
+      update public.usage_reservations set created_at = now() - interval '8 days' where user_id = '${owner}';`);
+    for (const role of ['anon', 'authenticated']) {
+      for (const privilege of ['select', 'insert', 'update', 'delete']) {
+        assert.equal(await query(`select has_table_privilege('${role}', 'public.operations', '${privilege}');`), 'f');
+      }
+      await assert.rejects(query(`set role ${role}; select * from public.operations;`), /permission denied/);
+      await assert.rejects(query(`set role ${role}; select public.cleanup_operations();`), /permission denied/);
+    }
+    assert.equal(await query("select relrowsecurity from pg_class where oid = 'public.operations'::regclass;"), 't');
+    await query('set role service_role; select public.cleanup_operations(); select public.cleanup_operations();');
+    const after = await query(`set role service_role; select public.get_usage('${owner}', '${settings}');`).then(JSON.parse);
+    assert.equal(after.generation.used, before.generation.used, 'unknown paid usage is never refunded by age');
+    assert.equal(after.storage.reserved, 100, 'active work keeps its capacity; abandoned capacity is released');
+    assert.equal(await query("select used from public.global_usage where operation = 'generation';"), globalBefore);
+    assert.equal(await query(`select generation_status from public.usage_reservations where id = '${unknown}';`), 'reserved');
+    assert.equal(await query(`select count(*) from public.operations where id = '${running}';`), '1');
+    await query(`insert into public.operations(id, owner_id, kind, state, created_at)
+      select gen_random_uuid(), '${owner}', 'chat', 'failed', now() - interval '8 days' from generate_series(1, 105);`);
+    await query('set role service_role; select public.cleanup_operations();');
+    assert.equal(await query(`select count(*) from public.operations where owner_id = '${owner}' and state = 'failed';`), '5', 'one pass deletes at most 100 records');
+  } finally {
+    await query(`delete from auth.users where id = '${owner}';`);
+  }
+});
