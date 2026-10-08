@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { authenticatedFetch } from "@/lib/api";
 
 export type AuthView = "login" | "register" | "reset" | "update";
 
@@ -29,6 +30,8 @@ export async function resendConfirmation(email: string, captchaToken?: string): 
 
 export async function signOut(): Promise<void> {
   if (!supabase) throw new Error("authentication is not configured.");
+  const response = await authenticatedFetch("/api/session/end", { method: "POST" });
+  if (response.status !== 204) throw new Error("could not delete session uploads. try logging out again.");
   const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) throw error;
 }

@@ -26,6 +26,10 @@ wav.write("data", 36);
 wav.writeUInt32LE(16000, 40);
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, "http://localhost").pathname;
+  if (req.method === "POST" && pathname === "/api/session/end") {
+    res.writeHead(204);
+    return res.end();
+  }
   if (req.method === "GET" && /^\/api\/(audio|music|stems|cleaned)\/.+\.(wav|mp3)$/.test(pathname)) {
     res.setHeader("Content-Type", "audio/wav");
     return res.end(wav);

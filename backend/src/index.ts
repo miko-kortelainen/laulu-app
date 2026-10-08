@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
-import { getChatContext, getOrCreateAgent, resetAgentSession } from './agent.js';
+import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from './agent.js';
 import { getModelConfig } from './model.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { audioDirectory, audioPath, cleanedDirectory, stemsDirectory, uploadAudio } from './audio.js';
@@ -9,6 +9,7 @@ import { requireAuth } from './auth.js';
 import { userDirectory } from './user-files.js';
 import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
 import { getUsage, QuotaError, reserveUsage } from './quotas.js';
+import { cleanupLocalAudio, LocalAudioLimitError } from './local-audio.js';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -17,6 +18,18 @@ app.use(cors());
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api', requireAuth);
 app.use(express.json());
+const busySessions = new Set<string>();
+app.use(['/api/audio', '/api/chat', '/api/music', '/api/reset', '/api/songs'], (req, res, next) => {
+  if (req.method !== 'POST' && req.method !== 'DELETE') return next();
+  const sessionId: string = res.locals.userId;
+  if (busySessions.has(sessionId)) {
+    res.status(409).json({ error: 'wait for the current action to finish.' });
+    return;
+  }
+  busySessions.add(sessionId);
+  res.once('finish', () => busySessions.delete(sessionId));
+  next();
+});
 for (const [route, directory] of [
   ['/api/audio', audioDirectory],
   ['/api/stems', stemsDirectory], ['/api/cleaned', cleanedDirectory],
@@ -72,28 +85,28 @@ app.get('/api/songs/recovery', async (_req, res) => {
   if (songIds) res.set('Cache-Control', 'private, no-store').json({ songIds });
 });
 
-app.post('/api/audio', express.raw({ type: 'application/octet-stream', limit: '50mb' }), async (req, res) => {
-  const audio = await uploadAudio(req.query.name, req.body, res.locals.userId).catch((error: unknown) => {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'audio upload failed.' });
-  });
-  if (audio) res.json({ audio });
+const parseAudioUpload = express.raw({ type: 'application/octet-stream', limit: '50mb' });
+app.post('/api/audio', async (req, res) => {
+  const release = retainUploadSession(res.locals.userId);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      parseAudioUpload(req, res, (error: unknown) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    const audio = await uploadAudio(req.query.name, req.body, res.locals.userId).catch((error: unknown) => {
+      res.status(error instanceof LocalAudioLimitError ? 507 : 400).json({ error: error instanceof Error ? error.message : 'audio upload failed.' });
+    });
+    if (audio) res.json({ audio });
+  } finally {
+    busySessions.delete(res.locals.userId);
+    release();
+  }
 });
 app.use('/api/audio', (error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   const oversized = error && typeof error === 'object' && 'type' in error && error.type === 'entity.too.large';
   res.status(oversized ? 413 : 400).json({ error: oversized ? 'audio upload must be 50 MB or smaller.' : 'audio upload failed.' });
-});
-
-const busySessions = new Set<string>();
-app.use(['/api/chat', '/api/music', '/api/reset', '/api/songs'], (req, res, next) => {
-  if (req.method !== 'POST' && req.method !== 'DELETE') return next();
-  const sessionId: string = res.locals.userId;
-  if (busySessions.has(sessionId)) {
-    res.status(409).json({ error: 'wait for the current action to finish.' });
-    return;
-  }
-  busySessions.add(sessionId);
-  res.once('finish', () => busySessions.delete(sessionId));
-  next();
 });
 
 app.delete('/api/songs/:id', async (req, res) => {
@@ -206,16 +219,30 @@ app.post('/api/music', async (req: Request, res: Response) => {
 });
 
 // Reset endpoint
-app.post('/api/reset', (req: Request, res: Response) => {
-  const sessionId: string = res.locals.userId;
-  resetAgentSession(sessionId);
-  busySessions.delete(sessionId);
-  res.json({ status: 'ok' });
+app.post('/api/session/end', async (_req, res) => {
+  await endUploadSession(res.locals.userId).catch((error: unknown) => {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'session cleanup failed. try again.' });
+  });
+  if (!res.headersSent) res.status(204).end();
 });
 
-if (process.env.NODE_ENV !== 'test') app.listen(PORT, () => {
-  const config = getModelConfig();
-  console.log(`Backend running on http://localhost:${PORT}`);
-  console.log(`Nebius Model: ${config.model}`);
-  console.log(`AI Gateway: ${config.baseURL}`);
+app.post('/api/reset', async (req: Request, res: Response) => {
+  const sessionId: string = res.locals.userId;
+  await resetAgentSession(sessionId).catch((error: unknown) => {
+    res.status(500).json({ error: error instanceof Error ? error.message : 'session cleanup failed. try again.' });
+  });
+  busySessions.delete(sessionId);
+  if (!res.headersSent) res.json({ status: 'ok' });
 });
+
+if (process.env.NODE_ENV !== 'test') {
+  const cleanup = () => cleanupLocalAudio().catch((error: unknown) => console.error('local audio cleanup failed:', error));
+  void cleanup();
+  setInterval(cleanup, 60 * 60_000).unref();
+  app.listen(PORT, () => {
+    const config = getModelConfig();
+    console.log(`Backend running on http://localhost:${PORT}`);
+    console.log(`Nebius Model: ${config.model}`);
+    console.log(`AI Gateway: ${config.baseURL}`);
+  });
+}

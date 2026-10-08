@@ -1,6 +1,6 @@
 # Authentication and audio storage plan
 
-Status: authentication, generated-song R2 storage, saved-song UI, song deletion, and durable usage quotas implemented. Other audio storage remains planned.
+Status: authentication, generated-song R2 storage, saved-song UI, song deletion, durable usage quotas, and local audio retention implemented.
 
 ## Implemented generated-song storage
 
@@ -15,8 +15,11 @@ Completed saves delete their recovery files. Local processing uses separate temp
 The saved-song page supports playback, downloads, and confirmed deletion through `DELETE /api/songs/<song-id>`.
 Deletion verifies ownership and removes the R2 object and local recovery copies before it deletes metadata.
 If cleanup fails, metadata remains available for another deletion attempt. A deleted R2 object can make playback unavailable during this retry.
-Automatic retention and abandoned-save cleanup remain planned.
-Uploads, stems, and cleaned audio remain local. The broader sections below describe the remaining target architecture.
+Generated-song retention and abandoned-save cleanup remain planned.
+Uploads, stems, and cleaned audio remain local, with a shared 1 GiB limit.
+Uploads end with their session. Stems and cleaned audio have seven-day retention.
+Session reset, logout, idle expiration, and backend restart delete uploads. Active jobs complete before logout cleanup deletes their input.
+The broader sections below describe the remaining target architecture.
 
 ## Authentication phase
 
@@ -320,7 +323,8 @@ R2 stores audio but does not run these processors.
 | --- | --- |
 | `POST /api/chat` | Accept an optional `audioAssetId` and operate on the authenticated conversation |
 | `GET /api/context` | Return context for the authenticated conversation |
-| `POST /api/reset` | Reset only the authenticated conversation |
+| `POST /api/reset` | Reset the authenticated conversation and delete its session uploads |
+| `POST /api/session/end` | Delete the authenticated user's uploads at logout, after active jobs finish |
 | `POST /api/audio` | Inspect and persist an owned upload |
 | `POST /api/music` | Persist owned music after explicit generation confirmation |
 | `GET /api/assets` | Return a bounded, paginated list of the user's ready assets |

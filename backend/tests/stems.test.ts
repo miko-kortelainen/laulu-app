@@ -8,6 +8,7 @@ import type { ToolContext } from '@strands-agents/sdk';
 import { audioDirectory, audioPath as userAudioPath, cleanedDirectory, stemsDirectory, uploadAudio as uploadUserAudio } from '../src/audio.js';
 import { separateStemsTool } from '../src/stems.js';
 import { removeEchoTool } from '../src/dereverb.js';
+import { resetAgentSession, retainUploadSession } from '../src/agent.js';
 
 const userId = '10000000-0000-4000-8000-000000000003';
 const audioPath = (url: unknown) => userAudioPath(url, userId);
@@ -43,6 +44,7 @@ test('local audio tools validate uploads, return playable stems and cleaned audi
 
   const input = sampleAudio();
   const audio = await uploadAudio('my voice.wav', input);
+  const finishSession = retainUploadSession(userId);
   let outputDirectory: string | undefined;
   const cleanedOutputs: string[] = [];
   try {
@@ -93,6 +95,8 @@ assert peak == 0 or 0.7 - 1e-6 <= peak <= 0.9 + 1e-6
     assert.deepEqual(invocationState.stems, result);
     assert.deepEqual(await readFile(audioPath(audio.url)), input);
   } finally {
+    finishSession();
+    await resetAgentSession(userId);
     await rm(audioPath(audio.url), { force: true });
     for (const directory of cleanedOutputs) await rm(directory, { recursive: true, force: true });
     if (outputDirectory) await rm(outputDirectory, { recursive: true, force: true });

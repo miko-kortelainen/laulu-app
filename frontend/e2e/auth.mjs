@@ -87,8 +87,21 @@ try {
   await run("wait", "--text", "0 / 40 messages");
   assert.equal(await run("eval", "location.hash"), '""');
   await run("network", "route", `${authOrigin}/auth/v1/logout*`, "--body", "{}");
+  await run("eval", `window.sessionEndRequests = []; window.failSessionEnd = true; const beforeSessionEnd = window.fetch;
+    window.fetch = (input, options) => {
+      if (input === '/api/session/end') {
+        window.sessionEndRequests.push({ method: options.method, token: new Headers(options.headers).get('authorization') });
+        if (window.failSessionEnd) return Promise.resolve(new Response(null, { status: 500 }));
+      }
+      return beforeSessionEnd(input, options);
+    };`);
+  await run("find", "role", "button", "click", "--name", "log out", "--exact");
+  await run("wait", "--text", "could not delete session uploads. try logging out again.");
+  assert.equal(await run("eval", "Boolean(document.querySelector('section[aria-label=chat]'))"), "true", "cleanup failure keeps the user signed in for retry");
+  await run("eval", "window.failSessionEnd = false");
   await run("find", "role", "button", "click", "--name", "log out", "--exact");
   await run("wait", "--text", "log in");
+  assert.deepEqual(JSON.parse(await run("eval", "window.sessionEndRequests")), Array(2).fill({ method: "POST", token: `Bearer ${first.access_token}` }));
 
   // Failed login preserves form state, followed by successful recovery.
   await run("eval", `window.authFetch = window.fetch; window.failLogin = true;

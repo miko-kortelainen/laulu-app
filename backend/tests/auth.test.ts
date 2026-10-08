@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { once } from 'node:events';
+import { request } from 'node:http';
 import test from 'node:test';
 import { userDirectory } from '../src/user-files.js';
 import { configureTestQuotas } from './quota-fixture.js';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 
-test('verified users own their API session and local media', async () => {
+test('verified users own their API session and local media', async (t) => {
   process.env.NODE_ENV = 'test';
   process.env.LANGSMITH_TRACING = 'false';
   process.env.SUPABASE_URL = 'https://offline-auth.supabase.co';
@@ -29,14 +32,16 @@ test('verified users own their API session and local media', async () => {
     return originalFetch(input, options);
   };
   const { app } = await import('../src/index.js');
-  const { getOrCreateAgent, getChatContext, resetAgentSession } = await import('../src/agent.js');
+  const { getOrCreateAgent, getChatContext, resetAgentSession, retainUploadSession } = await import('../src/agent.js');
   const { audioDirectory, audioPath, prepareAnalysisAudio } = await import('../src/audio.js');
   const userA = randomUUID();
   const userB = randomUUID();
   const filename = `${randomUUID()}.wav`;
   const directory = userDirectory(audioDirectory, userA);
+  const finishUpload = retainUploadSession(userA);
   await mkdir(directory, { recursive: true });
   await writeFile(`${directory}/${filename}`, Buffer.from('private fixture'));
+  finishUpload();
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
@@ -57,7 +62,7 @@ test('verified users own their API session and local media', async () => {
 
   try {
     assert.deepEqual(await (await fetch(`${url}/api/health`)).json(), { status: 'ok' });
-    for (const endpoint of ['context', 'usage', 'chat', 'music', 'reset', 'audio', `audio/${filename}`, 'stems/fixture', 'cleaned/fixture']) {
+    for (const endpoint of ['context', 'usage', 'chat', 'music', 'reset', 'session/end', 'audio', `audio/${filename}`, 'stems/fixture', 'cleaned/fixture']) {
       assert.equal((await fetch(`${url}/api/${endpoint}`)).status, 401);
     }
     assert.equal(authRequests, 0);
@@ -74,6 +79,11 @@ test('verified users own their API session and local media', async () => {
     agentA.messages.push({ role: 'user', content: [{ type: 'textBlock', text: 'private message' }] });
     assert.deepEqual(await (await fetch(`${url}/api/context`, { headers: headersA })).json(), { messages: 1, limit: 40 });
     assert.deepEqual(await (await fetch(`${url}/api/context`, { headers: headersB })).json(), { messages: 0, limit: 40 });
+    const ownFile = await fetch(`${url}/api/audio/${filename}`, { headers: headersA });
+    assert.equal(ownFile.status, 200);
+    assert.equal(await ownFile.text(), 'private fixture');
+    assert.equal(ownFile.headers.get('cache-control'), 'private, no-store');
+    assert.equal((await fetch(`${url}/api/audio/${filename}`, { headers: headersB })).status, 404);
     const reset = await fetch(`${url}/api/reset`, { method: 'POST', headers: headersB, body: JSON.stringify({ sessionId: userA }) });
     assert.equal(reset.status, 200);
     assert.equal(getChatContext(userA).messages, 1);
@@ -111,28 +121,90 @@ test('verified users own their API session and local media', async () => {
     const pendingChat = fetch(`${url}/api/chat`, { method: 'POST', headers: headersA, body: JSON.stringify({ message: 'pending' }) });
     await started;
     assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA })).status, 409);
+    assert.equal((await fetch(`${url}/api/audio?name=track.wav`, { method: 'POST', headers: { ...headersA, 'Content-Type': 'application/octet-stream' }, body: 'audio' })).status, 409);
     assert.equal((await fetch(`${url}/api/songs/${randomUUID()}`, { method: 'DELETE', headers: headersA })).status, 409);
     assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersB })).status, 200);
     cancel(new Error('offline request cancellation'));
     assert.equal((await pendingChat).status, 500);
     const usageBeforeReset = await (await fetch(`${url}/api/usage?userId=${userB}`, { headers: headersA })).json();
     assert.equal(usageBeforeReset.chat.used, 1, 'failed paid requests consume one allowance');
+    const originalRm = fs.rm;
+    const failure = t.mock.method(fs, 'rm', async (...args: Parameters<typeof fs.rm>) => {
+      if (String(args[0]) === `${directory}/${filename}`) throw new Error('offline upload cleanup failure');
+      return originalRm(...args);
+    });
+    syncBuiltinESMExports();
+    const failedReset = await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA });
+    assert.equal(failedReset.status, 500);
+    assert.match((await failedReset.json()).error, /upload cleanup failure/);
+    assert.equal(getChatContext(userA).messages, 1, 'failed cleanup preserves the conversation for retry');
+    assert.equal(await fs.readFile(`${directory}/${filename}`, 'utf8'), 'private fixture');
+    failure.mock.restore();
+    syncBuiltinESMExports();
     assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA })).status, 200);
     assert.deepEqual(await (await fetch(`${url}/api/usage`, { headers: headersA })).json(), usageBeforeReset, 'conversation reset does not reset usage');
     assert.equal((await (await fetch(`${url}/api/usage`, { headers: headersB })).json()).chat.used, 0);
 
-    const ownFile = await fetch(`${url}/api/audio/${filename}`, { headers: headersA });
-    assert.equal(ownFile.status, 200);
-    assert.equal(await ownFile.text(), 'private fixture');
-    assert.equal(ownFile.headers.get('cache-control'), 'private, no-store');
+    assert.equal((await fetch(`${url}/api/audio/${filename}`, { headers: headersA })).status, 404, 'session reset deletes uploads before it succeeds');
     assert.equal((await fetch(`${url}/api/audio/${filename}`, { headers: headersB })).status, 404);
     assert.notEqual(audioPath(`/api/audio/${filename}`, userA), audioPath(`/api/audio/${filename}`, userB));
     await assert.rejects(prepareAnalysisAudio(`/api/audio/${filename}`, userB), /no longer exists/);
     assert.throws(() => audioPath(`/api/audio/${filename}`, '../../secrets'), /valid audio owner/);
     assert.throws(() => audioPath('/api/audio/../../.env', userA), /choose a generated track/);
+    const finishLogout = retainUploadSession(userA);
+    await mkdir(directory, { recursive: true });
+    await writeFile(`${directory}/${filename}`, 'logout fixture');
+    finishLogout();
+    assert.equal((await fetch(`${url}/api/session/end`, { method: 'POST', headers: headersB })).status, 204);
+    assert.equal(await fs.readFile(`${directory}/${filename}`, 'utf8'), 'logout fixture', 'logout cleanup is owner-scoped');
+    assert.equal((await fetch(`${url}/api/session/end`, { method: 'POST', headers: headersA })).status, 204);
+    assert.equal((await fetch(`${url}/api/audio/${filename}`, { headers: headersA })).status, 404);
+
+    for (const abort of [true, false]) {
+      const finishSession = retainUploadSession(userA);
+      await mkdir(directory, { recursive: true });
+      await writeFile(`${directory}/${filename}`, 'in-flight upload fixture');
+      finishSession();
+      const receiving = new Promise<void>((resolve) => {
+        server.once('request', (incoming) => incoming.once('data', () => resolve()));
+      });
+      const upload = request(`${url}/api/audio?name=invalid.exe`, {
+        method: 'POST',
+        headers: { ...headersA, 'Content-Type': 'application/octet-stream', 'Content-Length': '100' },
+      });
+      upload.on('error', (error: NodeJS.ErrnoException) => assert.equal(error.code, 'ECONNRESET'));
+      try {
+        upload.write('partial');
+        await receiving;
+        assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA })).status, 409);
+        assert.equal((await fetch(`${url}/api/session/end`, { method: 'POST', headers: headersA })).status, 204);
+        assert.equal(await fs.readFile(`${directory}/${filename}`, 'utf8'), 'in-flight upload fixture',
+          'logout preserves uploads while the request body is still arriving');
+        if (abort) {
+          upload.destroy();
+        } else {
+          const response = once(upload, 'response');
+          upload.end('x'.repeat(93));
+          const [reply] = await response;
+          assert.equal(reply.statusCode, 400);
+          reply.resume();
+        }
+        const deadline = Date.now() + 1000;
+        while (await fs.stat(directory).catch(() => undefined)) {
+          assert.ok(Date.now() < deadline, 'logout deletes uploads after the request ends or aborts');
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+        assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA })).status, 200,
+          'body failures release the request lock for the next action');
+      } finally {
+        upload.destroy();
+      }
+    }
   } finally {
-    resetAgentSession(userA);
-    resetAgentSession(userB);
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    await resetAgentSession(userA);
+    await resetAgentSession(userB);
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     globalThis.fetch = originalFetch;

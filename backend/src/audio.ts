@@ -7,10 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { localSongPath, musicDirectory } from './songs.js';
 import { userDirectory } from './user-files.js';
+import { audioDirectory, cleanedDirectory, reserveLocalAudio, retainLocalAudio, stemsDirectory } from './local-audio.js';
 
-export const audioDirectory = fileURLToPath(new URL('../uploaded-audio/', import.meta.url));
-export const stemsDirectory = fileURLToPath(new URL('../separated-audio/', import.meta.url));
-export const cleanedDirectory = fileURLToPath(new URL('../cleaned-audio/', import.meta.url));
+export { audioDirectory, cleanedDirectory, stemsDirectory } from './local-audio.js';
 const runtimeDirectory = fileURLToPath(new URL('../audio-processing/', import.meta.url));
 const runFile = promisify(execFile);
 const audioExtensions = new Set(['.mp3', '.wav', '.flac', '.ogg']);
@@ -64,6 +63,7 @@ async function runProcessor(script: string, args: string[], timeout: number): Pr
 
 export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): Promise<{ data: string; format: 'mp3' | 'wav' }> {
   const { filename: source, temporary } = await resolveAudioPath(audioUrl, userId);
+  const releaseSource = retainLocalAudio(source);
   try {
     const file = await stat(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
     const extension = path.extname(source);
@@ -82,6 +82,7 @@ export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): 
       await rm(directory, { recursive: true, force: true });
     }
   } finally {
+    releaseSource();
     if (temporary) await rm(source, { force: true }).catch((error: unknown) => console.error('could not clear song processing file:', error));
   }
 }
@@ -97,13 +98,18 @@ export async function uploadAudio(name: unknown, data: unknown, userId: unknown)
   const filename = `${randomUUID()}${path.extname(name).toLowerCase()}`;
   const directory = userDirectory(audioDirectory, userId);
   const source = path.join(directory, filename);
-  await mkdir(directory, { recursive: true });
-  await writeFile(source, data, { flag: 'wx' });
-  await runProcessor('audio.py', [source], 60_000).catch(async (error: unknown) => {
+  const release = await reserveLocalAudio(source, data.length);
+  try {
+    await mkdir(directory, { recursive: true });
+    await writeFile(source, data, { flag: 'wx' });
+    await runProcessor('audio.py', [source], 60_000);
+    return { url: `/api/audio/${filename}`, name: path.basename(name) };
+  } catch (error: unknown) {
     await rm(source, { force: true });
     throw error;
-  });
-  return { url: `/api/audio/${filename}`, name: path.basename(name) };
+  } finally {
+    await release();
+  }
 }
 
 // ponytail: one GPU job at a time; add a queue only when concurrent users need it.
@@ -116,19 +122,28 @@ export async function processAudio(audioUrl: unknown, operation: 'stems' | 'clea
   let pending: string | undefined;
   let source: string | undefined;
   let temporary = false;
+  let releaseSource: (() => void) | undefined;
+  let releaseOutput: (() => Promise<void>) | undefined;
 
   try {
     ({ filename: source, temporary } = await resolveAudioPath(audioUrl, userId));
+    releaseSource = retainLocalAudio(source);
     await access(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
     const directory = userDirectory(operation === 'stems' ? stemsDirectory : cleanedDirectory, userId);
-    await mkdir(directory, { recursive: true });
-    pending = await mkdtemp(path.join(directory, '.pending-'));
+    const id = randomUUID();
+    pending = path.join(directory, `.pending-${id}`);
+    // Maximum ten-minute stereo float WAV output, plus space for each WAV header.
+    const outputLimit = names.length * (600 * 44100 * 2 * 4 + 4096);
+    releaseOutput = await reserveLocalAudio(pending, outputLimit);
+    await mkdir(pending, { recursive: true });
     await runProcessor(operation === 'stems' ? 'separate.py' : 'dereverb.py', [source, pending], 20 * 60_000);
+    let outputBytes = 0;
     for (const stem of names) {
       const file = await stat(path.join(pending, `source_${stem}.wav`));
       if (!file.isFile() || file.size <= 44) throw new Error('audio processor did not return the expected WAV files.');
+      outputBytes += file.size;
     }
-    const id = randomUUID();
+    if (outputBytes > outputLimit) throw new Error('audio processor exceeded the reserved disk space.');
     await rename(pending, path.join(directory, id));
     pending = undefined;
     return `/api/${operation}/${id}`;
@@ -137,6 +152,8 @@ export async function processAudio(audioUrl: unknown, operation: 'stems' | 'clea
     try {
       if (pending) await rm(pending, { recursive: true, force: true });
     } finally {
+      await releaseOutput?.();
+      releaseSource?.();
       if (temporary && source) await rm(source, { force: true }).catch((error: unknown) => console.error('could not clear song processing file:', error));
     }
   }

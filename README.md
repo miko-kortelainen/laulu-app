@@ -96,8 +96,9 @@ Protected backend endpoints reject requests if server authentication is not conf
 Each user has a separate in-memory conversation and separate local audio directories.
 The backend deletes idle conversations after 30 minutes. Agent access renews this timeout, but context reads do not.
 Running agent requests pause the timeout. The timeout restarts when each request finishes or fails.
-After expiration, the next chat request starts a new conversation. Saved songs and local audio remain available.
+After expiration, the next chat request starts a new conversation. Saved songs remain available, but the backend deletes session uploads.
 Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
+Logout also deletes uploaded audio. If a job is active, the backend deletes its uploads when the job finishes.
 Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
 React Router serves chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.
 Navigation preserves the current conversation and music form.
@@ -576,7 +577,34 @@ Sources stay intact
 when separation fails. One audio processing job runs at a time, with a 20-minute
 timeout. CPU processing can be slow. Uploads are saved in `backend/uploaded-audio/`
 and completed stems in `backend/separated-audio/`; Git ignores both directories.
-The **new session** button resets chat and leaves audio files in place.
+The **new session** button resets chat and deletes uploaded audio for that session.
+
+Local uploads, stems, and cleaned files share a **1 GiB disk limit across all users**.
+The backend reserves space before each upload or processing job.
+Processing reserves the maximum output for ten minutes of stereo audio: approximately 404 MiB for stems or 202 MiB for cleaned audio.
+If space is unavailable, the operation fails and existing files stay intact.
+The upload endpoint returns HTTP 507 when the disk limit prevents an upload.
+
+Uploaded audio stays only for the current session, for analysis and playback.
+Starting a new session or logging out deletes those uploads.
+The existing 30-minute session timeout also deletes uploads from idle sessions.
+Uploads made before the first chat message use the same timeout. Active uploads and agent requests pause expiration.
+A backend restart ends all in-memory sessions. Startup cleanup deletes uploads left by those sessions.
+
+The backend deletes stems and cleaned files seven days after their last modification.
+Playback and analysis do not extend this period for stems and cleaned files.
+Cleanup runs at startup, hourly, and before new writes. Expired files can remain until the next cleanup.
+Active sessions protect their uploads. Active analysis sources, processing sources, and pending outputs stay protected until the operation ends.
+Cleanup also deletes expired files from abandoned jobs, legacy directories, and empty subdirectories.
+
+This policy covers `uploaded-audio/`, `separated-audio/`, and `cleaned-audio/` only.
+Generated-song recovery files, temporary analysis files, Python working files, and model files are outside this limit.
+Existing files can exceed the limit at deployment. The backend rejects new writes until retention frees sufficient space.
+One backend process must own these directories. Concurrent backend processes require a shared disk lock.
+The limits are defined in `backend/src/local-audio.ts`.
+
+Disk policy check: `cd backend` then `node --import tsx --test tests/local-audio.test.ts`.
+This check uses isolated temporary directories and makes no model calls.
 
 Local integration check: `npm --prefix backend run test:stems`. This requires
 the installed Python environment and model files. It separates synthetic audio

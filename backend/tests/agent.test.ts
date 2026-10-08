@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { Agent, AgentResult } from '@strands-agents/sdk';
-import { getChatContext, getOrCreateAgent, resetAgentSession } from '../src/agent.js';
+import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from '../src/agent.js';
+import { audioDirectory } from '../src/local-audio.js';
 import { configureTestGateway } from './gateway-environment.js';
 
 test('idle agents expire independently while active invocations remain available', async (t) => {
@@ -68,16 +72,63 @@ test('idle agents expire independently while active invocations remain available
 
     getOrCreateAgent(userA);
     t.mock.timers.tick(timeout / 2);
-    resetAgentSession(userA);
+    await resetAgentSession(userA);
     const replacement = getOrCreateAgent(userA);
     replacement.messages.push({ role: 'user', content: [] });
     t.mock.timers.tick(timeout / 2);
     assert.equal(getChatContext(userA).messages, 1, 'reset cancels the old expiration timer');
   } finally {
-    resetAgentSession(userA);
-    resetAgentSession(userB);
+    await resetAgentSession(userA);
+    await resetAgentSession(userB);
     restoreGateway();
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
     else process.env.LANGSMITH_TRACING = originalTracing;
+  }
+});
+
+test('uploads end with their session, including upload-only sessions and active uploads', async (t) => {
+  const userId = randomUUID();
+  const directory = path.join(audioDirectory, userId);
+  const filename = path.join(directory, 'fixture.wav');
+  const timeout = 30 * 60 * 1000;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.method(globalThis, 'fetch', async () => { throw new Error('no model calls are permitted'); });
+  try {
+    const finish = retainUploadSession(userId);
+    await mkdir(directory, { recursive: true });
+    await writeFile(filename, 'session audio');
+    t.mock.timers.tick(timeout * 2);
+    assert.equal(await readFile(filename, 'utf8'), 'session audio', 'active uploads pause session expiration');
+    await assert.rejects(resetAgentSession(userId), /current action/);
+    finish();
+    t.mock.timers.tick(timeout - 1);
+    assert.equal(await readFile(filename, 'utf8'), 'session audio');
+    t.mock.timers.tick(1);
+    // Wait for the asynchronous disk cleanup started by the expiration callback.
+    const deadline = Date.now() + 1000;
+    while (await stat(directory).catch(() => undefined)) {
+      assert.ok(Date.now() < deadline, 'expired session uploads must be deleted');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    const finishNext = retainUploadSession(userId);
+    await mkdir(directory, { recursive: true });
+    await writeFile(filename, 'next session');
+    finishNext();
+    await resetAgentSession(userId);
+    await assert.rejects(stat(directory), { code: 'ENOENT' });
+    const finishLogout = retainUploadSession(userId);
+    await mkdir(directory, { recursive: true });
+    await writeFile(filename, 'active upload');
+    await endUploadSession(userId);
+    assert.equal(await readFile(filename, 'utf8'), 'active upload', 'logout preserves files still in use');
+    finishLogout();
+    const logoutDeadline = Date.now() + 1000;
+    while (await stat(directory).catch(() => undefined)) {
+      assert.ok(Date.now() < logoutDeadline, 'logout deletes uploads as soon as the active job finishes');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  } finally {
+    await resetAgentSession(userId);
+    await rm(directory, { recursive: true, force: true });
   }
 });
