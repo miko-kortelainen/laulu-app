@@ -89,7 +89,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "6");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
-  run("find", "role", "link", "click", "--name", "profile", "--exact");
+  run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "member since");
   run("eval", 'window.usage.storage.remaining = 268435456');
   run("find", "role", "link", "click", "--name", "chat", "--exact");
@@ -236,7 +236,7 @@ try {
   run("wait", "--fn", 'Math.abs(document.querySelector("#app-navigation").getBoundingClientRect().left) < 1');
   assert.equal(run("eval", 'document.querySelector("#app-navigation").matches(":modal")'), "true");
   assert.equal(run("eval", 'document.querySelector("#app-navigation").contains(document.activeElement)'), "true");
-  run("find", "role", "link", "click", "--name", "profile", "--exact");
+  run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "member since");
   assert.equal(run("eval", 'document.querySelector("#app-navigation").checkVisibility()'), "false");
   assert.equal(run("eval", 'document.activeElement.getAttribute("aria-controls")'), '"app-navigation"');

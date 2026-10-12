@@ -107,6 +107,7 @@ After expiration, the next chat request starts a new conversation. Saved songs r
 Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
 Logout also deletes uploaded audio. If a job is active, the backend deletes its uploads when the job finishes.
 Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
+The profile link is at the bottom of the sidebar. Select **log out** on the profile page to sign out.
 React Router serves login at `/login`, registration at `/create-account`, chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.
 Navigation preserves the current conversation and music form.
 The chat input stays compact until the text wraps or contains a new line.

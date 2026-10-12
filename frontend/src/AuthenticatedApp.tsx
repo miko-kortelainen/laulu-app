@@ -7,6 +7,7 @@ import { useChat } from "@/features/chat/useChat";
 import { ProfilePage } from "@/features/profile/ProfilePage";
 import { SongsPage } from "@/features/songs/SongsPage";
 import { PrivacyPage } from "@/features/auth/PrivacyPage";
+import { cn } from "@/lib/utils";
 
 interface AuthenticatedAppProps {
   user: User;
@@ -44,24 +45,23 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
     };
   }, [navigationOpen]);
 
-  const navigation = <>
-    <nav aria-label="main navigation" className="flex flex-col gap-1">
+  const navigation = (
+    <nav aria-label="main navigation" className="flex flex-1 flex-col gap-1">
       <NavLink to="/" end className={linkClass} onClick={closeNavigation}>
         chat
       </NavLink>
       <NavLink to="/songs" className={linkClass} onClick={closeNavigation}>
         my songs
       </NavLink>
-      <NavLink to="/profile" className={linkClass} onClick={closeNavigation}>
-        profile
+      <NavLink to="/profile" className={cn(linkClass, "mt-auto gap-2")} onClick={closeNavigation}>
+        <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
+        </svg>
+        my profile
       </NavLink>
     </nav>
-    <button type="button" disabled={signingOut} onClick={() => void onLogout()}
-      className="mt-auto min-h-11 rounded-lg border border-white/10 px-3 py-1.5 text-xs hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
-      {signingOut ? "logging out..." : "log out"}
-    </button>
-    {authError && <p role="alert" className="text-xs text-red-300">{authError}</p>}
-  </>;
+  );
 
   return (
     <div className="w-full px-4 font-sans text-zinc-100 sm:px-6">
@@ -102,7 +102,7 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
           <Routes>
             <Route path="/" element={<ChatPage chat={chat} />} />
             <Route path="/songs" element={<SongsPage />} />
-            <Route path="/profile" element={<ProfilePage user={user} />} />
+            <Route path="/profile" element={<ProfilePage user={user} onLogout={onLogout} signingOut={signingOut} authError={authError} />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

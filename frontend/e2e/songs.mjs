@@ -189,6 +189,8 @@ try {
 
   // Switching accounts must clear the previous user's song list.
   await run("network", "route", `${authOrigin}/auth/v1/logout*`, "--body", "{}");
+  await run("find", "role", "link", "click", "--name", "my profile", "--exact");
+  await run("wait", "--text", "member since");
   await run("find", "role", "button", "click", "--name", "log out", "--exact");
   await run("wait", "--text", "log in");
   assert.equal(await run("eval", "document.querySelector('#songs-title')"), "null");
@@ -197,6 +199,8 @@ try {
   await run("fill", "#auth-email", second.user.email);
   await run("fill", "#auth-password", "offline-password");
   await run("click", 'button[type="submit"]');
+  await run("wait", "--text", "member since");
+  await run("find", "role", "link", "click", "--name", "my songs", "--exact");
   await run("wait", "--text", "no saved songs yet.");
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
   console.log("Songs E2E passed: authenticated navigation and reload, empty state, saved metadata, playback and download, deletion confirmation and failure recovery, retained chat form, failed refresh recovery, unsaved-song discovery and retry without generation, invalid-response rejection, narrow layout, and account switching.");

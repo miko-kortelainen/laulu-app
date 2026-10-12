@@ -136,9 +136,11 @@ try {
       }
       return beforeSessionEnd(input, options);
     };`);
+  await run("find", "role", "link", "click", "--name", "my profile", "--exact");
+  await run("wait", "--text", "member since");
   await run("find", "role", "button", "click", "--name", "log out", "--exact");
   await run("wait", "--text", "could not delete session uploads. try logging out again.");
-  assert.equal(await run("eval", "Boolean(document.querySelector('section[aria-label=chat]'))"), "true", "cleanup failure keeps the user signed in for retry");
+  assert.equal(await run("eval", "Boolean(document.querySelector('#profile-title'))"), "true", "cleanup failure keeps the user signed in for retry");
   await run("eval", "window.failSessionEnd = false");
   await run("find", "role", "button", "click", "--name", "log out", "--exact");
   await run("wait", "--text", "log in");
@@ -156,16 +158,18 @@ try {
   await run("eval", "window.failLogin = false");
   await run("network", "route", `${authOrigin}/auth/v1/token*`, "--body", JSON.stringify(first));
   await clickSubmit();
+  await run("wait", "--text", "member since");
+  await run("find", "role", "link", "click", "--name", "chat", "--exact");
   await run("wait", "--text", "0 / 40 messages");
   await run("eval", "location.reload()");
   await run("wait", "--text", "0 / 40 messages");
 
   // Profile routing uses the current user and preserves the song form on return.
   await run("fill", 'input[name="genre"]', "retained song style");
-  await run("find", "role", "link", "click", "--name", "profile", "--exact");
+  await run("find", "role", "link", "click", "--name", "my profile", "--exact");
   await run("wait", "--text", "member since");
   assert.equal(await run("eval", "location.pathname"), '"/profile"');
-  assert.equal(await run("eval", "document.querySelector('a[aria-current=page]').textContent.trim()"), '"profile"');
+  assert.equal(await run("eval", "document.querySelector('a[aria-current=page]').textContent.trim()"), '"my profile"');
   assert.deepEqual(JSON.parse(await run("eval", "Array.from(document.querySelectorAll('dd'), element => element.textContent)")), [
     first.user.email, "confirmed",
     JSON.parse(await run("eval", `new Date(${JSON.stringify(first.user.created_at)}).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })`)),
@@ -181,7 +185,7 @@ try {
   await run("find", "role", "link", "click", "--name", "back to app", "--exact");
   await run("wait", "--text", "0 / 40 messages");
   assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
-  await run("find", "role", "link", "click", "--name", "profile", "--exact");
+  await run("find", "role", "link", "click", "--name", "my profile", "--exact");
   await run("eval", "location.reload()");
   await run("wait", "--text", "member since");
   assert.equal(await run("eval", "location.pathname"), '"/profile"');
@@ -205,6 +209,8 @@ try {
   await run("click", 'button[aria-label="Send prompt"]');
   await run("wait", "--text", "thinking...");
   assert.equal(await run("eval", "window.requestHeaders[0]"), JSON.stringify(`Bearer ${first.access_token}`));
+  await run("find", "role", "link", "click", "--name", "my profile", "--exact");
+  await run("wait", "--text", "member since");
   await run("find", "role", "button", "click", "--name", "log out", "--exact");
   await run("wait", "--text", "log in");
   assert.equal(await run("eval", "window.pendingAborted"), "true");
@@ -214,7 +220,7 @@ try {
   await submit(second.user.email);
   await run("wait", "--text", second.user.email);
   assert.equal(await run("eval", 'document.body.innerText.includes("private pending message")'), "false");
-  await run("find", "role", "link", "click", "--name", "profile", "--exact");
+  await run("find", "role", "link", "click", "--name", "my profile", "--exact");
   await run("wait", "--text", "member since");
   assert.equal(await run("eval", "document.querySelector('dd').textContent"), JSON.stringify(second.user.email));
   assert.equal(await run("eval", "document.querySelectorAll('dd')[1].textContent"), '"not confirmed"');
@@ -255,8 +261,9 @@ try {
   await run("fill", "#auth-password", "new-offline-password");
   await run("click", 'button[type="submit"]');
   await run("wait", "--text", "0 / 40 messages");
-  await run("wait", "--fn", "document.querySelector('header button')?.disabled === false");
-  await run("click", "header button");
+  await run("find", "role", "link", "click", "--name", "my profile", "--exact");
+  await run("wait", "--fn", "document.querySelector('main section > button')?.disabled === false");
+  await run("find", "role", "button", "click", "--name", "log out", "--exact");
   await run("wait", "--text", "log in");
   await run("open", `${url}/#error=access_denied&error_description=link%20expired&type=recovery`);
   await run("wait", "--text", "link expired");
