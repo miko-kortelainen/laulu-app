@@ -15,7 +15,8 @@ insert into public.songs (id, owner_id, object_key, prompt, model, size_bytes, s
    'users/10000000-0000-4000-8000-000000000091/20000000-0000-4000-8000-000000000093.mp3', 'folk', 'lyria-3.5', 100, 'pending');
 
 select ok((select relrowsecurity from pg_class where oid = 'public.songs'::regclass), 'RLS is enabled');
-select set_config('request.jwt.claims', '{"sub":"10000000-0000-4000-8000-000000000091","role":"authenticated"}', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000091', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
 set local role authenticated;
 select results_eq('select id::text from public.songs',
   array['20000000-0000-4000-8000-000000000091'], 'owner sees only their ready song');
@@ -24,7 +25,8 @@ select throws_ok('update public.songs set owner_id = gen_random_uuid()', '42501'
 select throws_ok('delete from public.songs', '42501', 'permission denied for table songs', 'client cannot delete');
 reset role;
 
-select set_config('request.jwt.claims', '{"sub":"10000000-0000-4000-8000-000000000092","role":"authenticated"}', true);
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000092', true);
+select set_config('request.jwt.claim.role', 'authenticated', true);
 set local role authenticated;
 select results_eq('select id::text from public.songs',
   array['20000000-0000-4000-8000-000000000092'], 'second owner sees only their ready song');

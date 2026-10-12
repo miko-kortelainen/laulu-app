@@ -106,6 +106,8 @@ Running agent requests pause the timeout. The timeout restarts when each request
 After expiration, the next chat request starts a new conversation. Saved songs remain available, but the backend deletes session uploads.
 Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
 To create an account, select **i accept the terms of service**. The checkbox starts unchecked.
+Acceptance is recorded in the `terms_acceptances` table with the terms version and time once a session exists.
+Signed-in users without a recorded acceptance must accept before they can use the app.
 The terms link opens in a new tab so the registration form stays available.
 Account creation and confirmation open chat at `/`, instead of a previously requested page.
 Logout also deletes uploaded audio. If a job is active, the backend deletes its uploads when the job finishes.
@@ -129,7 +131,7 @@ Older prompts without field labels appear in an additional **original prompt** b
 On small screens, the details appear below the song list.
 The selected card contains playback controls. Each card has an MP3 download icon beside the trash icon.
 Audio loads when you select a song or download its MP3.
-Opened players stay loaded until you leave **my songs**. Closing a card pauses its audio and preserves its playback position.
+The three most recently opened players stay loaded until you leave **my songs**; older ones reload when reopened. Closing a card pauses its audio and preserves its playback position.
 The page reads songs for the signed-in user. It loads the list again when you return.
 If loading fails, select **try again**.
 Select the trash icon and confirm to permanently remove a saved song. If deletion fails, the song stays in the list for another attempt.

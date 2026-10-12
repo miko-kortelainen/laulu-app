@@ -16,6 +16,8 @@ export function authSession(id = "10000000-0000-4000-8000-000000000001", email =
 export async function seedAuth(run, url, session = authSession()) {
   await run("open", "about:blank");
   await run("network", "route", `${authOrigin}/auth/v1/user`, "--body", JSON.stringify(session.user));
+  // Matches TERMS_VERSION in frontend/src/lib/terms.ts; seeded users have already accepted.
+  await run("network", "route", "**/rest/v1/terms_acceptances*", "--body", '{"version":"2026-10-12"}');
   await run("open", url);
   await run("eval", `localStorage.setItem(${JSON.stringify(storageKey)}, ${JSON.stringify(JSON.stringify(session))}); location.reload();`);
 }

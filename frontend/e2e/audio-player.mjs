@@ -67,7 +67,11 @@ const server = createServer(async (request, response) => {
     return response.end(wav);
   }
   const path = pathname === "/" ? "index.html" : pathname.slice(1);
-  const file = await readFile(`${process.env.E2E_DIST}/${path}`).catch(() => undefined);
+  let file = await readFile(`${process.env.E2E_DIST}/${path}`).catch(() => undefined);
+  // SPA fallback, matching e2e/run.mjs, so routes like /login load the app.
+  if (!file && request.method === "GET" && !extname(pathname)) {
+    file = await readFile(`${process.env.E2E_DIST}/index.html`).catch(() => undefined);
+  }
   if (!file) {
     response.writeHead(404);
     return response.end();

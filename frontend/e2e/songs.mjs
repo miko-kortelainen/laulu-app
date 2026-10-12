@@ -15,7 +15,7 @@ const songFields = {
 };
 const songs = [
   { id: "11111111-1111-4111-8111-111111111111",
-    prompt: "genre / style: warm acoustic folk\n\nmood: hopeful\n\nkey: C major\n\nBPM: 90\n\nduration: 3 minutes\n\nvocals / language: soft English vocals\n\ninstruments: acoustic guitar\n\npiano\n\nproduction: warm room sound\nkey: keep this line\n\nLyrics:\nrequested lyrics",
+    prompt: "genre / style: warm acoustic folk\n\nmood: hopeful\n\nkey: C major\n\nBPM: 90\n\nduration: 3 minutes\n\nvocals / language: soft English vocals\n\ninstruments: acoustic guitar\n\npiano\n\nproduction: warm room sound\nkey: keep this line\n\nLyrics:\nrequested lyrics\n\nmood: not a field",
     lyrics: songFields.lyrics, model: "lyria-3.5", createdAt: "2026-10-06T10:00:00Z" },
   { id: "22222222-2222-4222-8222-222222222222", prompt: "instrumental piano", lyrics: "", model: "lyria-3.5", createdAt: "2026-10-05T10:00:00Z" },
 ].map((song) => ({ ...song, url: `/api/music/${song.id}.mp3`, sizeBytes: 16044 }));
@@ -62,7 +62,8 @@ try {
   await run("focus", "main li:first-child h2 button");
   await run("press", "Enter");
   await run("wait", "--fn", "document.querySelector('main li > div:not([hidden]) audio')?.duration > 0");
-  assert.equal(await run("eval", "Object.fromEntries(Array.from(document.querySelectorAll('#song-info input, #song-info textarea')).map(field => [field.name, field.value]))"), JSON.stringify({ musicModel: songs[0].model, ...songFields }));
+  assert.deepEqual(JSON.parse(await run("eval", "Object.fromEntries(Array.from(document.querySelectorAll('#song-info input, #song-info textarea')).map(field => [field.name, field.value]))")), { musicModel: songs[0].model, ...songFields });
+  assert.equal(await run("eval", "document.querySelector('#song-info [name=originalPrompt]')"), "null");
   assert.equal(await run("eval", "Array.from(document.querySelectorAll('#song-info input, #song-info textarea')).every(field => field.readOnly && !field.disabled)"), "true");
   assert.equal(await run("eval", "document.querySelector('#song-info').getBoundingClientRect().left >= document.querySelector('section[aria-labelledby=songs-title]').getBoundingClientRect().right"), "true");
   await run("find", "role", "button", "click", "--name", "play song 1", "--exact");
@@ -95,6 +96,7 @@ try {
   assert.equal(await run("eval", "document.querySelector('#song-info').getBoundingClientRect().top >= document.querySelector('section[aria-labelledby=songs-title]').getBoundingClientRect().bottom"), "true");
 
   await run("eval", "window.songFailure = true");
+  await run("set", "viewport", "1280", "900");
   await run("find", "role", "link", "click", "--name", "studio", "--exact");
   await run("find", "role", "link", "click", "--name", "my songs", "--exact");
   await run("wait", "--text", "could not load your songs.");
@@ -232,6 +234,16 @@ try {
   await run("find", "role", "link", "click", "--name", "my songs", "--exact");
   await run("wait", "--text", "no saved songs yet.");
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
+
+  // A signed-in user without a recorded acceptance must accept before reaching the app.
+  await run("network", "unroute", "**/rest/v1/terms_acceptances*");
+  await run("network", "route", "**/rest/v1/terms_acceptances*", "--body", "null");
+  await run("eval", "location.reload()");
+  await run("wait", "--text", "accept the terms of service to continue");
+  assert.equal(await run("eval", "document.querySelector('#songs-title')"), "null");
+  await run("check", "#terms-acceptance");
+  await run("find", "role", "button", "click", "--name", "accept and continue", "--exact");
+  await run("wait", "--text", "no saved songs yet.");
   console.log("Songs E2E passed: authenticated navigation and reload, empty state, saved metadata, read-only details sidebar and keyboard selection, playback and download, deletion confirmation and failure recovery, retained chat form, load failure recovery, unsaved-song discovery and retry without generation, invalid-response rejection, narrow layout, and account switching.");
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);

@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { AudioDownload } from "@/components/ui/audio-download";
 import { AudioPlayer } from "@/components/ui/audio-player";
-import { MusicPromptFields } from "@/components/ui/music-prompt-fields";
+import { MusicPromptFields } from "@/components/MusicPromptFields";
 import { cn } from "@/lib/utils";
 import { useSongs } from "./useSongs";
 import { getSongPrompt } from "./songPrompt";

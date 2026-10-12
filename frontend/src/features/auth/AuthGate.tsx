@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { Navigate, useLocation, useMatch } from "react-router";
 import { AuthPage } from "./AuthPage";
 import { PrivacyPage } from "./PrivacyPage";
+import { TermsGate } from "./TermsGate";
 import { TermsPage } from "./TermsPage";
 import { useAuth } from "./useAuth";
 
@@ -31,5 +32,9 @@ export function AuthGate({ children }: AuthGateProps) {
     const from = typeof state?.from === "string" && state.from.startsWith("/") && !state.from.startsWith("//") ? state.from : "/";
     return <Navigate to={from} replace />;
   }
-  return children({ user: auth.session.user, logout: auth.logout, busy: auth.busy, error: auth.error });
+  return (
+    <TermsGate userId={auth.session.user.id}>
+      {children({ user: auth.session.user, logout: auth.logout, busy: auth.busy, error: auth.error })}
+    </TermsGate>
+  );
 }

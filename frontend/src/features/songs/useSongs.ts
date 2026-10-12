@@ -45,7 +45,8 @@ export function useSongs() {
   }
 
   function selectSong(id: string): void {
-    setOpenedSongIds((previous) => previous.includes(id) ? previous : [...previous, id]);
+    // Keep only the three most recently opened players loaded; older ones reload on reopen.
+    setOpenedSongIds((previous) => [...previous.filter((songId) => songId !== id), id].slice(-3));
     setSelectedSongId((previous) => previous === id ? undefined : id);
   }
 

@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import { useMatch } from "react-router";
 import { authCallback, supabase } from "@/lib/supabase";
 import { setApiUser } from "@/lib/api";
+import { markTermsAcceptancePending } from "@/lib/terms";
 import { resendConfirmation, signOut, submitAuth, type AuthView } from "./api";
 
 function errorMessage(error: unknown): string {
@@ -114,6 +115,7 @@ export function useAuth() {
     await perform(() => submitAuth(view, email.trim(), password, captchaToken), () => {
       setPassword("");
       if (view === "register") {
+        markTermsAcceptancePending();
         setTermsAccepted(false);
         setNotice("check your email to confirm your account before logging in.");
       }
