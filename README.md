@@ -62,6 +62,7 @@ Its gradient follows [Scriabin's note-color mapping](https://www.scriabin-associ
 Use [COOLIFY.md](COOLIFY.md) to deploy `studio.lau.lu` on Hetzner with Coolify.
 The root Dockerfile builds both applications and includes FFmpeg.
 Docker Compose configures persistent song recovery, an HTTP health check, and bounded runtime logs.
+Runtime variables come from the deployment's `.env` file. Coolify can populate it from Doppler; see [COOLIFY.md](COOLIFY.md#import-values-from-doppler).
 The backend serves the built frontend with page-route fallback and keeps `/api` behind authentication.
 
 ## Quick Start

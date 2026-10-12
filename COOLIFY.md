@@ -11,7 +11,7 @@ The container runs as the `node` user and listens on port `3001`.
 3. Under **General > Build pipeline**, select **Compose** as the build strategy. Older versions call this the **Docker Compose** build pack.
 4. Set **Base Directory** to `/` and **Docker Compose Location** to `/docker-compose.yml`. Save and load the definition.
    Under **Advanced > Build**, set **Build arguments** to **Managed manually in Dockerfile**. Keep the Compose deployment managed by Coolify so it adds proxy routing.
-5. Open **Environment Variables** and enter the required values below.
+5. Open **Environment Variables** and import the values from Doppler as described below, or enter them directly.
 6. Open **Domains**, select **Add domain**, choose service `studio`, and enter `https://studio.lau.lu:3001`. The public address is `https://studio.lau.lu`; the suffix selects the internal port.
 7. Point the `studio.lau.lu` DNS record at the Hetzner server. Publish through Coolify's HTTPS proxy; keep port `3001` private.
 8. Select **Deploy** and inspect **Deployment Logs** and **Runtime Logs**.
@@ -38,10 +38,11 @@ These steps follow the [Coolify Compose guide](https://coolify.io/docs/applicati
 | `GLOBAL_GENERATION_DAILY` | Your configured shared generation attempt cap |
 
 Keep your existing production caps. The repository examples use `200`, `30`, and `20`.
-Zero disables the corresponding paid operation. Missing required values prevent deployment.
-Optional model IDs, provider slugs, personal allowances, and audio limits have the existing defaults in `docker-compose.yml`.
+Zero or a missing shared cap disables the corresponding paid operation. Missing credentials cause the corresponding operation to fail.
+The backend supplies the existing defaults for optional model IDs, provider slugs, personal allowances, and audio limits.
+Set `CF_AI_GATEWAY_NEBIUS_SLUG=nebius-token-factory` to use the provider from the working local setup.
 
-Make `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` available during the build.
+Make `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` available during both build and runtime.
 Compose maps the first two to the frontend's `VITE_` variables, so the frontend and backend use one Supabase project.
 These public values become part of the frontend bundle. A change requires a new build.
 Make server keys and tokens available at runtime only. Do not put them in build arguments or `VITE_` variables.
@@ -53,6 +54,25 @@ The image contains no development `.env` files, uploads, recovery audio, or mode
 
 Use the existing Supabase production redirect, email, and CAPTCHA configuration.
 The site URL must be `https://studio.lau.lu`. Confirmation and recovery redirects must allow this origin.
+
+## Import values from Doppler
+
+1. Create a production config in Doppler with all required environment values and any optional overrides.
+2. Create a Doppler service token for that config.
+3. In Coolify, open **Keys & Tokens > Integration Tokens** and add the Doppler token.
+4. Open this application's **Environment Variables > Secret manager** and select the integration token.
+5. Select **Browse keys > Import all keys**. Do not remove existing variables until their replacements are imported.
+6. Set the three public build values to build and runtime. Set all other imported values to runtime only.
+7. Deploy the application.
+
+Coolify resolves the Doppler references and generates the deployment's `.env` file.
+Compose reads this file through `env_file`; individual runtime variable declarations are not needed.
+Import new Doppler keys into Coolify before deploying a feature that needs them.
+After changing runtime values in Doppler, restart or redeploy the application. Changes to public build values require a new deployment.
+See [Coolify secret manager setup](https://coolify.io/docs/integrations/security/using-secret-managers).
+
+For standalone Compose, create an ignored root `.env` with the same values.
+Do not commit this file. Docker excludes it from the build context.
 
 ## Storage and restarts
 
