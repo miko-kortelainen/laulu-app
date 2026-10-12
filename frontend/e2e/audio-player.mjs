@@ -128,7 +128,7 @@ try {
   await run("eval", 'window.previewAudio = document.querySelector("footer audio"); undefined');
   await run("click", `${player} button[aria-label^="play "]`);
   await run("wait", "--fn", `${media}.currentTime > 0.1`);
-  await run("click", 'button[aria-label="Open prompt input"]');
+  await run("click", 'textarea[aria-label="Prompt message"]');
   await run("fill", "textarea:not([name])", "here is my track");
   await run("click", 'button[aria-label="Send prompt"]');
   await run("wait", "--text", "audio received.");

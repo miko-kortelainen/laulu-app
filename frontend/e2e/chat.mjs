@@ -9,7 +9,7 @@ const run = (...args) => execFileSync("agent-browser", ["--session", session, ..
   encoding: "utf8",
   timeout: 30000,
 }).trim();
-const opener = 'button[aria-label="Open prompt input"]';
+const input = 'textarea[aria-label="Prompt message"]';
 const send = 'button[aria-label="Send prompt"]';
 const uploadPath = `/tmp/musical-chat-upload-${process.pid}.wav`;
 const usage = { resetAt: '2099-01-01T00:00:00Z',
@@ -17,7 +17,7 @@ const usage = { resetAt: '2099-01-01T00:00:00Z',
   generation: { limit: 5, used: 0, remaining: 5 }, storage: { limit: 536870912, used: 0, reserved: 0, remaining: 536870912 } };
 
 function openInput() {
-  run("click", opener);
+  run("click", input);
   run("wait", "--fn", 'document.activeElement === document.querySelector("textarea:not([name])")');
 }
 
@@ -61,12 +61,25 @@ try {
     };`);
 
   // Click empty space near the right edge, beyond the placeholder text.
-  const x = run("eval", `document.querySelector('${opener}').parentElement.getBoundingClientRect().right - 80`);
-  const y = run("eval", `document.querySelector('${opener}').parentElement.getBoundingClientRect().top + 30`);
+  const x = run("eval", `document.querySelector('${input}').parentElement.getBoundingClientRect().right - 80`);
+  const y = run("eval", `document.querySelector('${input}').parentElement.getBoundingClientRect().top + 30`);
   run("mouse", "move", x, y);
   run("mouse", "down");
   run("mouse", "up");
   run("wait", "--fn", 'document.activeElement === document.querySelector("textarea:not([name])")');
+  run("wait", "--fn", `document.querySelector('${input}').parentElement.clientHeight <= 48`);
+  assert.equal(run("eval", `document.querySelector('${input}').placeholder`), '"chat with laulu"');
+  assert.equal(run("eval", `document.querySelector('${input}').parentElement.querySelector('p[aria-hidden=true]').textContent`), '"chat with laulu"');
+  assert.equal(run("eval", `document.querySelector('button[aria-label="Open prompt input"]')`), "null");
+  run("fill", input, "short message");
+  assert.equal(run("eval", `document.querySelector('${input}').parentElement.querySelector('p[aria-hidden=true]')`), "null");
+  run("wait", "--fn", `document.querySelector('${input}').parentElement.clientHeight <= 48`);
+  run("fill", input, "word ".repeat(300));
+  run("wait", "--fn", `document.querySelector('${input}').parentElement.clientHeight > 48`);
+  assert.equal(run("eval", `document.activeElement === document.querySelector('${input}')`), "true");
+  run("fill", input, "");
+  assert.equal(run("eval", `document.querySelector('${input}').parentElement.querySelector('p[aria-hidden=true]').textContent`), '"chat with laulu"');
+  run("wait", "--fn", `document.querySelector('${input}').parentElement.clientHeight <= 48`);
   run("fill", "textarea:not([name])", "mouse message");
   run("eval", 'window.usage.chat = { limit: 20, used: 1, remaining: 19 }');
   run("click", send);
@@ -89,6 +102,7 @@ try {
   run("fill", "textarea:not([name])", "keyboard message");
   run("press", "Shift+Enter");
   assert.equal(run("eval", 'document.querySelector("textarea:not([name])").value === "keyboard message\\n"'), "true");
+  run("wait", "--fn", `document.querySelector('${input}').parentElement.clientHeight > 48`);
   run("press", "Enter");
   run("wait", "--fn", 'document.querySelector("main").innerText.split("e2e reply").length === 3');
 

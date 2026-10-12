@@ -200,7 +200,7 @@ try {
       window.requestHeaders.push(new Headers(options.headers).get('authorization'));
       options.signal.addEventListener('abort', () => { window.pendingAborted = true; reject(new DOMException('aborted', 'AbortError')); });
     }) : fetchBeforeChat(input, options);`);
-  await run("click", 'button[aria-label="Open prompt input"]');
+  await run("click", 'textarea[aria-label="Prompt message"]');
   await run("fill", "textarea:not([name])", "private pending message");
   await run("click", 'button[aria-label="Send prompt"]');
   await run("wait", "--text", "thinking...");

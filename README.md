@@ -109,6 +109,7 @@ Logout also deletes uploaded audio. If a job is active, the backend deletes its 
 Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
 React Router serves login at `/login`, registration at `/create-account`, chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.
 Navigation preserves the current conversation and music form.
+The chat input stays compact until the text wraps or contains a new line.
 At widths of 1280px or more, the navigation sidebar stays visible on the left.
 On smaller screens, the hamburger button opens a sidebar from the left edge.
 The sidebar closes with its close button, Escape, a click outside, or a page selection.

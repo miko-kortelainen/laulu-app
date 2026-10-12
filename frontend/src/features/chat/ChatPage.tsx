@@ -78,7 +78,16 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
             {uploadError && <p role="alert" className="text-xs text-red-400">{uploadError}</p>}
           </div>
           <AiInput
-            placeholder="Ask Nemotron Super..."
+            placeholder="chat with laulu"
+            placeholderContent={
+              <>
+                chat with{" "}
+                <span className="bg-clip-text text-transparent"
+                  style={{ backgroundImage: "linear-gradient(to right, #f87171 0%, #fb923c 33%, #fde047 67%, #4ade80 100%)" }}>
+                  laulu
+                </span>
+              </>
+            }
             onSubmit={(text) => send(text)}
             models={MODELS}
             selectedModel={MODELS[0]}

@@ -59,6 +59,7 @@ export interface PromptInputRef {
 export interface PromptInputProps {
   onSubmit?: (value: string, meta: PromptInputMeta) => void;
   placeholder?: string;
+  placeholderContent?: React.ReactNode;
   className?: string;
   models?: (string | ModelOption)[];
   selectedModel?: string;
@@ -550,6 +551,7 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
     {
       onSubmit,
       placeholder = "Ask anything",
+      placeholderContent,
       className,
       models = DEFAULT_MODELS,
       selectedModel: controlledModel,
@@ -630,8 +632,10 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
       transition: "none",
     });
 
-    const [textareaHeight, setTextareaHeight] = useState(68);
-    const containerHeight = Math.max(116, textareaHeight + 48);
+    const [textareaHeight, setTextareaHeight] = useState(collapsedHeight);
+    const containerHeight = allowModelSelect || allowEffortSelect || allowAttachments
+      ? Math.max(116, textareaHeight + 48)
+      : textareaHeight;
     const [isScrolling, setIsScrolling] = useState(false);
 
     const isControlled = controlledValue !== undefined;
@@ -720,19 +724,31 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
       }
     }, [expanded]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       const el = textareaRef.current;
       if (!el) return;
 
-      el.style.height = "auto";
-      const scrollHeight = el.scrollHeight;
-      const newHeight = Math.max(68, Math.min(scrollHeight, 180));
-      el.style.height = `${newHeight}px`;
+      const resize = () => {
+        el.style.height = "auto";
+        const scrollHeight = value ? el.scrollHeight : collapsedHeight;
+        const newHeight = Math.max(collapsedHeight, Math.min(scrollHeight, 180));
+        el.style.height = `${newHeight}px`;
 
-      setTextareaHeight(newHeight);
-      setIsScrolling(scrollHeight > 180);
-      updateFades();
-    }, [value, expanded, updateFades]);
+        setTextareaHeight(newHeight);
+        setIsScrolling(scrollHeight > newHeight);
+        updateFades();
+      };
+      resize();
+
+      let width = el.clientWidth;
+      const observer = new ResizeObserver(() => {
+        if (el.clientWidth === width) return;
+        width = el.clientWidth;
+        resize();
+      });
+      observer.observe(el);
+      return () => observer.disconnect();
+    }, [value, expanded, collapsedHeight, updateFades]);
 
     useEffect(() => {
       if (!isModelSelectOpen) return;
@@ -1024,7 +1040,9 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
             <textarea
               id={inputId}
               ref={textareaRef}
+              rows={1}
               value={value}
+              onFocus={expand}
               onChange={(e) => handleValueChange(e.target.value)}
               onScroll={updateFades}
               onKeyDown={(e) => {
@@ -1046,19 +1064,18 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
               placeholder={placeholder}
               aria-label="Prompt message"
               disabled={disabled}
-              style={{
-                transition: isSmoothResize
-                  ? "height 0.16s ease-out"
-                  : "opacity 0.25s ease-out, transform 0.25s ease-out, height 0.42s cubic-bezier(0.16, 1, 0.3, 1)",
-              }}
               className={cn(
-                "prompt-scrollbar absolute top-0 inset-x-0 z-1 w-full resize-none bg-transparent pl-4 pr-12 py-3.5 text-sm leading-5.5 text-zinc-900 dark:text-zinc-100 outline-none placeholder:font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500 cursor-text",
-                expanded
-                  ? "opacity-100 scale-100 translate-y-0"
-                  : "opacity-0 scale-95 -translate-y-1 pointer-events-none",
+                "prompt-scrollbar absolute top-0 inset-x-0 z-1 w-full resize-none bg-transparent pl-4 pr-12 py-3 text-sm leading-5.5 text-zinc-900 dark:text-zinc-100 outline-none placeholder:font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500 cursor-text",
+                Boolean(placeholderContent) && "placeholder:text-transparent dark:placeholder:text-transparent",
                 isScrolling ? "overflow-y-auto" : "overflow-y-hidden",
               )}
             />
+
+            {placeholderContent && value === "" && (
+              <p aria-hidden="true" className="pointer-events-none absolute left-4 right-12 top-3 z-2 text-sm font-medium leading-5.5 text-zinc-400 dark:text-zinc-500">
+                {placeholderContent}
+              </p>
+            )}
 
             <div
               ref={topFadeRef}
@@ -1074,25 +1091,6 @@ export const PromptInput = React.forwardRef<PromptInputRef, PromptInputProps>(
                   : "top 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s ease-out",
               }}
             />
-
-            <button
-              type="button"
-              onClick={expand}
-              style={{
-                transition: isSmoothResize
-                  ? "none"
-                  : "all 0.38s cubic-bezier(0.16, 1, 0.3, 1)",
-              }}
-              className={cn(
-                "absolute inset-x-0 top-0 z-1 cursor-text pl-4 pr-12 py-3.75 text-left text-sm font-medium leading-4.25 text-zinc-400 dark:text-zinc-500 outline-none select-none",
-                !expanded
-                  ? "opacity-100 scale-100 translate-y-0"
-                  : "opacity-0 scale-105 translate-y-1 pointer-events-none",
-              )}
-              aria-label="Open prompt input"
-            >
-              {placeholder}
-            </button>
 
             <div
               className={cn(
