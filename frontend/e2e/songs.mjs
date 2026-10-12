@@ -87,7 +87,7 @@ try {
   assert.equal(await run("eval", "document.querySelector('#song-info').getBoundingClientRect().top >= document.querySelector('section[aria-labelledby=songs-title]').getBoundingClientRect().bottom"), "true");
 
   await run("eval", "window.songFailure = true");
-  await run("find", "role", "link", "click", "--name", "chat", "--exact");
+  await run("find", "role", "link", "click", "--name", "studio", "--exact");
   await run("find", "role", "link", "click", "--name", "my songs", "--exact");
   await run("wait", "--text", "could not load your songs.");
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
@@ -136,7 +136,7 @@ try {
   assert.equal(await run("eval", "document.querySelector('[role=alert]')"), "null");
 
   await run("set", "viewport", "1280", "900");
-  await run("find", "role", "link", "click", "--name", "chat", "--exact");
+  await run("find", "role", "link", "click", "--name", "studio", "--exact");
   await run("wait", "--text", "0 / 40 messages");
   assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
   await listResponse([songs[0]]);
@@ -172,7 +172,7 @@ try {
       });
     };`);
   await run("eval", "window.recoveryFailure = true");
-  await run("find", "role", "link", "click", "--name", "chat", "--exact");
+  await run("find", "role", "link", "click", "--name", "studio", "--exact");
   await run("find", "role", "link", "click", "--name", "my songs", "--exact");
   await run("wait", "--text", "could not load unsaved songs.");
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "1");

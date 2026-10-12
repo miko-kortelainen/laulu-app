@@ -181,7 +181,7 @@ try {
   await run("network", "route", `${authOrigin}/auth/v1/token*`, "--body", JSON.stringify(first));
   await clickSubmit();
   await run("wait", "--text", "member since");
-  await run("find", "role", "link", "click", "--name", "chat", "--exact");
+  await run("find", "role", "link", "click", "--name", "studio", "--exact");
   await run("wait", "--text", "0 / 40 messages");
   await run("eval", "location.reload()");
   await run("wait", "--text", "0 / 40 messages");
@@ -211,7 +211,7 @@ try {
   await run("eval", "location.reload()");
   await run("wait", "--text", "member since");
   assert.equal(await run("eval", "location.pathname"), '"/profile"');
-  await run("find", "role", "link", "click", "--name", "chat", "--exact");
+  await run("find", "role", "link", "click", "--name", "studio", "--exact");
   await run("wait", "--text", "0 / 40 messages");
 
   // The real SDK refreshes an expired saved session through the mocked token endpoint.

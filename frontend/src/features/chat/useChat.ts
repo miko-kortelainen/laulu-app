@@ -321,7 +321,7 @@ export function useChat(userId: string) {
       setMusicError(undefined);
       setPendingSongId(undefined);
       setMessages([
-        { role: "agent", text: "Conversation cleared. How can I help you?" },
+        { role: "agent", text: "fresh start. what kind of song are we making now?" },
       ]);
     }
 

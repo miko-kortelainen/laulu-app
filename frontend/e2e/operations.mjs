@@ -55,7 +55,7 @@ try {
   run("wait", "--text", "your track is ready.");
   run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "4 / 5 remaining");
-  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("find", "role", "link", "click", "--name", "studio", "--exact");
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", "sessionStorage.getItem('generation-posts')"), '"1"');
   assert.equal(run("eval", "document.querySelector('aside > button').disabled"), "false");
@@ -144,7 +144,7 @@ try {
   run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "other@example.com");
   run("wait", "--text", "19 / 20 remaining");
-  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("find", "role", "link", "click", "--name", "studio", "--exact");
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", "document.querySelector('[name=genre]').value"), '""');
   assert.equal(run("eval", "document.querySelector('main').innerText.includes('reference.wav')"), "false");

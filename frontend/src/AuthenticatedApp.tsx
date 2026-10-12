@@ -50,9 +50,9 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
     <nav aria-label="main navigation" className="flex flex-1 flex-col gap-1">
       <NavLink to="/" end className={linkClass} onClick={closeNavigation}>
         <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M21 15a3 3 0 0 1-3 3H7l-4 3V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z" />
+          <path d="M4 3v7m0 4v7M12 3v11m0 4v3M20 3v3m0 4v11M1 10h6M9 18h6M17 6h6" />
         </svg>
-        chat
+        studio
       </NavLink>
       <NavLink to="/songs" className={linkClass} onClick={closeNavigation}>
         <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

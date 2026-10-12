@@ -36,7 +36,7 @@ try {
   run("wait", "--text", "5 / 5 remaining");
   assert.equal(run("eval", 'document.querySelector("time").dateTime'), JSON.stringify(usage.resetAt));
   assert.equal(run("eval", 'document.querySelector("time").textContent === new Date(document.querySelector("time").dateTime).toLocaleString()'), "true");
-  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("find", "role", "link", "click", "--name", "studio", "--exact");
   run("wait", "--text", "0 / 40 messages");
   assert.equal(run("eval", 'document.querySelector("#app-desktop-navigation nav").getBoundingClientRect().right <= document.querySelector("#app-content").getBoundingClientRect().left'), "true");
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
@@ -97,7 +97,7 @@ try {
   run("wait", "--text", "member since");
   run("wait", "--text", "19 / 20 remaining");
   run("wait", "--text", "256 MiB remaining");
-  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("find", "role", "link", "click", "--name", "studio", "--exact");
   run("wait", "--text", "6 / 40 messages");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("e2e reply")'), "true");
@@ -245,7 +245,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("#app-navigation").checkVisibility()'), "false");
   assert.equal(run("eval", 'document.activeElement.getAttribute("aria-controls")'), '"app-navigation"');
   run("press", "Enter");
-  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("find", "role", "link", "click", "--name", "studio", "--exact");
   run("wait", "--text", "music generation");
   assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
   run("find", "role", "button", "click", "--name", "menu", "--exact");
@@ -436,7 +436,7 @@ try {
   run("network", "unroute", "**/api/reset");
   run("network", "route", "**/api/reset", "--body", '{"status":"ok"}');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
-  run("wait", "--text", "Conversation cleared.");
+  run("wait", "--text", "fresh start. what kind of song are we making now?");
   run("wait", "--text", "0 / 40 messages");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.value === "")'), "true");
@@ -459,7 +459,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("section[aria-labelledby=allowances-heading]").innerText.includes("invalid usage response.")'), "false");
   // The reset timer refreshes server counts without another user action.
   run("eval", 'window.usage.resetAt = new Date(Date.now() + 1200).toISOString()');
-  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("find", "role", "link", "click", "--name", "studio", "--exact");
   run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--fn", 'document.querySelector("time").dateTime === window.usage.resetAt');
   run("eval", `window.usage.resetAt = ${JSON.stringify(usage.resetAt)}; window.usage.generation = { limit: 5, used: 0, remaining: 5 }`);
