@@ -1,14 +1,15 @@
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import type { useAuth } from "./useAuth";
 import { Turnstile } from "./Turnstile";
 
 type AuthPageProps = ReturnType<typeof useAuth>;
 const inputClass = "mt-2 w-full rounded-lg border border-white/15 bg-zinc-900 px-3 py-2.5 text-base text-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300 disabled:opacity-50";
-const buttonClass = "min-h-11 rounded-lg border border-white/15 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300 disabled:cursor-not-allowed disabled:opacity-50";
+const buttonClass = "min-h-11 rounded-lg border border-white/15 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300 disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
 const labels = { login: "log in", register: "create account", reset: "reset password", update: "save new password" };
 
 export function AuthPage({ view, email, password, error, notice, busy, configured, setEmail, setPassword, changeView, submit, resend, logout, session,
   captchaRequired, captchaToken, captchaReset, setCaptchaToken }: AuthPageProps) {
+  const location = useLocation();
   const verificationPending = captchaRequired && !captchaToken;
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md items-center px-5 py-10">
@@ -48,10 +49,10 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
         </form>
         <div className="flex flex-wrap gap-2">
           {view === "login" && <>
-            <button type="button" className={buttonClass} disabled={busy} onClick={() => changeView("register")}>register</button>
+            <Link to="/create-account" state={location.state} className={buttonClass} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); else changeView("login"); }}>register</Link>
             <button type="button" className={buttonClass} disabled={busy} onClick={() => changeView("reset")}>forgot password?</button>
           </>}
-          {view !== "login" && view !== "update" && <button type="button" className={buttonClass} disabled={busy} onClick={() => changeView("login")}>back to login</button>}
+          {view !== "login" && view !== "update" && <Link to="/login" state={location.state} className={buttonClass} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); else changeView("login"); }}>back to login</Link>}
           {view === "register" && notice && <button type="button" className={buttonClass} disabled={busy || !configured || !email.trim() || verificationPending} onClick={() => void resend()}>resend confirmation</button>}
           {view === "update" && session && <button type="button" className={buttonClass} disabled={busy} onClick={() => void logout()}>log out</button>}
         </div>

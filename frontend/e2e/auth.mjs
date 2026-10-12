@@ -43,6 +43,7 @@ try {
   await run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
   await run("open", `${url}/profile`);
   await run("wait", "--text", "log in");
+  assert.equal(await run("eval", "location.pathname"), '"/login"');
   assert.equal(await run("eval", 'document.querySelector("section[aria-label=chat]")'), "null");
   await run("set", "viewport", "320", "760");
   assert.equal(await run("eval", "document.documentElement.scrollWidth <= innerWidth"), "true");
@@ -67,7 +68,23 @@ try {
   await run("find", "role", "link", "click", "--name", "back to app", "--exact");
   await run("wait", "--text", "log in");
 
-  await run("find", "role", "button", "click", "--name", "register", "--exact");
+  await run("open", `${url}/create-account`);
+  await run("wait", "--text", "confirm your email to start using the app.");
+  assert.equal(await run("eval", "location.pathname"), '"/create-account"');
+  await run("find", "role", "link", "click", "--name", "back to login", "--exact");
+  await run("wait", "--text", "log in");
+  assert.equal(await run("eval", "location.pathname"), '"/login"');
+  await run("find", "role", "link", "click", "--name", "register", "--exact");
+  await run("wait", "--text", "confirm your email to start using the app.");
+  assert.equal(await run("eval", "location.pathname"), '"/create-account"');
+  for (const direction of ["back", "forward"]) {
+    await run("fill", "#auth-password", "history-password");
+    await verify();
+    await run(direction);
+    await run("wait", "--text", direction === "back" ? "log in" : "confirm your email to start using the app.");
+    assert.equal(await run("eval", 'document.querySelector("#auth-password").value'), '""', "history navigation clears the previous password");
+    if (captcha) assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true", "history navigation requires new verification");
+  }
   if (captcha) {
     await run("wait", "--fn", "Boolean(window.captchaOptions)");
     assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true");
@@ -96,6 +113,12 @@ try {
   await run("find", "role", "button", "click", "--name", "resend confirmation", "--exact");
   await run("wait", "--text", "check your email for a confirmation link.");
   if (captcha) assert.equal(await run("eval", "window.captchaRequests[1].gotrue_meta_security.captcha_token"), '"offline-captcha-token"');
+  await run("back");
+  await run("wait", "--text", "log in");
+  assert.equal(await run("eval", "document.querySelector('[role=status]').textContent"), '""', "history navigation clears the registration notice");
+  await run("forward");
+  await run("wait", "--text", "confirm your email to start using the app.");
+  assert.equal(await run("eval", "document.querySelector('[role=status]').textContent"), '""');
 
   // The actual Supabase SDK processes the confirmation callback and removes its tokens.
   const hash = new URLSearchParams({ access_token: first.access_token, refresh_token: first.refresh_token,

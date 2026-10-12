@@ -104,9 +104,9 @@ After expiration, the next chat request starts a new conversation. Saved songs r
 Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
 Logout also deletes uploaded audio. If a job is active, the backend deletes its uploads when the job finishes.
 Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
-React Router serves chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.
+React Router serves login at `/login`, registration at `/create-account`, chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.
 Navigation preserves the current conversation and music form.
-Configure production hosting to serve `index.html` for frontend routes such as `/profile` and `/songs`.
+Configure production hosting to serve `index.html` for frontend routes such as `/login`, `/create-account`, `/profile`, and `/songs`.
 Keep `/api/` requests on the backend.
 Local audio playback and downloads use authenticated requests.
 Existing audio without an owner remains on disk but has no public route.

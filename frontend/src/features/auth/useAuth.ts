@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { useMatch } from "react-router";
 import { authCallback, supabase } from "@/lib/supabase";
 import { setApiUser } from "@/lib/api";
 import { resendConfirmation, signOut, submitAuth, type AuthView } from "./api";
@@ -9,9 +10,12 @@ function errorMessage(error: unknown): string {
 }
 
 export function useAuth() {
+  const createAccountRoute = Boolean(useMatch("/create-account"));
+  const [previousCreateAccountRoute, setPreviousCreateAccountRoute] = useState(createAccountRoute);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(Boolean(supabase));
-  const [view, setView] = useState<AuthView>(authCallback.recovery ? "update" : "login");
+  const [passwordView, setView] = useState<Exclude<AuthView, "register">>(authCallback.recovery ? "update" : "login");
+  const view: AuthView = passwordView === "update" ? "update" : createAccountRoute ? "register" : passwordView;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>(authCallback.error);
@@ -21,6 +25,14 @@ export function useAuth() {
   const [captchaReset, setCaptchaReset] = useState(0);
   const captchaRequired = Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY) && view !== "update";
   const pending = useRef(false);
+
+  if (createAccountRoute !== previousCreateAccountRoute) {
+    setPreviousCreateAccountRoute(createAccountRoute);
+    if (passwordView !== "update") {
+      setView("login");
+      clearForm();
+    }
+  }
 
   useEffect(() => {
     if (!supabase) return;
@@ -64,9 +76,13 @@ export function useAuth() {
     };
   }, []);
 
-  function changeView(nextView: AuthView): void {
+  function changeView(nextView: Exclude<AuthView, "register">): void {
     if (pending.current) return;
     setView(nextView);
+    clearForm();
+  }
+
+  function clearForm(): void {
     setPassword("");
     setError(undefined);
     setNotice(undefined);
