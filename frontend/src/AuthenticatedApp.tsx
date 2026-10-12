@@ -16,7 +16,7 @@ interface AuthenticatedAppProps {
   authError?: string;
 }
 
-const linkClass = "flex min-h-11 items-center rounded-lg px-3 py-2 text-sm hover:bg-white/10 aria-[current=page]:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400";
+const linkClass = "flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-white/10 aria-[current=page]:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400";
 
 export function AuthenticatedApp({ user, onLogout, signingOut, authError }: AuthenticatedAppProps) {
   const chat = useChat(user.id);
@@ -48,12 +48,20 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
   const navigation = (
     <nav aria-label="main navigation" className="flex flex-1 flex-col gap-1">
       <NavLink to="/" end className={linkClass} onClick={closeNavigation}>
+        <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M21 15a3 3 0 0 1-3 3H7l-4 3V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z" />
+        </svg>
         chat
       </NavLink>
       <NavLink to="/songs" className={linkClass} onClick={closeNavigation}>
+        <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9 18V5l12-2v13" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="18" cy="16" r="3" />
+        </svg>
         my songs
       </NavLink>
-      <NavLink to="/profile" className={cn(linkClass, "mt-auto gap-2")} onClick={closeNavigation}>
+      <NavLink to="/profile" className={cn(linkClass, "mt-auto")} onClick={closeNavigation}>
         <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <circle cx="12" cy="8" r="4" />
           <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
@@ -67,16 +75,16 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
     <div className="w-full px-4 font-sans text-zinc-100 sm:px-6">
       <a href="#app-content" className="sr-only focus:not-sr-only focus:absolute focus:z-10 focus:rounded-lg focus:bg-zinc-900 focus:p-3">skip to content</a>
       <div className="flex min-h-dvh flex-col gap-6 py-4 sm:py-6 lg:h-dvh xl:flex-row">
-        <header className="flex flex-none flex-col gap-6 xl:w-48 xl:border-r xl:border-white/10 xl:pr-4">
-          <div className="flex items-center gap-4">
+        <header className="flex flex-none flex-col gap-6 xl:w-48 xl:border-r xl:border-white/10 xl:pr-6">
+          <div className="relative flex min-h-11 items-center justify-center xl:min-h-0">
             <button type="button" aria-label="menu" aria-expanded={navigationOpen} aria-controls="app-navigation"
               onClick={() => { drawerRef.current?.showModal(); setNavigationOpen(true); }}
-              className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 xl:hidden">
+              className="absolute left-0 flex size-11 items-center justify-center rounded-lg border border-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 xl:hidden">
               <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                 <path d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <LauluWordmark className="w-28 shrink-0 sm:w-32" />
+            <LauluWordmark className="w-30 shrink-0 sm:w-34" />
           </div>
           <div id="app-desktop-navigation" className="hidden flex-1 flex-col gap-4 xl:flex">
             {navigation}
