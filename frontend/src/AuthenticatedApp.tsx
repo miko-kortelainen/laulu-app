@@ -1,4 +1,5 @@
 import type { User } from "@supabase/supabase-js";
+import { useEffect, useRef, useState } from "react";
 import { Navigate, NavLink, Route, Routes } from "react-router";
 import { LauluWordmark } from "@/components/ui/LauluWordmark";
 import { ChatPage } from "@/features/chat/ChatPage";
@@ -14,44 +15,98 @@ interface AuthenticatedAppProps {
   authError?: string;
 }
 
-const linkClass = "rounded-lg px-3 py-2 text-sm hover:bg-white/10 aria-[current=page]:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400";
+const linkClass = "flex min-h-11 items-center rounded-lg px-3 py-2 text-sm hover:bg-white/10 aria-[current=page]:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400";
 
 export function AuthenticatedApp({ user, onLogout, signingOut, authError }: AuthenticatedAppProps) {
   const chat = useChat(user.id);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const drawerRef = useRef<HTMLDialogElement>(null);
+
+  function closeNavigation() {
+    drawerRef.current?.close();
+  }
+
+  useEffect(() => {
+    if (!navigationOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const wideScreen = window.matchMedia("(min-width: 80rem)");
+    const closeOnWideScreen = () => {
+      if (wideScreen.matches) drawerRef.current?.close();
+    };
+    wideScreen.addEventListener("change", closeOnWideScreen);
+    closeOnWideScreen();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      wideScreen.removeEventListener("change", closeOnWideScreen);
+    };
+  }, [navigationOpen]);
+
+  const navigation = <>
+    <nav aria-label="main navigation" className="flex flex-col gap-1">
+      <NavLink to="/" end className={linkClass} onClick={closeNavigation}>
+        chat
+      </NavLink>
+      <NavLink to="/songs" className={linkClass} onClick={closeNavigation}>
+        my songs
+      </NavLink>
+      <NavLink to="/profile" className={linkClass} onClick={closeNavigation}>
+        profile
+      </NavLink>
+    </nav>
+    <button type="button" disabled={signingOut} onClick={() => void onLogout()}
+      className="mt-auto min-h-11 rounded-lg border border-white/10 px-3 py-1.5 text-xs hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
+      {signingOut ? "logging out..." : "log out"}
+    </button>
+    {authError && <p role="alert" className="text-xs text-red-300">{authError}</p>}
+  </>;
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 font-sans text-zinc-100 sm:px-6">
-      <div className="flex min-h-dvh flex-col py-4 sm:py-6 lg:h-dvh">
-        <header className="flex flex-none flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
-          <LauluWordmark className="w-28 shrink-0 sm:w-32" />
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <nav aria-label="main navigation" className="flex gap-1">
-                <NavLink to="/" end className={linkClass}>
-                  chat
-                </NavLink>
-                <NavLink to="/songs" className={linkClass}>
-                  my songs
-                </NavLink>
-                <NavLink to="/profile" className={linkClass}>
-                  profile
-                </NavLink>
-              </nav>
-              <button type="button" disabled={signingOut} onClick={() => void onLogout()}
-                className="min-h-10 rounded-lg border border-white/10 px-3 py-1.5 text-xs hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
-                {signingOut ? "logging out..." : "log out"}
-              </button>
-            </div>
-            {authError && <p role="alert" className="mt-2 text-xs text-red-300">{authError}</p>}
+    <div className="w-full px-4 font-sans text-zinc-100 sm:px-6">
+      <a href="#app-content" className="sr-only focus:not-sr-only focus:absolute focus:z-10 focus:rounded-lg focus:bg-zinc-900 focus:p-3">skip to content</a>
+      <div className="flex min-h-dvh flex-col gap-6 py-4 sm:py-6 lg:h-dvh xl:flex-row">
+        <header className="flex flex-none flex-col gap-6 xl:w-48 xl:border-r xl:border-white/10 xl:pr-4">
+          <div className="flex items-center gap-4">
+            <button type="button" aria-label="menu" aria-expanded={navigationOpen} aria-controls="app-navigation"
+              onClick={() => { drawerRef.current?.showModal(); setNavigationOpen(true); }}
+              className="flex size-11 shrink-0 items-center justify-center rounded-lg border border-white/10 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 xl:hidden">
+              <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <LauluWordmark className="w-28 shrink-0 sm:w-32" />
           </div>
+          <div id="app-desktop-navigation" className="hidden flex-1 flex-col gap-4 xl:flex">
+            {navigation}
+          </div>
+          <dialog ref={drawerRef} id="app-navigation" aria-label="navigation" onClose={() => setNavigationOpen(false)}
+            onClick={(event) => { if (event.target === event.currentTarget) closeNavigation(); }}
+            className="navigation-drawer m-0 h-dvh max-h-none w-64 max-w-[85vw] overflow-y-auto overscroll-contain border-r border-white/10 bg-zinc-950 p-0 text-zinc-100 backdrop:bg-black/60">
+            <div className="flex min-h-full flex-col gap-6 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm font-medium">menu</p>
+                <button type="button" aria-label="close menu" onClick={closeNavigation}
+                  className="flex size-11 items-center justify-center rounded-lg hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400">
+                  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="m6 6 12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              </div>
+              {navigation}
+            </div>
+          </dialog>
         </header>
-        <Routes>
-          <Route path="/" element={<ChatPage chat={chat} />} />
-          <Route path="/songs" element={<SongsPage />} />
-          <Route path="/profile" element={<ProfilePage user={user} />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <div id="app-content" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <Routes>
+            <Route path="/" element={<ChatPage chat={chat} />} />
+            <Route path="/songs" element={<SongsPage />} />
+            <Route path="/profile" element={<ProfilePage user={user} />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
       </div>
       <footer className="flex justify-end border-t border-white/10 py-2 text-zinc-400">
         <NavLink to="/privacy" className="inline-flex min-h-11 items-center rounded-lg px-3 text-xs underline underline-offset-4 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400">

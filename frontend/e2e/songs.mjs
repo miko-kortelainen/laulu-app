@@ -27,6 +27,7 @@ try {
   await run("network", "route", "**/api/songs", "--body", '{"songs":[]}');
   await run("network", "route", "**/api/songs/recovery", "--body", '{"songIds":[]}');
   await seedAuth(run, `${url}/songs`, first);
+  await run("set", "viewport", "1280", "900");
   await run("wait", "--text", "no saved songs yet.");
   assert.equal(await run("eval", "location.pathname"), '"/songs"');
   await run("find", "role", "link", "click", "--name", "create a song in chat", "--exact");
@@ -113,6 +114,7 @@ try {
   assert.equal(await run("eval", "document.querySelector('main time').dateTime"), JSON.stringify(songs[0].createdAt));
   assert.equal(await run("eval", "document.querySelector('[role=alert]')"), "null");
 
+  await run("set", "viewport", "1280", "900");
   await run("find", "role", "link", "click", "--name", "chat", "--exact");
   await run("wait", "--text", "0 / 40 messages");
   assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');

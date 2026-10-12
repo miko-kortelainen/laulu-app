@@ -48,8 +48,21 @@ body {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .navigation-drawer[open] {
+    animation: navigation-slide-in 180ms ease-out;
+  }
+
   .music-field-updated {
     animation: music-field-update 2.5s ease-out forwards;
+  }
+}
+
+@keyframes navigation-slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
   }
 }
 

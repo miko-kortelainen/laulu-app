@@ -109,6 +109,9 @@ Logout also deletes uploaded audio. If a job is active, the backend deletes its 
 Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
 React Router serves login at `/login`, registration at `/create-account`, chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.
 Navigation preserves the current conversation and music form.
+At widths of 1280px or more, the navigation sidebar stays visible on the left.
+On smaller screens, the hamburger button opens a sidebar from the left edge.
+The sidebar closes with its close button, Escape, a click outside, or a page selection.
 Configure production hosting to serve `index.html` for frontend routes such as `/login`, `/create-account`, `/profile`, and `/songs`.
 Keep `/api/` requests on the backend.
 Local audio playback and downloads use authenticated requests.
@@ -639,7 +642,7 @@ Production beta tracing is disabled. Deploy with `NODE_ENV=production`.
 In production, the backend overrides `LANGSMITH_TRACING` to `false`.
 Old environment settings cannot enable tracing.
 The public `/privacy` page explains storage, AI processing, temporary data, and beta limits.
-It is linked from login and the authenticated navigation. Privacy and account deletion requests go to `miko@kortelainen.dev`.
+It is linked from login and the app footer. Privacy and account deletion requests go to `miko@kortelainen.dev`.
 Serve `index.html` for `/privacy`, as for the other frontend routes.
 
 For development tracing, set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `backend/.env`, then

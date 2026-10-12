@@ -126,6 +126,7 @@ try {
   await run("open", `${url}/#${hash}`);
   await run("wait", "--text", "0 / 40 messages");
   assert.equal(await run("eval", "location.hash"), '""');
+  await run("set", "viewport", "1280", "900");
   await run("network", "route", `${authOrigin}/auth/v1/logout*`, "--body", "{}");
   await run("eval", `window.sessionEndRequests = []; window.failSessionEnd = true; const beforeSessionEnd = window.fetch;
     window.fetch = (input, options) => {
