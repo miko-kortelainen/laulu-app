@@ -86,7 +86,7 @@ try {
   await run("upload", 'input[type="file"]', fixturePath);
   await run("wait", "--fn", `${media}?.duration === 8 && document.querySelector('footer svg path') !== null`);
   const path = JSON.parse(await run("eval", 'document.querySelector("footer svg path").getAttribute("d")'));
-  assert.equal(path.split("M").length - 1, 80);
+  assert.equal(path.split("M").length - 1, 160);
   assert.ok(new Set(path.match(/v[\d.]+/g)).size > 20);
   assert.equal(await run("eval", `${media}.controls`), "false");
   await run("click", `${player} button[aria-label^="play "]`);
@@ -134,8 +134,19 @@ try {
   await run("wait", "--text", "audio received.");
   assert.equal(await run("eval", 'window.previewAudio.paused'), "true");
   await run("wait", "--fn", 'document.querySelector("main audio")?.duration === 8');
+  await run("upload", 'input[type="file"]', fixturePath);
+  await run("wait", "--fn", `${media}?.duration === 8`);
   await run("click", 'main [role=group] button[aria-label^="play "]');
   await run("wait", "--fn", 'document.querySelector("main audio").currentTime > 0.1');
+  await run("click", `${player} button[aria-label^="play "]`);
+  await run("wait", "--fn", `${media}.currentTime > 0.1 && !${media}.paused && document.querySelector("main audio").paused`);
+  await run("wait", "--fn", 'document.querySelector("main button[aria-label^=play]") !== null');
+  const previousTime = Number(await run("eval", 'document.querySelector("main audio").currentTime'));
+  assert.ok(previousTime > 0);
+  await run("click", 'main [role=group] button[aria-label^="play "]');
+  await run("wait", "--fn", `${media}.paused && !document.querySelector("main audio").paused`);
+  await run("wait", "--fn", 'document.querySelector("footer button[aria-label^=play]") !== null');
+  assert.ok(Number(await run("eval", 'document.querySelector("main audio").currentTime')) >= previousTime);
   await run("click", 'main [role=group] button[aria-label^="stop "]');
   await run("screenshot", "/tmp/musical-player-sent.png");
   await run("eval", `const file = new File(["invalid audio"], "broken.wav"); const transfer = new DataTransfer(); transfer.items.add(file);
@@ -147,7 +158,7 @@ try {
   await run("wait", "--fn", `${media}.currentTime > 0.1 && !${media}.paused`);
   assert.equal(await run("eval", 'document.querySelector("footer [role=alert]")'), "null");
   await run("click", `${player} button[aria-label^="stop "]`);
-  console.log("Audio player E2E passed: real waveform, playback, pause, stop, seeking, volume, attachment handoff, mobile layout, and failure recovery.");
+  console.log("Audio player E2E passed: real waveform, single-source playback, pause, stop, seeking, volume, attachment handoff, mobile layout, and failure recovery.");
 } finally {
   await run("close");
   server.closeAllConnections();

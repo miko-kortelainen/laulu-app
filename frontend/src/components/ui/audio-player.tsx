@@ -6,6 +6,7 @@ interface AudioPlayerProps {
   src: string;
   label: string;
   className?: string;
+  active?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -17,8 +18,8 @@ export function AudioPlayer(props: AudioPlayerProps) {
   return <Player key={props.src} {...props} />;
 }
 
-function Player({ src, label, className }: AudioPlayerProps) {
-  const { audioProps, playing, time, duration, volume, waveform, waveformError, playbackError, togglePlayback, seek, stop, changeVolume } = useAudioPlayer(src);
+function Player({ src, label, className, active = true }: AudioPlayerProps) {
+  const { audioProps, playing, time, duration, volume, waveform, waveformError, playbackError, togglePlayback, seek, stop, changeVolume } = useAudioPlayer(src, active);
   const clipId = useId();
   const progress = duration ? Math.min(1, time / duration) : 0;
   const controlClass = "flex size-9 shrink-0 items-center justify-center rounded-lg border border-current/20 transition-colors hover:bg-current/10 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40";
@@ -30,9 +31,9 @@ function Player({ src, label, className }: AudioPlayerProps) {
         <svg viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true" className="h-full w-full">
           <defs><clipPath id={clipId}><rect width={progress * 240} height="48" /></clipPath></defs>
           {waveform ? (
-            <g fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d={waveform} opacity="0.25" />
-              <path d={waveform} clipPath={`url(#${clipId})`} />
+            <g fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
+              <path d={waveform} opacity="0.25" vectorEffect="non-scaling-stroke" />
+              <path d={waveform} clipPath={`url(#${clipId})`} vectorEffect="non-scaling-stroke" />
             </g>
           ) : <line x1="0" y1="24" x2="240" y2="24" stroke="currentColor" opacity="0.25" />}
           <line data-playhead x1={progress * 240} x2={progress * 240} y1="1" y2="47" stroke="currentColor" strokeWidth="1.5" />

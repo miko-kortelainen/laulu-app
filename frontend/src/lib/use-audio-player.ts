@@ -6,7 +6,7 @@ async function loadWaveform(blob: Blob, signal: AbortSignal): Promise<string> {
   const context = new OfflineAudioContext(1, 1, 8000);
   const buffer = await context.decodeAudioData(await blob.arrayBuffer());
   signal.throwIfAborted();
-  const peaks = new Float32Array(80);
+  const peaks = new Float32Array(160);
 
   for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
     const samples = buffer.getChannelData(channel);
@@ -22,11 +22,11 @@ async function loadWaveform(blob: Blob, signal: AbortSignal): Promise<string> {
   const maximum = Math.max(...peaks) || 1;
   return Array.from(peaks, (peak, index) => {
     const height = Math.max(1, peak / maximum * 20);
-    return `M${index * 3 + 1.5} ${24 - height}v${height * 2}`;
+    return `M${index * 1.5 + 0.75} ${24 - height}v${height * 2}`;
   }).join(" ");
 }
 
-export function useAudioPlayer(src: string) {
+export function useAudioPlayer(src: string, active = true) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -80,6 +80,10 @@ export function useAudioPlayer(src: string) {
   }, [loadAudio]);
 
   useEffect(() => {
+    if (!active) audioRef.current?.pause();
+  }, [active]);
+
+  useEffect(() => {
     if (!playing) return;
     let frame: number;
     function updateTime() {
@@ -130,7 +134,19 @@ export function useAudioPlayer(src: string) {
 
   const audioProps = {
     ref: audioRef,
-    onPlay: () => setPlaying(true),
+    onPlay: () => {
+      const currentAudio = audioRef.current;
+      if (!currentAudio || currentAudio.paused) return;
+      if (!active) {
+        currentAudio.pause();
+        return;
+      }
+
+      for (const audio of document.querySelectorAll("audio")) {
+        if (audio !== currentAudio) audio.pause();
+      }
+      setPlaying(true);
+    },
     onPause: () => setPlaying(false),
     onEnded: () => setPlaying(false),
     onTimeUpdate: () => setTime(audioRef.current?.currentTime ?? 0),

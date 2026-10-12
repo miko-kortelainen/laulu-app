@@ -7,6 +7,7 @@ export function useSongs() {
   const [error, setError] = useState<string>();
   const [request, setRequest] = useState(0);
   const [selectedSongId, setSelectedSongId] = useState<string>();
+  const [openedSongIds, setOpenedSongIds] = useState<string[]>([]);
   const [deletingId, setDeletingId] = useState<string>();
   const [deleteError, setDeleteError] = useState<{ id: string; message: string }>();
   const [recoveryIds, setRecoveryIds] = useState<string[]>([]);
@@ -44,6 +45,7 @@ export function useSongs() {
   }
 
   function selectSong(id: string): void {
+    setOpenedSongIds((previous) => previous.includes(id) ? previous : [...previous, id]);
     setSelectedSongId((previous) => previous === id ? undefined : id);
   }
 
@@ -60,6 +62,7 @@ export function useSongs() {
     else {
       setSongs((previous) => previous?.filter((song) => song.id !== id));
       setSelectedSongId((previous) => previous === id ? undefined : previous);
+      setOpenedSongIds((previous) => previous.filter((songId) => songId !== id));
     }
     acting.current = false;
     setDeletingId(undefined);
@@ -84,6 +87,6 @@ export function useSongs() {
     setSavingId(undefined);
   }
 
-  return { songs, loading, error, refresh, selectedSongId, selectSong, deletingId, deleteError, removeSong,
+  return { songs, loading, error, refresh, selectedSongId, openedSongIds, selectSong, deletingId, deleteError, removeSong,
     recoveryIds, savingId, saveError, saveSong };
 }

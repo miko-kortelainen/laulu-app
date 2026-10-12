@@ -129,6 +129,7 @@ Older prompts without field labels appear in an additional **original prompt** b
 On small screens, the details appear below the song list.
 The selected card contains playback controls. Each card has an MP3 download icon beside the trash icon.
 Audio loads when you select a song or download its MP3.
+Opened players stay loaded until you leave **my songs**. Closing a card pauses its audio and preserves its playback position.
 The page reads songs for the signed-in user. It loads the list again when you return.
 If loading fails, select **try again**.
 Select the trash icon and confirm to permanently remove a saved song. If deletion fails, the song stays in the list for another attempt.
@@ -545,6 +546,7 @@ lyrics are returned. Structure markers are removed from the displayed lyrics.
 All audio players show a waveform and playhead with play/pause, stop, volume,
 and elapsed/total time. Click or drag the waveform to seek, or focus it and use
 the arrow keys, Home, or End. Stop returns to the beginning.
+Only one audio player plays at a time. When another player starts, the previous player pauses and keeps its playback position.
 The browser decodes the waveform with the Web Audio API; no player library or
 model call is used. If decoding fails, playback keeps a plain seek timeline.
 The agent acknowledges form changes briefly and conversationally, without follow-up
@@ -685,4 +687,4 @@ mocks all API calls. Set `E2E_URL` to test another local frontend URL.
 Audio player E2E check: run `npm run build:frontend`, then
 `npm --prefix frontend run test:audio`. It uses the same browser CLI and a local
 test server with real WAV audio. It checks waveform rendering, playback controls,
-seeking, volume, attachment sending, mobile layout, and load failure recovery.
+seeking, volume, attachment sending, playback switching between players, mobile layout, and load failure recovery.
