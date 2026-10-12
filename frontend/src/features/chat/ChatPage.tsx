@@ -11,17 +11,18 @@ const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
   const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, pendingSongId, context, contextError, usage, usageError, refreshUsage, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio } = chat;
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = messagesRef.current;
+    container?.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages.length, loading]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
       <section aria-label="chat" className="flex h-[70dvh] min-h-0 min-w-0 flex-col lg:h-auto lg:flex-1">
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto py-4 space-y-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <main ref={messagesRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto py-4 space-y-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <h1 className="sr-only">chat</h1>
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message} />
@@ -41,7 +42,6 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
               </div>
             </div>
           )}
-          <div ref={messagesEndRef} />
         </main>
 
         <footer className="flex-none pt-4 border-t border-white/10">
