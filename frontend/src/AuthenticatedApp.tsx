@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { Navigate, NavLink, Route, Routes } from "react-router";
+import { LauluWordmark } from "@/components/ui/LauluWordmark";
 import { ChatPage } from "@/features/chat/ChatPage";
 import { useChat } from "@/features/chat/useChat";
 import { ProfilePage } from "@/features/profile/ProfilePage";
@@ -21,13 +22,9 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-7xl flex-col px-4 py-4 font-sans text-zinc-100 sm:px-6 sm:py-6 lg:h-dvh">
       <header className="flex flex-none flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
+        <LauluWordmark className="w-28 shrink-0 sm:w-32" />
         <div className="min-w-0">
-          <p className="text-lg font-semibold tracking-tight">Nemotron Copilot</p>
-          <p className="text-xs text-zinc-400">Powered by Nebius Token Factory & Strands Agents SDK</p>
-        </div>
-        <div className="min-w-0">
-          <p className="max-w-48 truncate text-xs text-zinc-400 sm:ml-auto sm:text-right">{user.email}</p>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <nav aria-label="main navigation" className="flex gap-1">
               <NavLink to="/" end className={linkClass}>
                 chat

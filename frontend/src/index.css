@@ -32,21 +32,14 @@ body {
   min-height: 100dvh;
   background-color: var(--background);
   background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='.08'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Cpath fill='white' filter='url(%23grain)' d='M0 0h160v160H0z'/%3E%3C/svg%3E"),
-    radial-gradient(ellipse at 15% 0%, #353a46 0%, transparent 65%),
-    linear-gradient(135deg, #292a30 0%, #18191e 100%);
-  background-size: 160px 160px, cover, cover;
+    radial-gradient(ellipse at 15% 0%, #08090d 0%, transparent 65%),
+    linear-gradient(135deg, #040507 0%, #020304 100%);
+  background-size: cover, cover;
   background-attachment: fixed;
   color: #f4f4f5;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-.auth-page {
-  background:
-    radial-gradient(ellipse at 15% 0%, #08090d 0%, transparent 65%),
-    linear-gradient(135deg, #040507 0%, #020304 100%);
 }
 
 .music-field-updated {

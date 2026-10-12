@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router";
+import { LauluWordmark } from "@/components/ui/LauluWordmark";
 import type { useAuth } from "./useAuth";
 import { Turnstile } from "./Turnstile";
 
@@ -13,19 +14,8 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
   const location = useLocation();
   const verificationPending = captchaRequired && !captchaToken;
   return (
-    <main className="auth-page relative flex min-h-dvh w-full flex-col items-center justify-center gap-8 overflow-hidden px-5 py-10">
-      {/* Monoton's glyph bounds let the word scale evenly to the card width. */}
-      <svg className="relative w-full max-w-md font-brand font-normal" viewBox="93 -1482 7171 1554" role="img" aria-label="laulu">
-        <defs>
-          <linearGradient id="laulu-note-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#f87171" />
-            <stop offset="33%" stopColor="#fb923c" />
-            <stop offset="67%" stopColor="#fde047" />
-            <stop offset="100%" stopColor="#4ade80" />
-          </linearGradient>
-        </defs>
-        <text fontSize="2048" fill="url(#laulu-note-gradient)">laulu</text>
-      </svg>
+    <main className="relative flex min-h-dvh w-full flex-col items-center justify-center gap-8 overflow-hidden px-5 py-10">
+      <LauluWordmark className="relative w-full max-w-md" />
 
       <section className="relative w-full max-w-md overflow-hidden rounded-md border border-white/10 bg-zinc-950/85 shadow-xl shadow-black/30" aria-label={labels[view]}>
         <form className="px-6 pt-8 sm:px-8" onSubmit={(event) => { event.preventDefault(); void submit(); }} aria-busy={busy}>
