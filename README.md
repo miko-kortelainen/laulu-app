@@ -493,7 +493,7 @@ Edit these fields directly before you approve the song.
 Use **music model** to select **Lyria 3.5** (the default) or **Lyria 3 Clip Preview**.
 Clip Preview always generates a 30-second clip.
 Chat revisions and failed generation keep the selection. Clearing the conversation resets it.
-Click **generate music** to send the edited fields as one prompt and start the paid API call.
+Click **generate song** to send the edited fields as one prompt and start the paid API call.
 The backend uses the official `@google/genai` SDK for token counting and generation.
 Before generation, it calls Google's [token counting API](https://ai.google.dev/gemini-api/docs/tokens)
 with the final prompt and selected model. Prompts above 131,072 input tokens return

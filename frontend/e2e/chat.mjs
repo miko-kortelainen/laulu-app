@@ -175,7 +175,7 @@ try {
 
   run("network", "unroute", "**/api/**");
   run("network", "route", "**/api/chat", "--body", JSON.stringify({
-    reply: "review the prompt and click generate music.", musicPrompt: {
+    reply: "review the prompt and click generate song.", musicPrompt: {
       genre: "indie folk", mood: "warm", key: "G major", bpm: "82", duration: "2 minutes",
       instruments: "acoustic guitar", vocals: "alto vocals in English", production: "natural",
       lyrics: "a song about tiny paws",
@@ -189,7 +189,7 @@ try {
   openInput();
   run("fill", "textarea:not([name])", "create a song about cats");
   run("click", send);
-  run("wait", "--text", "review the prompt and click generate music.");
+  run("wait", "--text", "review the prompt and click generate song.");
   assert.equal(run("eval", 'document.querySelector("textarea[name=lyrics]").classList.contains("music-field-updated")'), "true");
   assert.equal(run("eval", 'document.querySelector("audio") === null'), "true");
   assert.equal(run("eval", 'document.querySelector("input[name=key]").value'), '"G major"');
@@ -274,7 +274,7 @@ try {
     window.fetch = (input, options) => input === "/api/music"
       ? new Promise(resolve => { window.finishGeneration = () => resolve(window.fetchBeforeGeneration(input, options)); })
       : window.fetchBeforeGeneration(input, options);`);
-  run("find", "role", "button", "click", "--name", "generate music");
+  run("find", "role", "button", "click", "--name", "generate song");
   run("wait", "--text", "generating track...");
   assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
   run("eval", 'window.finishGeneration(); window.fetch = window.fetchBeforeGeneration');
@@ -309,7 +309,7 @@ try {
       }
       return window.fetchBeforeStorage(input, options);
     };`);
-  run("find", "role", "button", "click", "--name", "generate music");
+  run("find", "role", "button", "click", "--name", "generate song");
   run("wait", "--text", "song generated, but saving failed.");
   run("wait", "--text", "this saves the song already generated.");
   assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"retry saving"');
@@ -331,7 +331,7 @@ try {
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", 'window.musicRequests.length'), "2");
   assert.equal(run("eval", 'window.storageRetries.length === 2 && window.storageRetries.every(request => request.method === "POST" && request.authenticated)'), "true");
-  assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"generate music"');
+  assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"generate song"');
   assert.equal(run("eval", 'window.musicRequests.at(-1).model'), '"lyria-3.5"');
   run("select", "select[name=musicModel]", "lyria-3-clip-preview");
   assert.equal(run("eval", 'document.querySelector("summary").textContent.trim()'), '"lyrics"');

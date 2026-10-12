@@ -115,7 +115,7 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
           onChange={editMusicPrompt} onModelChange={changeMusicModel} />
         <button type="button" onClick={() => void confirmMusic()} disabled={loading || (!pendingSongId && !isMusicPrompt(musicPrompt))}
           className="min-h-10 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-50">
-          {pendingSongId ? "retry saving" : "generate music"}
+          {pendingSongId ? "retry saving" : "generate song"}
         </button>
         {pendingSongId && <p className="text-xs text-zinc-400">this saves the song already generated.</p>}
         {musicError && <p role="alert" className="text-xs text-red-400">{musicError}</p>}

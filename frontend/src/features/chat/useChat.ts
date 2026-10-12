@@ -7,6 +7,7 @@ import { emptyMusicPrompt, isMusicPrompt, musicPromptFields, type MusicPrompt } 
 export interface Message {
   role: "user" | "agent";
   text: string;
+  welcome?: boolean;
   track?: MusicTrack;
   audio?: AudioTrack;
 }
@@ -56,7 +57,8 @@ export function useChat(userId: string) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "agent",
-      text: "Hello! I am your AI assistant powered by NVIDIA Nemotron Super on Nebius Token Factory. How can I help you?",
+      welcome: true,
+      text: "i'm here to help you turn your ideas into music. you can start by telling me what you have in mind, or try filling in the fields in the music generation panel and pressing the \"generate song\" button.",
     },
   ]);
   const [activity, setActivity] = useState<string | undefined>("recovering requests...");
