@@ -110,7 +110,10 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
           <Routes>
             <Route path="/" element={<ChatPage chat={chat} />} />
             <Route path="/songs" element={<SongsPage />} />
-            <Route path="/profile" element={<ProfilePage user={user} onLogout={onLogout} signingOut={signingOut} authError={authError} />} />
+            <Route path="/profile" element={
+              <ProfilePage user={user} onLogout={onLogout} signingOut={signingOut} authError={authError}
+                usage={chat.usage} usageError={chat.usageError} loading={chat.loading} refreshUsage={chat.refreshUsage} />
+            } />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

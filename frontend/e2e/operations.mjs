@@ -17,13 +17,14 @@ try {
   route("**/api/usage", usage);
   route("**/api/operations", { operations: [] });
   await seedAuth(run, url);
-  run("wait", "--text", "19 / 20 remaining");
+  run("set", "viewport", "1280", "900");
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   run("fill", "[name=genre]", "recovery folk");
   run("fill", "[name=lyrics]", "keep these lyrics");
   run("eval", `const key = 'music-draft:${authSession().user.id}';
     sessionStorage.setItem(key, JSON.stringify({ ...JSON.parse(sessionStorage.getItem(key)), pendingAudio: ${JSON.stringify(audio)} })); location.reload();`);
   run("wait", "--text", "reference.wav");
-  run("wait", "--text", "19 / 20 remaining");
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled');
 
   // Lose the start response after server acceptance. Polling must recover, never POST again.
   run("eval", `const original = window.fetch; window.fetch = (input, options) => {
@@ -52,7 +53,10 @@ try {
   route(`**/api/operations/${id}`, { operation: operation(id, "music", "completed", { track: { url: `/api/music/${id}.mp3`, lyrics: "recovered lyrics" } }, "") });
   route(`**/api/operations/${id}/acknowledge`, {});
   run("wait", "--text", "your track is ready.");
+  run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "4 / 5 remaining");
+  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", "sessionStorage.getItem('generation-posts')"), '"1"');
   assert.equal(run("eval", "document.querySelector('aside > button').disabled"), "false");
 
@@ -85,7 +89,7 @@ try {
   route("**/api/operations", { operations: [completedChat] });
   run("reload");
   run("wait", "--text", "recovered audio analysis");
-  run("wait", "--text", "19 / 20 remaining");
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", "document.querySelector('[name=genre]').value"), '"recovery folk"');
   assert.equal(run("eval", "document.querySelector('footer').innerText.includes('reference.wav')"), "true");
 
@@ -136,8 +140,12 @@ try {
 
   route("**/api/operations", { operations: [] });
   await seedAuth(run, url, authSession("10000000-0000-4000-8000-000000000099", "other@example.com"));
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled');
+  run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "other@example.com");
   run("wait", "--text", "19 / 20 remaining");
+  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("wait", "--fn", '!document.querySelector("fieldset").disabled');
   assert.equal(run("eval", "document.querySelector('[name=genre]').value"), '""');
   assert.equal(run("eval", "document.querySelector('main').innerText.includes('reference.wav')"), "false");
   console.log("Recovery E2E passed: reloads, reconnects, draft protection, acknowledgement retries, unknown outcomes, and account isolation.");

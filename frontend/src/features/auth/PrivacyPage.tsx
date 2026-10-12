@@ -25,7 +25,7 @@ export function PrivacyPage() {
         </section>
         <section className="space-y-2" aria-labelledby="privacy-limits">
           <h2 id="privacy-limits" className="text-base font-semibold text-zinc-100">beta limits</h2>
-          <p>The chat page shows your current daily allowances and reset time. Shared daily limits also apply, so requests can stop even when you have personal allowance left. Daily limits reset at midnight UTC.</p>
+          <p>Open my profile to see your current daily allowances and reset time. Shared daily limits also apply, so requests can stop even when you have personal allowance left. Daily limits reset at midnight UTC.</p>
           <p>A completed song uses one generation allowance. A confirmed generation failure restores personal allowance; an unknown outcome keeps it reserved. Retrying a failed save does not generate another song. Deleting a song does not restore daily generation allowance.</p>
           <p>Uploads must be MP3, WAV, FLAC, or OGG, up to 50 MiB and ten minutes long. The beta can have interruptions. Download songs you want to keep.</p>
         </section>

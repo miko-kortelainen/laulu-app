@@ -310,7 +310,7 @@ Per-user allowance changes take effect on the next reservation.
 Credit balances, paid tiers, and payments remain separate work. Their debit logic can use the existing reservation transaction.
 
 Authenticated `GET /api/usage` returns limits, used counts, remaining allowances, reserved bytes, and the next UTC reset time.
-The chat page displays remaining allowances and the reset time in the user's local time.
+The **my profile** page displays remaining allowances and the reset time in the user's local time.
 It refreshes after chat actions, page navigation, and the daily reset.
 Failed refreshes preserve the previous values and show a retry control.
 The database owns the date and counters. Backend restarts and conversation resets do not clear them.

@@ -170,7 +170,7 @@ try {
   await run("wait", "--text", "member since");
   assert.equal(await run("eval", "location.pathname"), '"/profile"');
   assert.equal(await run("eval", "document.querySelector('a[aria-current=page]').textContent.trim()"), '"my profile"');
-  assert.deepEqual(JSON.parse(await run("eval", "Array.from(document.querySelectorAll('dd'), element => element.textContent)")), [
+  assert.deepEqual(JSON.parse(await run("eval", "Array.from(document.querySelectorAll('#profile-title + dl dd'), element => element.textContent)")), [
     first.user.email, "confirmed",
     JSON.parse(await run("eval", `new Date(${JSON.stringify(first.user.created_at)}).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })`)),
     JSON.parse(await run("eval", `new Date(${JSON.stringify(first.user.last_sign_in_at)}).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })`)),
@@ -223,8 +223,8 @@ try {
   await run("find", "role", "link", "click", "--name", "my profile", "--exact");
   await run("wait", "--text", "member since");
   assert.equal(await run("eval", "document.querySelector('dd').textContent"), JSON.stringify(second.user.email));
-  assert.equal(await run("eval", "document.querySelectorAll('dd')[1].textContent"), '"not confirmed"');
-  assert.equal(await run("eval", "document.querySelectorAll('dd')[3].textContent"), '"not available"');
+  assert.equal(await run("eval", "document.querySelectorAll('#profile-title + dl dd')[1].textContent"), '"not confirmed"');
+  assert.equal(await run("eval", "document.querySelectorAll('#profile-title + dl dd')[3].textContent"), '"not available"');
   await run("eval", `const beforeLogout = window.fetch; window.failLogout = true;
     window.fetch = (input, options) => String(input).includes('/auth/v1/logout') && window.failLogout
       ? Promise.resolve(Response.json({ msg: 'logout unavailable' }, { status: 400 })) : beforeLogout(input, options);`);

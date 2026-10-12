@@ -28,12 +28,16 @@ try {
   run("network", "route", "**/api/usage", "--body", JSON.stringify(usage));
   run("open", url);
   run("wait", "--text", "0 / 40 messages");
+  run("set", "viewport", "1280", "900");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
+  assert.equal(run("eval", 'document.querySelector("#allowances-heading")'), "null");
+  run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "20 / 20 remaining");
   run("wait", "--text", "5 / 5 remaining");
   assert.equal(run("eval", 'document.querySelector("time").dateTime'), JSON.stringify(usage.resetAt));
   assert.equal(run("eval", 'document.querySelector("time").textContent === new Date(document.querySelector("time").dateTime).toLocaleString()'), "true");
-  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
-  run("set", "viewport", "1280", "900");
+  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("wait", "--text", "0 / 40 messages");
   assert.equal(run("eval", 'document.querySelector("#app-desktop-navigation nav").getBoundingClientRect().right <= document.querySelector("#app-content").getBoundingClientRect().left'), "true");
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("aside fieldset") !== null && document.querySelector("main fieldset") === null'), "true");
@@ -85,16 +89,16 @@ try {
   run("click", send);
   run("wait", "--text", "e2e reply");
   run("wait", "--text", "6 / 40 messages");
-  run("wait", "--text", "19 / 20 remaining");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "6");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
+  run("eval", 'window.usage.storage.remaining = 268435456');
   run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "member since");
-  run("eval", 'window.usage.storage.remaining = 268435456');
+  run("wait", "--text", "19 / 20 remaining");
+  run("wait", "--text", "256 MiB remaining");
   run("find", "role", "link", "click", "--name", "chat", "--exact");
   run("wait", "--text", "6 / 40 messages");
-  run("wait", "--text", "256 MiB remaining");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("e2e reply")'), "true");
 
@@ -442,6 +446,7 @@ try {
   // Refresh failures preserve valid usage and offer recovery; malformed responses do too.
   run("eval", 'window.usageFailure = true');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
+  run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "could not load daily allowances. try again.");
   run("wait", "--text", "19 / 20 remaining");
   run("eval", 'window.usageFailure = false; window.usage.generation = { limit: 5, used: 1, remaining: -1 }');
@@ -451,10 +456,11 @@ try {
   run("eval", 'window.usage.generation.remaining = 4');
   run("find", "role", "button", "click", "--name", "retry allowances", "--exact");
   run("wait", "--text", "4 / 5 remaining");
-  assert.equal(run("eval", 'document.querySelector("aside").innerText.includes("invalid usage response.")'), "false");
+  assert.equal(run("eval", 'document.querySelector("section[aria-labelledby=allowances-heading]").innerText.includes("invalid usage response.")'), "false");
   // The reset timer refreshes server counts without another user action.
   run("eval", 'window.usage.resetAt = new Date(Date.now() + 1200).toISOString()');
-  run("find", "role", "button", "click", "--name", "new session", "--exact");
+  run("find", "role", "link", "click", "--name", "chat", "--exact");
+  run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--fn", 'document.querySelector("time").dateTime === window.usage.resetAt');
   run("eval", `window.usage.resetAt = ${JSON.stringify(usage.resetAt)}; window.usage.generation = { limit: 5, used: 0, remaining: 5 }`);
   run("wait", "--text", "5 / 5 remaining");
