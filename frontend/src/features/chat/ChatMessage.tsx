@@ -61,7 +61,7 @@ export function ChatMessage({ message }: { message: Message }) {
         {!isUser && (
           <span aria-hidden="true" className="pointer-events-none absolute -inset-px rounded-[inherit] border-2 border-transparent opacity-5"
             style={{
-              backgroundImage: "linear-gradient(to bottom, #f87171 0%, #fb923c 33%, #fde047 67%, #4ade80 100%)",
+              backgroundImage: "linear-gradient(to right, #f87171 0%, #fb923c 33%, #fde047 67%, #4ade80 100%)",
               mask: "linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0) border-box",
               maskComposite: "exclude",
             }} />

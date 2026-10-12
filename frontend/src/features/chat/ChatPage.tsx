@@ -114,7 +114,13 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
         <MusicPromptFields prompt={musicPrompt} updatedFields={updatedMusicFields} model={musicModel} disabled={loading}
           onChange={editMusicPrompt} onModelChange={changeMusicModel} />
         <button type="button" onClick={() => void confirmMusic()} disabled={loading || (!pendingSongId && !isMusicPrompt(musicPrompt))}
-          className="min-h-10 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-50">
+          className="relative min-h-8 w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-50">
+          <span aria-hidden="true" className="pointer-events-none absolute -inset-px rounded-[inherit] border-2 border-transparent opacity-10"
+            style={{
+              backgroundImage: "linear-gradient(to right, #f87171 0%, #fb923c 33%, #fde047 67%, #4ade80 100%)",
+              mask: "linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0) border-box",
+              maskComposite: "exclude",
+            }} />
           {pendingSongId ? "retry saving" : "generate song"}
         </button>
         {pendingSongId && <p className="text-xs text-zinc-400">this saves the song already generated.</p>}
