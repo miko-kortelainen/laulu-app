@@ -18,6 +18,7 @@ export function useAuth() {
   const view: AuthView = passwordView === "update" ? "update" : createAccountRoute ? "register" : passwordView;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState<string | undefined>(authCallback.error);
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -84,6 +85,7 @@ export function useAuth() {
 
   function clearForm(): void {
     setPassword("");
+    setTermsAccepted(false);
     setError(undefined);
     setNotice(undefined);
     setCaptchaToken(undefined);
@@ -104,10 +106,17 @@ export function useAuth() {
     setBusy(false);
   }
 
-  function submit(): Promise<void> {
-    return perform(() => submitAuth(view, email.trim(), password, captchaToken), () => {
+  async function submit(): Promise<void> {
+    if (view === "register" && !termsAccepted) {
+      setError("accept the terms of service to create an account.");
+      return;
+    }
+    await perform(() => submitAuth(view, email.trim(), password, captchaToken), () => {
       setPassword("");
-      if (view === "register") setNotice("check your email to confirm your account before logging in.");
+      if (view === "register") {
+        setTermsAccepted(false);
+        setNotice("check your email to confirm your account before logging in.");
+      }
       if (view === "reset") setNotice("if an account exists, you will receive a password reset email.");
       if (view === "update") {
         setView("login");
@@ -118,7 +127,7 @@ export function useAuth() {
 
   return {
     session, loading, view, email, password, error, notice, busy, captchaRequired, captchaToken, captchaReset, setCaptchaToken,
-    configured: Boolean(supabase), setEmail, setPassword, changeView, submit,
+    configured: Boolean(supabase), termsAccepted, setTermsAccepted, setEmail, setPassword, changeView, submit,
     resend: () => perform(() => resendConfirmation(email.trim(), captchaToken), () => setNotice("check your email for a confirmation link.")),
     logout: () => perform(signOut),
   };

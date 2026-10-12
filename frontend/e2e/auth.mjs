@@ -70,6 +70,7 @@ try {
 
   await run("open", `${url}/create-account`);
   await run("wait", 'section[aria-label="create account"]');
+  assert.equal(await run("eval", "document.querySelector('#auth-terms').checked"), "false");
   assert.equal(await run("eval", "location.pathname"), '"/create-account"');
   await run("find", "role", "link", "click", "--name", "back to login", "--exact");
   await run("wait", "--text", "log in");
@@ -101,8 +102,24 @@ try {
       };`);
   }
   await run("network", "route", `${authOrigin}/auth/v1/signup*`, "--body", JSON.stringify({ user: first.user, session: null }));
+  await run("eval", `window.signupRequests = 0; const beforeSignup = window.fetch;
+    window.fetch = (input, options) => {
+      if (String(input).includes('/auth/v1/signup')) window.signupRequests++;
+      return beforeSignup(input, options);
+    };`);
+  await submit();
+  assert.equal(await run("eval", "document.querySelector('#auth-terms').validity.valueMissing"), "true");
+  assert.equal(await run("eval", "window.signupRequests"), "0");
+  await run("eval", "document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))");
+  await run("wait", "--text", "accept the terms of service to create an account.");
+  assert.equal(await run("eval", "window.signupRequests"), "0", "the submit action also requires terms acceptance");
+  assert.equal(await run("eval", "document.querySelector('label[for=auth-terms] a').getAttribute('href')"), JSON.stringify("/terms"));
+  await run("focus", "#auth-terms");
+  await run("press", "Space");
   await submit();
   await run("wait", "--text", "check your email to confirm your account");
+  assert.equal(await run("eval", "window.signupRequests"), "1");
+  assert.equal(await run("eval", "document.querySelector('#auth-terms').checked"), "false", "successful registration clears acceptance");
   assert.equal(await run("eval", 'document.querySelector("section[aria-label=chat]")'), "null");
   await run("network", "route", `${authOrigin}/auth/v1/resend*`, "--body", "{}");
   if (captcha) {
@@ -118,6 +135,7 @@ try {
   assert.equal(await run("eval", "document.querySelector('[role=status]').textContent"), '""', "history navigation clears the registration notice");
   await run("forward");
   await run("wait", 'section[aria-label="create account"]');
+  assert.equal(await run("eval", "document.querySelector('#auth-terms').checked"), "false", "history navigation requires fresh acceptance");
   assert.equal(await run("eval", "document.querySelector('[role=status]').textContent"), '""');
 
   // The actual Supabase SDK processes the confirmation callback and removes its tokens.
@@ -125,6 +143,10 @@ try {
     expires_in: "3600", token_type: "bearer", type: "signup" });
   await run("open", `${url}/#${hash}`);
   await run("wait", "--text", "0 / 40 messages");
+  assert.equal(await run("eval", "location.pathname"), JSON.stringify("/"), "account confirmation opens chat");
+  await run("open", `${url}/create-account`);
+  await run("wait", "--text", "0 / 40 messages");
+  assert.equal(await run("eval", "location.pathname"), JSON.stringify("/"), "authenticated account creation opens chat");
   assert.equal(await run("eval", "location.hash"), '""');
   await run("set", "viewport", "1280", "900");
   await run("network", "route", `${authOrigin}/auth/v1/logout*`, "--body", "{}");

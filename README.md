@@ -105,6 +105,9 @@ The backend deletes idle conversations after 30 minutes. Agent access renews thi
 Running agent requests pause the timeout. The timeout restarts when each request finishes or fails.
 After expiration, the next chat request starts a new conversation. Saved songs remain available, but the backend deletes session uploads.
 Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
+To create an account, select **i accept the terms of service**. The checkbox starts unchecked.
+The terms link opens in a new tab so the registration form stays available.
+Account creation and confirmation open chat at `/`, instead of a previously requested page.
 Logout also deletes uploaded audio. If a job is active, the backend deletes its uploads when the job finishes.
 Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
 The profile link is at the bottom of the sidebar. Select **log out** on the profile page to sign out.
@@ -650,8 +653,9 @@ Production beta tracing is disabled. Deploy with `NODE_ENV=production`.
 In production, the backend overrides `LANGSMITH_TRACING` to `false`.
 Old environment settings cannot enable tracing.
 The public `/privacy` page explains storage, AI processing, temporary data, and beta limits.
-It is linked from login and the app footer. Privacy and account deletion requests go to `miko@kortelainen.dev`.
-Serve `index.html` for `/privacy`, as for the other frontend routes.
+The public `/terms` page sets the terms of service for the beta, including acceptable use, AI output, and copyright complaints.
+Both are linked from login and the app footer. Privacy, copyright, and account deletion requests go to `miko@kortelainen.dev`.
+Serve `index.html` for `/privacy` and `/terms`, as for the other frontend routes.
 
 For development tracing, set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `backend/.env`, then
 restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.

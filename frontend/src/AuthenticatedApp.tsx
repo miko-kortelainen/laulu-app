@@ -7,6 +7,7 @@ import { useChat } from "@/features/chat/useChat";
 import { ProfilePage } from "@/features/profile/ProfilePage";
 import { SongsPage } from "@/features/songs/SongsPage";
 import { PrivacyPage } from "@/features/auth/PrivacyPage";
+import { TermsPage } from "@/features/auth/TermsPage";
 import { cn } from "@/lib/utils";
 
 interface AuthenticatedAppProps {
@@ -115,13 +116,17 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
                 usage={chat.usage} usageError={chat.usageError} loading={chat.loading} refreshUsage={chat.refreshUsage} />
             } />
             <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
       </div>
-      <footer className="flex justify-end border-t border-white/10 py-2 text-zinc-400">
+      <footer className="flex justify-end gap-1 border-t border-white/10 py-2 text-zinc-400">
         <NavLink to="/privacy" className="inline-flex min-h-11 items-center rounded-lg px-3 text-xs underline underline-offset-4 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400">
           privacy
+        </NavLink>
+        <NavLink to="/terms" className="inline-flex min-h-11 items-center rounded-lg px-3 text-xs underline underline-offset-4 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400">
+          terms
         </NavLink>
       </footer>
     </div>

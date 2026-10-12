@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router";
+import { Link } from "react-router";
 import { LauluWordmark } from "@/components/ui/LauluWordmark";
 import type { useAuth } from "./useAuth";
 import { Turnstile } from "./Turnstile";
@@ -10,8 +10,7 @@ const buttonClass = "inline-flex min-h-11 items-center justify-center rounded-sm
 const labels = { login: "log in", register: "create account", reset: "reset password", update: "save new password" };
 
 export function AuthPage({ view, email, password, error, notice, busy, configured, setEmail, setPassword, changeView, submit, resend, logout, session,
-  captchaRequired, captchaToken, captchaReset, setCaptchaToken }: AuthPageProps) {
-  const location = useLocation();
+  captchaRequired, captchaToken, captchaReset, setCaptchaToken, termsAccepted, setTermsAccepted }: AuthPageProps) {
   const verificationPending = captchaRequired && !captchaToken;
   return (
     <main className="relative flex min-h-dvh w-full flex-col items-center justify-center gap-8 overflow-hidden px-5 py-10">
@@ -42,6 +41,18 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
             )}
           </div>
 
+          {view === "register" && (
+            <div className="mt-2 flex min-h-8 items-center gap-3 text-sm text-zinc-300">
+              <input id="auth-terms" name="termsAccepted" type="checkbox" required checked={termsAccepted}
+                disabled={busy || !configured} onChange={(event) => setTermsAccepted(event.currentTarget.checked)}
+                className="size-5 shrink-0 accent-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300" />
+              <label htmlFor="auth-terms" className="py-1">
+                i accept the <Link to="/terms" target="_blank" rel="noopener noreferrer"
+                  className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">terms of service<span className="sr-only"> (opens in a new tab)</span></Link>
+              </label>
+            </div>
+          )}
+
           {view === "login" && <button type="button" disabled={busy} onClick={() => changeView("reset")}
             className="flex min-h-8 w-fit items-center text-xs text-zinc-400 underline underline-offset-4 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">forgot password?</button>}
 
@@ -55,13 +66,14 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
 
         <div className="mt-6 border-t border-white/10 bg-white/[0.03] px-6 py-6 sm:px-8">
           <div className="grid gap-3 sm:auto-cols-fr sm:grid-flow-col">
-            {view === "login" && <Link to="/create-account" state={location.state} className={buttonClass} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); else changeView("login"); }}>create account</Link>}
-            {view !== "login" && view !== "update" && <Link to="/login" state={location.state} className={buttonClass} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); else changeView("login"); }}>back to login</Link>}
+            {view === "login" && <Link to="/create-account" className={buttonClass} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); else changeView("login"); }}>create account</Link>}
+            {view !== "login" && view !== "update" && <Link to="/login" className={buttonClass} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); else changeView("login"); }}>back to login</Link>}
             {view === "register" && notice && <button type="button" className={buttonClass} disabled={busy || !configured || !email.trim() || verificationPending} onClick={() => void resend()}>resend confirmation</button>}
             {view === "update" && session && <button type="button" className={buttonClass} disabled={busy} onClick={() => void logout()}>log out</button>}
           </div>
-          <p className="mt-3 text-center text-xs text-zinc-400">
+          <p className="mt-3 flex flex-wrap items-center justify-center gap-x-4 text-center text-xs text-zinc-400">
             <Link to="/privacy" className="inline-flex min-h-11 items-center justify-center rounded-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">privacy and beta limits</Link>
+            <Link to="/terms" className="inline-flex min-h-11 items-center justify-center rounded-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">terms of service</Link>
           </p>
         </div>
       </section>
