@@ -1,4 +1,4 @@
-import { formatMusicPrompt, isMusicPrompt, type MusicPrompt } from "./musicPrompt";
+import { formatMusicPrompt, isMusicPrompt, type MusicPrompt } from "@/lib/music-prompt";
 import { authenticatedFetch } from "@/lib/api";
 
 export interface ChatReply {

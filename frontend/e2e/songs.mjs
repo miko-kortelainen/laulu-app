@@ -9,8 +9,14 @@ const run = async (...args) => (await exec("agent-browser", ["--session", sessio
 const url = process.env.E2E_URL;
 const first = authSession();
 const second = authSession("20000000-0000-4000-8000-000000000002", "second@example.com");
+const songFields = {
+  genre: "warm acoustic folk", mood: "hopeful", key: "C major", bpm: "90", duration: "3 minutes",
+  vocals: "soft English vocals", instruments: "acoustic guitar\n\npiano", production: "warm room sound\nkey: keep this line", lyrics: "a quiet morning",
+};
 const songs = [
-  { id: "11111111-1111-4111-8111-111111111111", prompt: "warm acoustic folk", lyrics: "a quiet morning", model: "lyria-3.5", createdAt: "2026-10-06T10:00:00Z" },
+  { id: "11111111-1111-4111-8111-111111111111",
+    prompt: "genre / style: warm acoustic folk\n\nmood: hopeful\n\nkey: C major\n\nBPM: 90\n\nduration: 3 minutes\n\nvocals / language: soft English vocals\n\ninstruments: acoustic guitar\n\npiano\n\nproduction: warm room sound\nkey: keep this line\n\nLyrics:\nrequested lyrics",
+    lyrics: songFields.lyrics, model: "lyria-3.5", createdAt: "2026-10-06T10:00:00Z" },
   { id: "22222222-2222-4222-8222-222222222222", prompt: "instrumental piano", lyrics: "", model: "lyria-3.5", createdAt: "2026-10-05T10:00:00Z" },
 ].map((song) => ({ ...song, url: `/api/music/${song.id}.mp3`, sizeBytes: 16044 }));
 
@@ -48,17 +54,20 @@ try {
   await run("wait", "--text", "song 2");
   assert.equal(await run("eval", "document.querySelector('a[aria-current=page]').textContent.trim()"), '"my songs"');
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "2");
+  assert.equal(await run("eval", "document.querySelector('main section > div button')"), "null");
   assert.equal(await run("eval", "document.querySelector('main time').dateTime"), JSON.stringify(songs[0].createdAt));
   assert.equal(await run("eval", "window.songRequests.some(request => request.url.startsWith('/api/music/'))"), "false");
-  await run("click", "main li:first-child details summary");
-  await run("wait", "--text", "warm acoustic folk");
-  await run("click", "main li:first-child details:last-of-type summary");
-  await run("wait", "--text", "a quiet morning");
-  await run("find", "role", "button", "click", "--name", "listen song 1", "--exact");
+  assert.equal(await run("eval", "document.querySelectorAll('main li details, main li textarea').length"), "0");
+  await run("wait", "--text", "select a song to view its prompt and lyrics.");
+  await run("focus", "main li:first-child h2 button");
+  await run("press", "Enter");
   await run("wait", "--fn", "document.querySelector('main audio')?.duration > 0");
+  assert.equal(await run("eval", "Object.fromEntries(Array.from(document.querySelectorAll('#song-info input, #song-info textarea')).map(field => [field.name, field.value]))"), JSON.stringify({ musicModel: songs[0].model, ...songFields }));
+  assert.equal(await run("eval", "Array.from(document.querySelectorAll('#song-info input, #song-info textarea')).every(field => field.readOnly && !field.disabled)"), "true");
+  assert.equal(await run("eval", "document.querySelector('#song-info').getBoundingClientRect().left >= document.querySelector('section[aria-labelledby=songs-title]').getBoundingClientRect().right"), "true");
   await run("find", "role", "button", "click", "--name", "play song 1", "--exact");
   await run("wait", "--fn", "document.querySelector('main audio')?.currentTime > 0");
-  await run("find", "role", "button", "click", "--name", "download MP3", "--exact");
+  await run("find", "role", "button", "click", "--name", "download MP3 song 1", "--exact");
   await run("wait", "--fn", "window.songDownloads.length === 1");
   assert.equal(await run("eval", "window.songDownloads[0].name"), JSON.stringify(`song-${songs[0].id}.mp3`));
   assert.equal(await run("eval", "window.songDownloads[0].href.startsWith('blob:')"), "true");
@@ -67,20 +76,30 @@ try {
   await run("wait", "--fn", "document.querySelector('main audio')?.duration > 0");
   assert.equal(await run("eval", "document.querySelectorAll('main audio').length"), "1");
   assert.equal(await run("eval", "document.querySelector('main audio').getAttribute('aria-label')"), '"song 2"');
+  assert.equal(await run("eval", "document.querySelector('#song-info [name=originalPrompt]').value"), JSON.stringify(songs[1].prompt));
+  assert.equal(await run("eval", "Array.from(document.querySelectorAll('#song-info fieldset input:not([name=musicModel]), #song-info fieldset textarea')).every(field => field.value === '')"), "true");
+  await run("find", "role", "button", "click", "--name", "close song 2", "--exact");
+  await run("wait", "--text", "select a song to view its prompt and lyrics.");
+  assert.equal(await run("eval", "document.querySelectorAll('#song-info textarea, main audio').length"), "0");
+  await run("find", "role", "button", "click", "--name", "listen song 2", "--exact");
   await run("set", "viewport", "320", "760");
   assert.equal(await run("eval", "document.documentElement.scrollWidth <= innerWidth"), "true");
+  assert.equal(await run("eval", "document.querySelector('#song-info').getBoundingClientRect().top >= document.querySelector('section[aria-labelledby=songs-title]').getBoundingClientRect().bottom"), "true");
 
   await run("eval", "window.songFailure = true");
-  await run("find", "role", "button", "click", "--name", "refresh", "--exact");
+  await run("find", "role", "link", "click", "--name", "chat", "--exact");
+  await run("find", "role", "link", "click", "--name", "my songs", "--exact");
   await run("wait", "--text", "could not load your songs.");
-  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "2");
+  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
   await run("eval", "window.songFailure = false; window.badSongs = true");
   await run("find", "role", "button", "click", "--name", "try again", "--exact");
   await run("wait", "--text", "invalid songs response.");
-  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "2");
+  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
   await run("eval", "window.badSongs = false");
   await run("find", "role", "button", "click", "--name", "try again", "--exact");
   await run("wait", "--fn", "!document.querySelector('[role=alert]') && !document.querySelector('[role=status]')");
+  await run("find", "role", "button", "click", "--name", "listen song 2", "--exact");
+  await run("wait", "--fn", "document.querySelector('main audio')?.duration > 0");
 
   await run("eval", `window.deleteConfirmed = false; window.deleteFailure = true; window.deleteRequests = [];
     window.confirm = () => window.deleteConfirmed;
@@ -101,16 +120,18 @@ try {
   await run("wait", "--text", "could not delete the song.");
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "2");
   assert.equal(await run("eval", "document.querySelector('main audio').getAttribute('aria-label')"), '"song 2"');
+  assert.equal(await run("eval", "document.querySelector('#song-info [name=originalPrompt]').value"), JSON.stringify(songs[1].prompt));
   await run("eval", "window.deleteFailure = false");
   await run("find", "role", "button", "click", "--name", "delete song 2", "--exact");
   await run("wait", "--text", "deleting...");
-  assert.equal(await run("eval", "Array.from(document.querySelectorAll('main li > button')).every(button => button.disabled)"), "true");
-  assert.equal(await run("eval", "document.querySelector('main section > div button').disabled"), "true");
+  assert.equal(await run("eval", "Array.from(document.querySelectorAll('main li > div > button')).every(button => button.disabled)"), "true");
   assert.equal(await run("eval", "window.deleteRequests.length"), "2");
   assert.equal(await run("eval", "window.deleteRequests[1].url"), JSON.stringify(`/api/songs/${songs[1].id}`));
   assert.equal(await run("eval", "window.deleteRequests[1].token"), JSON.stringify(`Bearer ${first.access_token}`));
   await run("eval", "window.finishSongDelete()");
   await run("wait", "--fn", "document.querySelectorAll('main li').length === 1 && !document.querySelector('main audio')");
+  await run("wait", "--text", "select a song to view its prompt and lyrics.");
+  assert.equal(await run("eval", "document.querySelectorAll('#song-info textarea').length"), "0");
   assert.equal(await run("eval", "document.querySelector('main time').dateTime"), JSON.stringify(songs[0].createdAt));
   assert.equal(await run("eval", "document.querySelector('[role=alert]')"), "null");
 
@@ -151,13 +172,14 @@ try {
       });
     };`);
   await run("eval", "window.recoveryFailure = true");
-  await run("find", "role", "button", "click", "--name", "refresh", "--exact");
+  await run("find", "role", "link", "click", "--name", "chat", "--exact");
+  await run("find", "role", "link", "click", "--name", "my songs", "--exact");
   await run("wait", "--text", "could not load unsaved songs.");
-  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "2");
+  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "1");
   await run("eval", "window.recoveryFailure = false; window.badRecovery = true");
   await run("find", "role", "button", "click", "--name", "try again", "--exact");
   await run("wait", "--text", "invalid unsaved songs response.");
-  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "2");
+  assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "1");
   await run("eval", "window.badRecovery = false");
   await run("find", "role", "button", "click", "--name", "try again", "--exact");
   await run("wait", "--fn", "!document.querySelector('[role=alert]') && !document.querySelector('[role=status]')");
@@ -171,8 +193,7 @@ try {
   await run("eval", "window.retryMode = 'pending'");
   await run("find", "role", "button", "click", "--name", "retry saving unsaved song 1", "--exact");
   await run("wait", "--text", "saving...");
-  assert.equal(await run("eval", "document.querySelector('main section > div button').disabled"), "true");
-  assert.equal(await run("eval", "Array.from(document.querySelectorAll('main li button')).every(button => button.disabled || button.textContent.includes('listen'))"), "true");
+  assert.equal(await run("eval", "Array.from(document.querySelectorAll('main li button')).every(button => button.disabled || button.getAttribute('aria-label')?.startsWith('listen '))"), "true");
   assert.equal(await run("eval", "window.retryRequests.length"), "3");
   assert.equal(await run("eval", "window.retryRequests.every(request => request.method === 'POST' && request.token === " + JSON.stringify(`Bearer ${first.access_token}`) + ")"), "true");
   assert.equal(await run("eval", "window.generationRequests"), "0");
@@ -203,7 +224,7 @@ try {
   await run("find", "role", "link", "click", "--name", "my songs", "--exact");
   await run("wait", "--text", "no saved songs yet.");
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
-  console.log("Songs E2E passed: authenticated navigation and reload, empty state, saved metadata, playback and download, deletion confirmation and failure recovery, retained chat form, failed refresh recovery, unsaved-song discovery and retry without generation, invalid-response rejection, narrow layout, and account switching.");
+  console.log("Songs E2E passed: authenticated navigation and reload, empty state, saved metadata, read-only details sidebar and keyboard selection, playback and download, deletion confirmation and failure recovery, retained chat form, load failure recovery, unsaved-song discovery and retry without generation, invalid-response rejection, narrow layout, and account switching.");
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);
   throw error;

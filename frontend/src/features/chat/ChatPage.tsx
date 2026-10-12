@@ -4,8 +4,8 @@ import { AudioPlayer } from "@/components/ui/audio-player";
 import { cn } from "@/lib/utils";
 import { ChatMessage } from "./ChatMessage";
 import type { useChat } from "./useChat";
-import { MusicPromptFields } from "./MusicPromptFields";
-import { isMusicPrompt } from "./musicPrompt";
+import { MusicPromptFields } from "@/components/ui/music-prompt-fields";
+import { isMusicPrompt } from "@/lib/music-prompt";
 
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 

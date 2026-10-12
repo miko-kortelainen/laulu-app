@@ -120,9 +120,15 @@ Local audio playback and downloads use authenticated requests.
 Existing audio without an owner remains on disk but has no public route.
 Generated songs use private R2 storage and Supabase metadata. Uploads stay in local user directories for the current session.
 Use **my songs** to see your newest 100 saved songs, creation dates, prompts, and lyrics.
-Select **listen** to play a song or download its MP3. Only the selected song loads audio.
-The page reads songs for the signed-in user. It loads the list again when you return or select **refresh**.
-Select **delete** and confirm to permanently remove a saved song. If deletion fails, the song stays in the list for another attempt.
+Select a song card to view its genre, mood, key, BPM, and other prompt fields in the read-only details sidebar.
+The sidebar uses the same form as chat and includes the saved lyrics.
+Older prompts without field labels appear in an additional **original prompt** box.
+On small screens, the details appear below the song list.
+The selected card contains playback controls. Each card has an MP3 download icon beside the trash icon.
+Audio loads when you select a song or download its MP3.
+The page reads songs for the signed-in user. It loads the list again when you return.
+If loading fails, select **try again**.
+Select the trash icon and confirm to permanently remove a saved song. If deletion fails, the song stays in the list for another attempt.
 The page also lists **unsaved songs**, including after a reload or backend restart when recovery audio is available.
 Select **retry saving** to store the existing audio without another generation call.
 If saving fails, the song stays in the unsaved list. A successful save moves it to the saved list.
@@ -543,7 +549,7 @@ questions or repeated button reminders. It does not repeat the music prompt in c
 Generated tracks are saved in private R2 storage with owner-linked Supabase metadata.
 The backend uses `backend/generated-music/` for unfinished saves and temporary processing files. Git ignores this directory.
 Songs survive backend restarts and are available through `GET /api/songs` after another login.
-Chat messages remain in the current browser session. A saved-song interface is not included yet.
+Chat messages remain in the current browser session. Saved songs are available on **my songs**.
 The **new session** button resets the conversation and music form and leaves saved tracks in place.
 The conversation context bar below the music form shows the backend's retained
 chat and tool message count against its 40-message sliding window. The count

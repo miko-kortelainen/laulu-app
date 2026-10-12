@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router";
 import { acknowledgeOperation, getOperations, readOperationResult, waitForOperation, generateMusic, getChatContext, resetChat, retrySongStorage, sendMessage, OperationError, SongStorageError, uploadAudio, type AudioTrack, type ChatContext, type MusicTrack } from "./api";
 import { getUsage, type Usage } from "@/lib/usage";
-import { emptyMusicPrompt, isMusicPrompt, musicPromptFields, type MusicPrompt } from "./musicPrompt";
+import { emptyMusicPrompt, isMusicPrompt, musicPromptFields, type MusicPrompt } from "@/lib/music-prompt";
 
 export interface Message {
   role: "user" | "agent";
