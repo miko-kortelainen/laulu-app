@@ -54,6 +54,7 @@ These instructions apply to the entire monorepo.
 - Preserve keyboard access, focus states, labels, and disabled states.
 - Use the existing Tailwind system and `cn()` helper for conditional classes.
 - Preserve consistent spacing, alignment, typography, and colors.
+- Keep the `laulu` wordmark in Monoton with the Scriabin gradient: C (red), G (orange), D (yellow), A (green).
 - Keep agent prose short, natural, and lowercase.
 - Preserve required casing in code, commands, paths, URLs, and exact quotations.
 

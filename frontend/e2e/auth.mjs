@@ -69,19 +69,19 @@ try {
   await run("wait", "--text", "log in");
 
   await run("open", `${url}/create-account`);
-  await run("wait", "--text", "confirm your email to start using the app.");
+  await run("wait", 'section[aria-label="create account"]');
   assert.equal(await run("eval", "location.pathname"), '"/create-account"');
   await run("find", "role", "link", "click", "--name", "back to login", "--exact");
   await run("wait", "--text", "log in");
   assert.equal(await run("eval", "location.pathname"), '"/login"');
-  await run("find", "role", "link", "click", "--name", "register", "--exact");
-  await run("wait", "--text", "confirm your email to start using the app.");
+  await run("find", "role", "link", "click", "--name", "create account", "--exact");
+  await run("wait", 'section[aria-label="create account"]');
   assert.equal(await run("eval", "location.pathname"), '"/create-account"');
   for (const direction of ["back", "forward"]) {
     await run("fill", "#auth-password", "history-password");
     await verify();
     await run(direction);
-    await run("wait", "--text", direction === "back" ? "log in" : "confirm your email to start using the app.");
+    await run("wait", `section[aria-label="${direction === "back" ? "log in" : "create account"}"]`);
     assert.equal(await run("eval", 'document.querySelector("#auth-password").value'), '""', "history navigation clears the previous password");
     if (captcha) assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true", "history navigation requires new verification");
   }
@@ -117,7 +117,7 @@ try {
   await run("wait", "--text", "log in");
   assert.equal(await run("eval", "document.querySelector('[role=status]').textContent"), '""', "history navigation clears the registration notice");
   await run("forward");
-  await run("wait", "--text", "confirm your email to start using the app.");
+  await run("wait", 'section[aria-label="create account"]');
   assert.equal(await run("eval", "document.querySelector('[role=status]').textContent"), '""');
 
   // The actual Supabase SDK processes the confirmation callback and removes its tokens.
@@ -260,7 +260,7 @@ try {
   await run("open", `${url}/#error=access_denied&error_description=link%20expired&type=recovery`);
   await run("wait", "--text", "link expired");
   assert.equal(await run("eval", "location.hash"), '""');
-  assert.equal(await run("eval", 'document.querySelector("h1").innerText'), '"log in"');
+  assert.equal(await run("eval", "document.querySelector('button[type=submit]').textContent.trim()"), '"log in"');
   console.log(`Auth E2E passed: ${captcha ? "CAPTCHA expiry, failure recovery and token reset, " : ""}public privacy notice and reload, registration, confirmation, resend, login recovery, profile navigation and reload, retained song form across privacy navigation, logout cancellation, account isolation, password recovery, and expired links.`);
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);

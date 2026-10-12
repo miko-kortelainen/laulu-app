@@ -6,6 +6,9 @@ A simple full-stack AI chatbot built with:
 - **AI Agent Framework:** [Strands Agents SDK](https://github.com/strands-agents/sdk-typescript) (`@strands-agents/sdk`)
 - **LLM / Inference:** [Nebius Token Factory](https://tokenfactory.nebius.com) running NVIDIA Nemotron Super (`nvidia/nemotron-3-super-120b-a12b`)
 
+The login page shows the `laulu` wordmark in Monoton above the form.
+Its gradient follows [Scriabin's note-color mapping](https://www.scriabin-association.com/scriabin-poet-of-fire-and-ecstasy-guillaume-fournier/) along the circle of fifths: C (red), G (orange), D (yellow), A (green).
+
 ---
 
 ## Architecture Overview

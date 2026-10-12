@@ -2,6 +2,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+  --font-brand: "Monoton", monospace;
   --font-sans: "Miranda Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
@@ -40,6 +41,12 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.auth-page {
+  background:
+    radial-gradient(ellipse at 15% 0%, #08090d 0%, transparent 65%),
+    linear-gradient(135deg, #040507 0%, #020304 100%);
 }
 
 .music-field-updated {
