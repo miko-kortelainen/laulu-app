@@ -48,7 +48,7 @@ export function configureTestQuotas() {
       const limit = defaults[`${operation}_daily`];
       return { limit, used, remaining: Math.max(0, limit - used) };
     };
-    return Response.json({ resetAt: '2099-01-01T00:00:00Z', chat: allowance('chat'), analysis: allowance('analysis'),
+    return Response.json({ resetAt: '2099-01-01T00:00:00Z', generationResetAt: '2099-01-01T00:00:00Z', plan: 'free', chat: allowance('chat'), analysis: allowance('analysis'),
       generation: allowance('generation'), storage: { limit: 536870912, used: 0,
         reserved: owned.reduce((sum, entry) => sum + entry.storageBytes, 0), remaining: 536870912 } });
   }

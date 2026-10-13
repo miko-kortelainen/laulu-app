@@ -12,7 +12,7 @@ const run = (...args) => execFileSync("agent-browser", ["--session", session, ..
 const input = 'textarea[aria-label="Prompt message"]';
 const send = 'button[aria-label="Send prompt"]';
 const uploadPath = `/tmp/musical-chat-upload-${process.pid}.wav`;
-const usage = { resetAt: '2099-01-01T00:00:00Z',
+const usage = { resetAt: '2099-01-01T00:00:00Z', generationResetAt: '2099-01-01T00:00:00Z', plan: 'free',
   chat: { limit: 20, used: 0, remaining: 20 }, analysis: { limit: 10, used: 0, remaining: 10 },
   generation: { limit: 5, used: 0, remaining: 5 }, storage: { limit: 536870912, used: 0, reserved: 0, remaining: 536870912 } };
 
@@ -458,7 +458,7 @@ try {
   run("eval", 'window.usageFailure = true');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("find", "role", "link", "click", "--name", "my profile", "--exact");
-  run("wait", "--text", "could not load daily allowances. try again.");
+  run("wait", "--text", "could not load allowances. try again.");
   run("wait", "--text", "19 / 20 remaining");
   run("eval", 'window.usageFailure = false; window.usage.generation = { limit: 5, used: 1, remaining: -1 }');
   run("find", "role", "button", "click", "--name", "retry allowances", "--exact");

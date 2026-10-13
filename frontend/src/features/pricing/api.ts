@@ -1,4 +1,45 @@
 import { initializePaddle, type Paddle, type PaddleEventData } from "@paddle/paddle-js";
+import { authenticatedFetch } from "@/lib/api";
+
+export interface Billing {
+  plan: "starter" | "pro" | "ultra" | null;
+  status: string | null;
+  paidAccess: boolean;
+  periodEnd: string | null;
+  transactionId: string | null;
+  scheduledChange: { action: string; effectiveAt: string } | null;
+}
+
+export async function getBilling(signal?: AbortSignal): Promise<Billing> {
+  const response = await authenticatedFetch("/api/billing", { signal });
+  if (!response.ok) throw new Error("could not load your subscription. try again.");
+  const data: unknown = await response.json();
+  if (!data || typeof data !== "object" || !("paidAccess" in data) || typeof data.paidAccess !== "boolean" ||
+      !("plan" in data) || (data.plan !== null && !["starter", "pro", "ultra"].includes(String(data.plan))) ||
+      !("status" in data) || (data.status !== null && typeof data.status !== "string") ||
+      !("periodEnd" in data) || (data.periodEnd !== null && (typeof data.periodEnd !== "string" || !Number.isFinite(Date.parse(data.periodEnd)))) ||
+      !("transactionId" in data) || (data.transactionId !== null && (typeof data.transactionId !== "string" || !/^txn_[a-z0-9]{26}$/.test(data.transactionId)))) {
+    throw new Error("invalid subscription response.");
+  }
+  const change = "scheduledChange" in data ? data.scheduledChange : undefined;
+  if (change !== null && (!change || typeof change !== "object" || !("action" in change) || typeof change.action !== "string" ||
+      !("effectiveAt" in change) || typeof change.effectiveAt !== "string" || !Number.isFinite(Date.parse(change.effectiveAt)))) {
+    throw new Error("invalid subscription response.");
+  }
+  return data as Billing;
+}
+
+export async function createCheckout(plan: string, signal: AbortSignal): Promise<string> {
+  const response = await authenticatedFetch("/api/billing/checkout", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan }), signal,
+  });
+  const data: unknown = await response.json();
+  if (!response.ok) throw new Error(data && typeof data === "object" && "error" in data && typeof data.error === "string"
+    ? data.error : "checkout could not start. try again.");
+  if (!data || typeof data !== "object" || !("transactionId" in data) || typeof data.transactionId !== "string" ||
+      !/^txn_[a-z0-9]{26}$/.test(data.transactionId)) throw new Error("invalid checkout response.");
+  return data.transactionId;
+}
 
 export const paidPlans = [
   { name: "starter", songs: 30, description: "for occasional song ideas", priceId: import.meta.env.VITE_PADDLE_STARTER_PRICE_ID },

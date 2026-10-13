@@ -10,7 +10,7 @@ export function PrivacyPage() {
         </header>
         <section className="space-y-2" aria-labelledby="privacy-storage">
           <h2 id="privacy-storage" className="text-base font-semibold text-zinc-100">what is stored</h2>
-          <p>Supabase stores your account details, sign-in information, daily usage, song metadata, and temporary request results. Saved song audio is stored in a private Cloudflare R2 bucket. The app lets you access only your own songs and uploads.</p>
+          <p>Supabase stores your account details, sign-in information, usage, subscription and billing records, song metadata, and temporary request results. Saved song audio is stored in a private Cloudflare R2 bucket. The app lets you access only your own songs and uploads.</p>
           <p>Saved songs stay until you delete them from my songs. Temporary request results can include assistant replies, song briefs, and lyrics. Finished request records and unsaved song recovery files are eligible for cleanup after seven days.</p>
         </section>
         <section className="space-y-2" aria-labelledby="privacy-processing">
@@ -21,7 +21,7 @@ export function PrivacyPage() {
         <section className="space-y-2" aria-labelledby="privacy-checkout">
           <h2 id="privacy-checkout" className="text-base font-semibold text-zinc-100">sandbox checkout</h2>
           <p>The pricing page loads Paddle to calculate prices using your location. Opening checkout sends your account email to Paddle. Payment and billing details entered in checkout go directly to Paddle.</p>
-          <p>Checkout currently uses Paddle&apos;s sandbox with test payments. Sandbox purchases do not change your beta allowances.</p>
+          <p>Checkout uses Paddle&apos;s sandbox with test payments. A confirmed subscription activates its monthly song allowance. Supabase keeps Paddle customer, subscription, and transaction records linked to your app account.</p>
         </section>
         <section className="space-y-2" aria-labelledby="privacy-temporary">
           <h2 id="privacy-temporary" className="text-base font-semibold text-zinc-100">temporary uploads and chat</h2>
@@ -30,8 +30,8 @@ export function PrivacyPage() {
         </section>
         <section className="space-y-2" aria-labelledby="privacy-limits">
           <h2 id="privacy-limits" className="text-base font-semibold text-zinc-100">beta limits</h2>
-          <p>Open my profile to see your current daily allowances and reset time. Shared daily limits also apply, so requests can stop even when you have personal allowance left. Daily limits reset at midnight UTC.</p>
-          <p>A completed song uses one generation allowance. A confirmed generation failure restores personal allowance; an unknown outcome keeps it reserved. Retrying a failed save does not generate another song. Deleting a song does not restore daily generation allowance.</p>
+          <p>Open my profile to see your allowances and reset times. Free accounts have 5 songs per UTC day. Starter, pro, and ultra have 30, 80, and 180 songs per billing month, with no rollover. Chat and audio analysis keep their daily limits. Shared daily limits and song storage limits also apply, so requests can stop even when you have song allowance left.</p>
+          <p>A completed song uses one generation allowance. A confirmed generation failure restores personal allowance; an unknown outcome keeps it reserved. Retrying a failed save does not generate another song. Deleting a song does not restore generation allowance.</p>
           <p>Uploads must be MP3, WAV, FLAC, or OGG, up to 50 MiB and ten minutes long. The beta can have interruptions. Download songs you want to keep.</p>
         </section>
         <section className="space-y-2" aria-labelledby="privacy-contact">

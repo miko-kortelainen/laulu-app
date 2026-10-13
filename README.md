@@ -92,8 +92,13 @@ Shared limits also apply. Daily usage resets at midnight UTC.
 
 The public `/pricing` page shows free, starter, pro, and ultra plans.
 Paid prices come from Paddle's localized price preview. Checkout requires login and uses the Paddle sandbox only.
-The monthly plan allowances shown are 30, 80, and 180 songs. Sandbox purchases do not activate these allowances;
-the existing free beta limits remain in effect. Subscription webhooks and paid-plan enforcement are not implemented.
+Verified sandbox subscriptions activate starter (30), pro (80), or ultra (180) songs per billing month, with no rollover.
+Free accounts keep 5 songs per UTC day. Chat, audio analysis, storage, and shared daily limits remain in effect for every plan.
+
+Apply [the Paddle subscription migration](supabase/migrations/20261013152856_paddle_subscriptions.sql) in Supabase before deploying the backend.
+Run the whole file in the SQL Editor; it uses one transaction and preserves existing accounts and usage.
+It creates server-only customer, subscription, and transaction mirrors and extends atomic song reservations to billing periods.
+The migration replaces quota functions, so deploy the matching backend and frontend together.
 
 Set these public values in `frontend/.env.local`:
 
@@ -111,6 +116,41 @@ Use a `test_` client token from Paddle's sandbox authentication settings. Never 
 Set the default payment link in the sandbox checkout settings to a URL that serves this app, such as `http://localhost:5173/pricing`.
 Sandbox checkout uses [Paddle test cards](https://developer.paddle.com/concepts/payment-methods/credit-debit-card#test-cards).
 Restart the frontend after changing its environment values.
+
+Set these server-only values in `backend/.env` (runtime variables in Coolify):
+
+```dotenv
+PADDLE_SANDBOX_API_KEY=your_sandbox_api_key
+PADDLE_NOTIFICATION_WEBHOOK_SECRET=your_notification_destination_signing_secret
+PADDLE_STARTER_PRICE_ID=pri_01m4tvkjam9nptz0f1ngrbr9mj
+PADDLE_PRO_PRICE_ID=pri_01m4tvmm85j15s4vjd9ykmsa0d
+PADDLE_ULTRA_PRICE_ID=pri_01m4tvnr6xfnyk1nwtyt5vma9e
+```
+
+The API key needs price read and transaction read/write permissions. The signing secret belongs to the webhook destination;
+it is not the API key. The public frontend price IDs must match the server price IDs.
+The permanent sandbox destination is `https://studio.lau.lu/api/paddle/webhook`.
+Subscribe it to `customer.created`, `customer.updated`, `transaction.completed`, and
+`subscription.created`, `subscription.updated`, `subscription.canceled`, `subscription.activated`,
+`subscription.trialing`, `subscription.paused`, `subscription.past_due`, and `subscription.resumed`.
+Use platform traffic. Simulation events must not grant allowances to app accounts.
+
+Checkout creates a transaction on the authenticated backend and records its owner before returning its ID.
+Completed payments block another checkout until their subscription is mirrored and confirmed canceled.
+Browser-provided emails and custom data never establish ownership. Purchases made before this fulfillment integration
+have no trusted account binding and need an explicit account-to-transaction mapping before replaying their notifications.
+The raw webhook route runs before JSON parsing and authentication. Invalid signatures and failed database writes return non-2xx.
+Mirrors upsert by Paddle ID and ignore older state; late created events can still establish ownership.
+Only `active` and `trialing` subscriptions with a recognized monthly plan grant paid access.
+Scheduled cancellation or pause retains access while the status remains active; `paused`, `past_due`, and `canceled` use free allowances.
+The last verified billing period remains in use until Paddle reports renewal. A new period starts a new allowance.
+Confirmed failures refund the original period, once; unknown outcomes stay charged.
+Operation cleanup retains monthly reservations and never touches billing mirrors.
+
+Keep the notification destination and its signing secret, all catalog products/prices, and all billing customers,
+subscriptions, and transactions permanently. Do not delete them as testing cleanup.
+After deployment, use the sandbox notification logs to check deliveries. Replay failed real notifications after fixing
+an unavailable endpoint; sandbox retries are limited. Keep Paddle's default payment link on an app URL.
 
 ### Configure Cloudflare AI Gateway
 

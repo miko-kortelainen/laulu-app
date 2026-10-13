@@ -14,6 +14,7 @@ import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, So
 import { getUsage, QuotaError, reserveUsage } from './quotas.js';
 import { cleanupLocalAudio, LocalAudioLimitError } from './local-audio.js';
 import { acknowledgeOperation, busySessions, getOperation, operationId, listOperations, recoverOperations, sessionBusy, startOperation } from './operations.js';
+import { createCheckout, getBilling, getPaddle, processPaddleEvent } from './billing.js';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -24,8 +25,35 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,ht
   .split(',').map((origin) => origin.trim()).filter(Boolean);
 app.use(cors({ origin: allowedOrigins }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+app.post('/api/paddle/webhook', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
+  const signature = req.get('paddle-signature');
+  const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;
+  if (!secret) return res.status(503).json({ error: 'webhook signing secret is not configured.' });
+  if (!signature || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'missing signature or body.' });
+  try {
+    const event = await getPaddle().webhooks.unmarshal(req.body.toString('utf8'), secret, signature);
+    await processPaddleEvent(event);
+    return res.status(204).end();
+  } catch {
+    return res.status(500).json({ error: 'webhook could not be verified or recorded.' });
+  }
+});
 app.use('/api', requireAuth);
 app.use(express.json());
+
+app.get('/api/billing', async (_req, res) => {
+  const billing = await getBilling(res.locals.userId).catch(() => {
+    res.status(503).json({ error: 'could not load your subscription. try again.' });
+  });
+  if (billing) res.set('Cache-Control', 'private, no-store').json(billing);
+});
+
+app.post('/api/billing/checkout', requireTerms, locked(async (req, res) => {
+  const transactionId = await createCheckout(res.locals.userId, req.body?.plan).catch((error: unknown) => {
+    res.status(503).json({ error: error instanceof Error ? error.message : 'checkout could not start. try again.' });
+  });
+  if (transactionId) res.set('Cache-Control', 'private, no-store').json({ transactionId });
+}));
 
 app.get('/api/terms', async (_req, res) => {
   const accepted = await hasAcceptedTerms(res.locals.userId).catch(() => {

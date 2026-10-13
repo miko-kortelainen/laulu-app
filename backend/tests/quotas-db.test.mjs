@@ -21,6 +21,121 @@ function query(sql) {
   });
 }
 
+test('billing preserves newer state, resets monthly allowances, and refunds the original period once', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname), 'billing checks require a local database');
+  assert.match(target.pathname, /^\/quota_test/);
+  const owner = randomUUID();
+  const paddleId = (prefix) => `${prefix}_${randomUUID().replaceAll('-', '').slice(0, 26)}`;
+  const customer = paddleId('ctm');
+  const canceled = paddleId('sub');
+  const subscription = paddleId('sub');
+  const canceledTransaction = paddleId('txn');
+  const transaction = paddleId('txn');
+  const beta = JSON.stringify({ chat_daily: 20, analysis_daily: 10, generation_daily: 5, storage_bytes: 1000 });
+
+  // Fixtures exist only inside this transaction; errors also roll back when psql closes.
+  assert.equal(await query(`begin;
+    set local plpgsql.check_asserts = on;
+    insert into auth.users(id) values ('${owner}');
+    set local role service_role;
+    do $$
+    declare
+      event_time timestamptz := clock_timestamp();
+      period_start timestamptz := event_time - interval '30 days';
+      payload jsonb;
+      usage jsonb;
+      reservation jsonb;
+      first_id uuid := gen_random_uuid();
+      second_id uuid;
+      next_id uuid := gen_random_uuid();
+      reservation_id uuid;
+      attempts integer;
+      i integer;
+      subscription_status text;
+    begin
+      update public.global_usage set usage_date = (clock_timestamp() at time zone 'UTC')::date, used = 0
+        where operation = 'generation';
+      perform public.register_paddle_checkout('${canceledTransaction}', '${owner}');
+      perform public.sync_paddle_event('transaction', jsonb_build_object('id', '${canceledTransaction}',
+        'customer_id', '${customer}', 'subscription_id', '${canceled}', 'status', 'completed', 'updated_at', event_time), event_time);
+      assert not (public.get_billing('${owner}')->>'paidAccess')::boolean, 'transaction delivery alone cannot grant access';
+      assert (select subscription_id = '${canceled}' from public.paddle_transactions where id = '${canceledTransaction}'),
+        'completed payments retain their subscription ID before its delivery';
+      payload := jsonb_build_object('id', '${canceled}', 'customer_id', '${customer}', 'status', 'canceled',
+        'plan', 'starter', 'song_limit', 30, 'period_start', period_start, 'period_end', period_start + interval '1 month',
+        'updated_at', event_time + interval '1 minute');
+      perform public.sync_paddle_event('subscription', payload, event_time + interval '1 minute');
+      payload := payload || jsonb_build_object('status', 'active', 'transaction_id', '${canceledTransaction}', 'updated_at', event_time);
+      perform public.sync_paddle_event('subscription', payload, event_time);
+      perform public.sync_paddle_event('subscription', payload, event_time);
+      assert (select status = 'canceled' and user_id = '${owner}' from public.paddle_subscriptions where id = '${canceled}'),
+        'duplicate older creation deliveries cannot undo cancellation or ownership';
+
+      perform public.register_paddle_checkout('${transaction}', '${owner}');
+      payload := jsonb_build_object('id', '${subscription}', 'customer_id', '${customer}', 'transaction_id', '${transaction}',
+        'status', 'trialing', 'plan', 'starter', 'song_limit', 30, 'period_start', period_start,
+        'period_end', period_start + interval '1 month', 'updated_at', event_time);
+      perform public.sync_paddle_event('subscription', payload, event_time);
+      assert (public.get_billing('${owner}')->>'paidAccess')::boolean, 'trialing grants access';
+      for i in 1..30 loop
+        reservation_id := case when i = 1 then first_id else gen_random_uuid() end;
+        if i = 2 then second_id := reservation_id; end if;
+        reservation := public.reserve_usage('${owner}', 'generation', reservation_id, 0, '${beta}', '${globalLimits}');
+        assert (reservation->>'allowed')::boolean, 'the monthly allowance must exceed five daily songs';
+      end loop;
+      reservation := public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '${beta}', '${globalLimits}');
+      assert not (reservation->>'allowed')::boolean, 'the 31st song must be denied';
+      assert not exists (select 1 from public.daily_usage where user_id = '${owner}' and operation = 'generation'),
+        'paid songs do not consume the free counter';
+      select used into attempts from public.global_usage where operation = 'generation';
+      perform public.settle_generation('${owner}', first_id, 'failed');
+      perform public.settle_generation('${owner}', first_id, 'failed');
+      usage := public.get_usage('${owner}', '${beta}');
+      assert (usage->'generation'->>'remaining')::integer = 1, 'a failure refunds exactly once';
+      assert (select used = attempts from public.global_usage where operation = 'generation'), 'refunds retain global attempts';
+      reservation := public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '${beta}', '${globalLimits}');
+      assert (reservation->>'allowed')::boolean, 'one replacement fits';
+
+      payload := payload || jsonb_build_object('status', 'active', 'period_start', period_start + interval '1 month',
+        'period_end', period_start + interval '2 months', 'updated_at', event_time + interval '2 minutes');
+      perform public.sync_paddle_event('subscription', payload, event_time + interval '2 minutes');
+      usage := public.get_usage('${owner}', '${beta}');
+      assert (usage->'generation'->>'remaining')::integer = 30, 'renewal starts a fresh allowance without rollover';
+      reservation := public.reserve_usage('${owner}', 'generation', next_id, 0, '${beta}', '${globalLimits}');
+      assert (reservation->>'allowed')::boolean;
+      reservation := public.reserve_usage('${owner}', 'generation', next_id, 0, '${beta}', '${globalLimits}');
+      assert not (reservation->>'created')::boolean, 'a request replay does not charge twice';
+      perform public.settle_generation('${owner}', second_id, 'failed');
+      perform public.settle_generation('${owner}', second_id, 'failed');
+      usage := public.get_usage('${owner}', '${beta}');
+      assert (usage->'generation'->>'used')::integer = 1, 'a late refund never changes the new period';
+      update public.usage_reservations set created_at = event_time - interval '31 days'
+        where user_id = '${owner}' and billing_period_start = period_start;
+      perform public.cleanup_operations();
+      assert (select count(*) = 31 from public.usage_reservations where user_id = '${owner}' and billing_period_start = period_start),
+        'monthly reservations survive operation cleanup';
+
+      payload := payload || jsonb_build_object('scheduled_change', jsonb_build_object('action', 'cancel',
+        'effectiveAt', period_start + interval '2 months'), 'updated_at', event_time + interval '3 minutes');
+      perform public.sync_paddle_event('subscription', payload, event_time + interval '3 minutes');
+      assert (public.get_billing('${owner}')->>'paidAccess')::boolean, 'scheduled cancellation keeps active access';
+      i := 4;
+      foreach subscription_status in array array['paused', 'past_due', 'canceled'] loop
+        payload := payload || jsonb_build_object('status', subscription_status, 'updated_at', event_time + i * interval '1 minute');
+        perform public.sync_paddle_event('subscription', payload, event_time + i * interval '1 minute');
+        assert not (public.get_billing('${owner}')->>'paidAccess')::boolean, 'inactive statuses stop paid access';
+        usage := public.get_usage('${owner}', '${beta}');
+        assert usage->>'plan' = 'free' and (usage->'generation'->>'limit')::integer = 5, 'inactive accounts use free allowances';
+        i := i + 1;
+      end loop;
+    end;
+    $$;
+    rollback;`), '');
+});
+
 test('database quotas serialize reservations, survive new connections, and protect users', {
   skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a disposable, migrated local PostgreSQL database',
 }, async () => {

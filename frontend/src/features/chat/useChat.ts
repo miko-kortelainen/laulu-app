@@ -159,11 +159,20 @@ export function useChat(userId: string) {
 
   useEffect(() => {
     if (!usage || loading) return;
-    const delay = Date.parse(usage.resetAt) - Date.now();
+    const now = Date.now();
+    const nextReset = Math.min(...[Date.parse(usage.resetAt), Date.parse(usage.generationResetAt)].filter(time => time > now));
+    const delay = nextReset - now;
+    if (!Number.isFinite(delay)) return;
     if (delay <= 0) return;
     const timeout = window.setTimeout(() => void refreshUsage(), Math.min(delay + 1000, 2_147_483_647));
     return () => window.clearTimeout(timeout);
   }, [usage, loading, refreshUsage]);
+
+  useEffect(() => {
+    const refresh = () => { void refreshUsage(); };
+    window.addEventListener("billing-updated", refresh);
+    return () => window.removeEventListener("billing-updated", refresh);
+  }, [refreshUsage]);
 
   const refreshContext = useCallback(async (): Promise<void> => {
     const request = ++contextRequest.current;

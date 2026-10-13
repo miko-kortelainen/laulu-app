@@ -5,7 +5,7 @@ import { authSession, seedAuth } from "./auth-fixture.mjs";
 const session = `musical-recovery-e2e-${process.pid}`;
 const url = process.env.E2E_URL;
 const run = (...args) => execFileSync("agent-browser", ["--session", session, ...args], { encoding: "utf8", timeout: 30000 }).trim();
-const usage = { resetAt: "2099-01-01T00:00:00Z", chat: { limit: 20, used: 1, remaining: 19 },
+const usage = { resetAt: "2099-01-01T00:00:00Z", generationResetAt: "2099-01-01T00:00:00Z", plan: "free", chat: { limit: 20, used: 1, remaining: 19 },
   analysis: { limit: 10, used: 1, remaining: 9 }, generation: { limit: 5, used: 1, remaining: 4 },
   storage: { limit: 536870912, used: 0, reserved: 100, remaining: 536870812 } };
 const audio = { url: "/api/audio/10000000-0000-4000-8000-000000000002.wav", name: "reference.wav" };

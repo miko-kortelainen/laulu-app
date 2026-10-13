@@ -26,7 +26,7 @@ export function PricingPage({ user }: { user?: User }) {
           <h1 id="pricing-title" className="max-w-2xl text-3xl font-semibold tracking-tight sm:text-5xl">more room to make music</h1>
           <p className="max-w-xl text-sm leading-relaxed text-zinc-400">describe a song, work on its lyrics and sound, and hear your ideas take shape.</p>
           <p className="max-w-2xl rounded-lg border border-amber-300/20 bg-amber-300/5 px-4 py-3 text-sm text-amber-200">
-            sandbox preview · checkout uses test payments. these plans do not change your beta allowances.
+            sandbox · checkout uses test payments. your plan activates after payment is confirmed.
           </p>
         </section>
 
@@ -39,7 +39,7 @@ export function PricingPage({ user }: { user?: User }) {
             <p className="mt-2 text-xs text-zinc-400">no payment required</p>
             <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
               <li>chat and refine your song brief</li>
-              <li>generate songs within beta limits</li>
+              <li><strong className="font-semibold text-zinc-100">5 songs</strong> per UTC day</li>
               <li>save and download your songs</li>
             </ul>
             <Link to={user ? "/" : "/create-account"} className={buttonClass}>{user ? "open studio" : "create free account"}</Link>
@@ -59,13 +59,13 @@ export function PricingPage({ user }: { user?: User }) {
                 <p className="mt-6 break-words text-4xl font-semibold tabular-nums">{price ?? (pricing.loading ? "…" : "unavailable")}</p>
                 <p className="mt-2 text-xs text-zinc-400">per month · billed monthly</p>
                 <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
-                  <li><strong className="font-semibold text-zinc-100">{plan.songs} songs</strong> per month</li>
+                  <li><strong className="font-semibold text-zinc-100">{plan.songs} songs</strong> per billing month</li>
                   <li>chat and refine your song brief</li>
                   <li>save and download your songs</li>
                 </ul>
-                {user ? <button type="button" disabled={pricing.loading || !price || Boolean(pricing.selectedPlan)}
-                  onClick={() => pricing.checkout(plan)} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
-                  {pricing.selectedPlan === plan.name ? "checkout open…" : `choose ${plan.name}`}
+                {user ? <button type="button" disabled={pricing.loading || pricing.billingLoading || !pricing.billing || !price || Boolean(pricing.selectedPlan) || pricing.syncing || Boolean(pricing.billing.status && pricing.billing.status !== "canceled")}
+                  onClick={() => void pricing.checkout(plan)} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
+                  {pricing.selectedPlan === plan.name ? "opening checkout…" : pricing.billing?.plan === plan.name && pricing.billing.paidAccess ? "current plan" : `choose ${plan.name}`}
                 </button> : <Link to="/login" state={{ from: "/pricing" }} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
                   {`log in to choose ${plan.name}`}
                 </Link>}
@@ -76,11 +76,18 @@ export function PricingPage({ user }: { user?: User }) {
 
         <div className="space-y-3 text-sm">
           <p role="status" className="text-zinc-300">{pricing.loading ? "loading local prices…" : pricing.notice}</p>
+          {pricing.billing?.status && <p className="text-zinc-300">
+            {pricing.billing.plan ?? "subscription"} · {pricing.billing.status}
+            {!pricing.billing.paidAccess && " · free allowance applies"}
+            {pricing.billing.scheduledChange && ` · ${pricing.billing.scheduledChange.action} scheduled for ${new Date(pricing.billing.scheduledChange.effectiveAt).toLocaleString()}`}
+          </p>}
           {pricing.error && <div className="space-y-2">
             <p role="alert" className="text-red-300">{pricing.error}</p>
-            {!pricing.prices && <button type="button" onClick={pricing.retry} disabled={pricing.loading} className={linkClass}>retry prices</button>}
+            {pricing.pendingTransaction ? <button type="button" onClick={() => void pricing.confirmSubscription()} disabled={pricing.syncing} className={linkClass}>check subscription</button>
+              : <button type="button" onClick={pricing.retry} disabled={pricing.loading || pricing.billingLoading} className={linkClass}>retry</button>}
           </div>}
           <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">prices include applicable tax for your detected location. checkout confirms the total for your billing address. each generated version counts as one song.</p>
+          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">unused songs do not roll over. chat and audio analysis keep their daily beta allowances. shared daily limits and saved-song storage limits apply to all plans.</p>
         </div>
 
         <footer className="flex flex-wrap gap-x-6 text-xs text-zinc-400">

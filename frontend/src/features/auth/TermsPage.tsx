@@ -35,7 +35,7 @@ export function TermsPage() {
         <section className="space-y-2" aria-labelledby="terms-beta">
           <h2 id="terms-beta" className="text-base font-semibold text-zinc-100">beta limits and availability</h2>
           <p>lau.lu is a free beta. Features, daily allowances, and shared limits can change, pause, or stop, and prices or paid features can be introduced later under updated terms. Requests can fail or be interrupted, and chat or temporary results can reset. Download songs you want to keep.</p>
-          <p>Your current daily allowances and reset time are shown in my profile. A completed song uses one generation allowance, as described on the <Link to="/privacy" className={linkClass}>privacy and beta limits</Link> page.</p>
+          <p>Your current allowances and reset times are shown in my profile. Sandbox subscriptions use test payments and activate the monthly song allowance shown at checkout, with no rollover. Paused, past-due, or canceled subscriptions use free allowances. A scheduled cancellation or pause keeps paid access while the subscription remains active. A completed song uses one generation allowance, as described on the <Link to="/privacy" className={linkClass}>privacy and beta limits</Link> page.</p>
         </section>
         <section className="space-y-2" aria-labelledby="terms-responsibility">
           <h2 id="terms-responsibility" className="text-base font-semibold text-zinc-100">responsibility for your use</h2>
