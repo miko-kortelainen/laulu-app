@@ -48,7 +48,16 @@ These public values become part of the frontend bundle. A change requires a new 
 Make server keys and tokens available at runtime only. Do not put them in build arguments or `VITE_` variables.
 See [Coolify environment scopes](https://coolify.io/docs/applications/configuration/environment-variables).
 
-`NODE_ENV=production`, port `3001`, and disabled LangSmith tracing are fixed in Compose.
+Keep these values in Coolify as runtime variables:
+
+```dotenv
+NODE_ENV=production
+PORT=3001
+LANGSMITH_TRACING=false
+ALLOWED_ORIGINS=https://studio.lau.lu
+```
+
+The Dockerfile supplies the first three defaults. Runtime variables override image defaults.
 Provider API keys remain in Cloudflare AI Gateway's BYOK provider settings.
 The image contains no development `.env` files, uploads, recovery audio, or model weights.
 
@@ -66,13 +75,16 @@ The site URL must be `https://studio.lau.lu`. Confirmation and recovery redirect
 7. Deploy the application.
 
 Coolify resolves the Doppler references and generates the deployment's `.env` file.
-Compose reads this file through `env_file`; individual runtime variable declarations are not needed.
+Coolify adds `env_file: .env` to the deployed Compose definition. Keep the Compose deployment managed by Coolify; raw mode skips this step.
+The repository Compose file needs no `env_file` or `environment` blocks.
+See [Coolify's Compose deployment implementation](https://github.com/coollabsio/coolify/blob/main/app/Jobs/ApplicationDeploymentJob.php).
 Import new Doppler keys into Coolify before deploying a feature that needs them.
 After changing runtime values in Doppler, restart or redeploy the application. Changes to public build values require a new deployment.
 See [Coolify secret manager setup](https://coolify.io/docs/integrations/security/using-secret-managers).
 
-For standalone Compose, create an ignored root `.env` with the same values.
-Do not commit this file. Docker excludes it from the build context.
+For standalone Compose, use an override that attaches the runtime `.env` file through `env_file`.
+The CLI's `--env-file` option supplies interpolation values only; it does not inject container variables.
+Do not commit `.env`. Docker excludes it from the build context.
 
 ## Storage and restarts
 
@@ -113,19 +125,13 @@ npm --prefix backend run test:deployment
 npm --prefix backend run test:auth
 ```
 
-With the required values in an ignored root `.env`, check the container on a Docker host:
+With the three public build values in an ignored root `.env`, check Compose configuration on a Docker host:
 
 ```bash
 docker compose config --quiet
-docker compose build
-docker compose up -d
-docker compose ps
-docker compose exec studio ffmpeg -version
-docker compose exec studio ffprobe -version
-docker compose exec studio node -e "fetch('http://127.0.0.1:3001/api/health').then(async r => { if (!r.ok) process.exit(1); console.log(await r.json()); }).catch(() => process.exit(1))"
 ```
 
-The standalone commands do not install Coolify's public proxy routing.
+Deploy through Coolify to supply the runtime variables and public proxy routing.
 In Coolify, verify `https://studio.lau.lu/api/health` and reload `/songs`, `/profile`, and `/privacy` directly.
 Verify that private API requests still require login and that a missing asset returns HTTP 404.
 Confirm that the recovery volume survives a redeploy. Do not trigger paid operations for packaging checks.

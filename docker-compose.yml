@@ -7,13 +7,6 @@ services:
         VITE_SUPABASE_URL: ${SUPABASE_URL:?}
         VITE_SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?}
         VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:?}
-    env_file:
-      - .env
-    environment:
-      NODE_ENV: production
-      PORT: "3001"
-      LANGSMITH_TRACING: "false"
-      ALLOWED_ORIGINS: https://studio.lau.lu
     expose:
       - "3001"
     volumes:
