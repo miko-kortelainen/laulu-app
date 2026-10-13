@@ -56,17 +56,17 @@ export function SongsPage() {
           <p className="text-sm text-zinc-400">no saved songs yet. <Link to="/" className="text-zinc-100 underline underline-offset-4">create a song in chat</Link></p>
         )}
         <ul aria-label="saved songs" className="space-y-4">
-          {songs?.map((song, index) => (
+          {songs?.map((song) => (
             <li key={song.id} className={cn("space-y-4 rounded-xl border border-white/10 bg-zinc-900/70 p-5",
               selectedSongId === song.id && "border-white/30")}>
               <h2>
                 <button type="button" aria-expanded={selectedSongId === song.id} aria-controls={`song-${song.id} song-info`}
-                  aria-label={`${selectedSongId === song.id ? "close" : "listen"} song ${index + 1}`}
-                  title={`${selectedSongId === song.id ? "close" : "listen"} song ${index + 1}`}
+                  aria-label={`${selectedSongId === song.id ? "close" : "listen"} ${song.title}`}
+                  title={`${selectedSongId === song.id ? "close" : "listen"} ${song.title}`}
                   onClick={() => selectSong(song.id)}
                   className="flex min-h-10 w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400">
                   <span className="min-w-0">
-                    <span className="block font-medium">song {index + 1}</span>
+                    <span className="block break-words font-medium">{song.title}</span>
                     <span className="mt-1 block break-words text-xs text-zinc-400">
                       <time dateTime={song.createdAt}>{new Date(song.createdAt).toLocaleString()}</time> · {song.model}
                     </span>
@@ -78,12 +78,12 @@ export function SongsPage() {
                 </button>
               </h2>
               <div id={`song-${song.id}`} hidden={selectedSongId !== song.id} className="space-y-3">
-                {openedSongIds.includes(song.id) && <AudioPlayer src={song.url} label={`song ${index + 1}`}
+                {openedSongIds.includes(song.id) && <AudioPlayer src={song.url} label={song.title}
                   active={selectedSongId === song.id} className="w-full" />}
               </div>
               <div className="flex flex-wrap items-start gap-2">
                 <button type="button" disabled={busy} onClick={() => void removeSong(song.id)}
-                  title={`delete song ${index + 1}`} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-3 py-2 text-red-300 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
+                  title={`delete ${song.title}`} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-3 py-2 text-red-300 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
                   {deletingId === song.id ? (
                     <span aria-hidden="true" className="size-4 rounded-full border-2 border-current border-t-transparent motion-safe:animate-spin" />
                   ) : (
@@ -92,10 +92,10 @@ export function SongsPage() {
                       <path d="M3 6h18M9 6V4h6v2M5 6l1 14h12l1-14M10 10v6M14 10v6" />
                     </svg>
                   )}
-                  <span className="sr-only">{deletingId === song.id ? "deleting..." : "delete"} song {index + 1}</span>
+                  <span className="sr-only">{deletingId === song.id ? "deleting..." : "delete"} {song.title}</span>
                 </button>
                 <AudioDownload url={song.url} name={`song-${song.id}.mp3`} icon disabled={busy}>
-                  {`download MP3 song ${index + 1}`}
+                  {`download MP3 ${song.title}`}
                 </AudioDownload>
               </div>
               {deleteError?.id === song.id && <p role="alert" className="text-sm text-red-300">{deleteError.message}</p>}
@@ -107,7 +107,7 @@ export function SongsPage() {
         className="min-h-0 min-w-0 space-y-4 border-t border-white/10 pt-4 lg:w-[26rem] lg:shrink-0 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pl-6 lg:pr-2">
         <h2 id="song-info-heading" className="text-sm font-semibold">song details</h2>
         {selectedSong && songPrompt ? <>
-          <MusicPromptFields readOnly prompt={songPrompt.prompt} model={selectedSong.model} />
+          <MusicPromptFields readOnly prompt={songPrompt.prompt} model={selectedSong.model} title={selectedSong.title} />
           {songPrompt.originalPrompt && <label className="flex min-w-0 flex-col gap-1">
             <span className="text-xs text-zinc-400">original prompt</span>
             <textarea name="originalPrompt" readOnly value={songPrompt.originalPrompt} rows={8} className={infoClass} />

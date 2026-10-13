@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { configureTestQuotas } from './quota-fixture.js';
+import { TERMS_VERSION } from '../src/terms.js';
 
 export function configureTestSongStorage() {
   const env = {
@@ -57,6 +58,12 @@ export function configureTestSongStorage() {
     const url = new URL(request.url);
     const quotaResponse = await quotas.databaseResponse(request.clone());
     if (quotaResponse) return quotaResponse;
+    if (url.origin === process.env.SUPABASE_URL && url.pathname === '/rest/v1/terms_acceptances') {
+      assert.equal(request.method, 'GET');
+      assert.equal(url.searchParams.get('version'), `eq.${TERMS_VERSION}`);
+      assert.ok(url.searchParams.get('user_id'), 'acceptance must belong to the verified user');
+      return Response.json([{ version: TERMS_VERSION }]);
+    }
     if (url.origin === process.env.SUPABASE_URL && url.pathname === '/rest/v1/rpc/prepare_song_save') {
       assert.equal(request.headers.get('apikey'), env.SUPABASE_SECRET_KEY);
       if (failures.insert) return Response.json({ message: 'offline insert failure' }, { status: 503 });

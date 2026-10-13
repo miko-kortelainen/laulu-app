@@ -61,7 +61,7 @@ export function checkAllowance(data: unknown): void {
     const global = 'scope' in data && data.scope === 'global';
     throw new QuotaError(data.resource === 'storage'
       ? 'song storage allowance exhausted. delete a saved song and try again.'
-      : `${global ? 'app-wide daily' : 'daily'} ${data.resource} allowance exhausted. try again after ${resetAt}.`,
+      : `${global ? 'app-wide daily' : 'your'} ${data.resource} allowance exhausted. try again after ${resetAt}.`,
     429, data.resource, resetAt);
   }
 }
@@ -91,6 +91,8 @@ export async function settleGeneration(userId: string, id: string, status: 'comp
 interface Allowance { limit: number; used: number; remaining: number }
 export interface Usage {
   resetAt: string;
+  generationResetAt: string;
+  plan: 'free' | 'starter' | 'pro' | 'ultra';
   chat: Allowance;
   analysis: Allowance;
   generation: Allowance;
@@ -101,6 +103,9 @@ export async function getUsage(userId: string): Promise<Usage> {
   const data = await quotaRpc('get_usage', { p_user_id: userId, p_defaults: quotaDefaults() });
   if (!data || typeof data !== 'object' || !('resetAt' in data) || typeof data.resetAt !== 'string' ||
       !Number.isFinite(Date.parse(data.resetAt))) throw new QuotaError('invalid usage response.', 503);
+  if (!('generationResetAt' in data) || typeof data.generationResetAt !== 'string' ||
+      !Number.isFinite(Date.parse(data.generationResetAt)) || !('plan' in data) ||
+      !['free', 'starter', 'pro', 'ultra'].includes(String(data.plan))) throw new QuotaError('invalid usage response.', 503);
   for (const name of ['chat', 'analysis', 'generation', 'storage'] as const) {
     const value = name in data ? (data as Record<string, unknown>)[name] : undefined;
     if (!value || typeof value !== 'object') throw new QuotaError('invalid usage response.', 503);

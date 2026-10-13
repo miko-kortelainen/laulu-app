@@ -8,11 +8,13 @@ import { getModelConfig } from './model.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
+import { hasAcceptedTerms, recordTermsAcceptance, requireTerms, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
-import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
+import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError, validateSongTitle } from './songs.js';
 import { getUsage, QuotaError, reserveUsage } from './quotas.js';
 import { cleanupLocalAudio, LocalAudioLimitError } from './local-audio.js';
 import { acknowledgeOperation, busySessions, getOperation, operationId, listOperations, recoverOperations, sessionBusy, startOperation } from './operations.js';
+import { createCheckout, getBilling, getPaddle, processPaddleEvent } from './billing.js';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -23,8 +25,55 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,ht
   .split(',').map((origin) => origin.trim()).filter(Boolean);
 app.use(cors({ origin: allowedOrigins }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+app.post('/api/paddle/webhook', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
+  const signature = req.get('paddle-signature');
+  const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;
+  if (!secret) return res.status(503).json({ error: 'webhook signing secret is not configured.' });
+  if (!signature || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'missing signature or body.' });
+  try {
+    const event = await getPaddle().webhooks.unmarshal(req.body.toString('utf8'), secret, signature);
+    await processPaddleEvent(event);
+    return res.status(204).end();
+  } catch {
+    return res.status(500).json({ error: 'webhook could not be verified or recorded.' });
+  }
+});
 app.use('/api', requireAuth);
 app.use(express.json());
+
+app.get('/api/billing', async (_req, res) => {
+  const billing = await getBilling(res.locals.userId).catch(() => {
+    res.status(503).json({ error: 'could not load your subscription. try again.' });
+  });
+  if (billing) res.set('Cache-Control', 'private, no-store').json(billing);
+});
+
+app.post('/api/billing/checkout', requireTerms, locked(async (req, res) => {
+  const transactionId = await createCheckout(res.locals.userId, req.body?.plan).catch((error: unknown) => {
+    res.status(503).json({ error: error instanceof Error ? error.message : 'checkout could not start. try again.' });
+  });
+  if (transactionId) res.set('Cache-Control', 'private, no-store').json({ transactionId });
+}));
+
+app.get('/api/terms', async (_req, res) => {
+  const accepted = await hasAcceptedTerms(res.locals.userId).catch(() => {
+    res.status(503).json({ error: 'could not check terms acceptance. try again.' });
+  });
+  if (accepted !== undefined) res.set('Cache-Control', 'private, no-store').json({ accepted, version: TERMS_VERSION });
+});
+
+app.post('/api/terms', async (req, res) => {
+  const version: unknown = req.body?.version;
+  if (version !== TERMS_VERSION) {
+    res.status(400).json({ error: 'terms version changed. reload the page and accept the current terms.' });
+    return;
+  }
+  await recordTermsAcceptance(res.locals.userId).catch(() => {
+    res.status(503).json({ error: 'could not record terms acceptance. try again.' });
+  });
+  if (!res.headersSent) res.status(204).end();
+});
+
 function locked(handler: (req: Request, res: Response) => Promise<unknown>) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const userId: string = res.locals.userId;
@@ -161,7 +210,7 @@ app.get('/api/context', (_req: Request, res: Response) => {
   res.json(getChatContext(res.locals.userId));
 });
 
-app.post('/api/chat', locked(async (req: Request, res: Response) => {
+app.post('/api/chat', requireTerms, locked(async (req: Request, res: Response) => {
   const message: unknown = req.body?.message;
   const sessionId: string = res.locals.userId;
   const streamProgress = req.get('accept') === 'application/x-ndjson';
@@ -241,13 +290,15 @@ app.post('/api/chat', locked(async (req: Request, res: Response) => {
 }));
 
 // Only this explicit confirmation request can make a paid Lyria call.
-app.post('/api/music', locked(async (req: Request, res: Response) => {
+app.post('/api/music', requireTerms, locked(async (req: Request, res: Response) => {
   const sessionId: string = res.locals.userId;
   let prompt: string;
+  let title: string;
   let model: ReturnType<typeof validateMusicModel>;
   try {
     prompt = validateMusicPrompt(req.body?.prompt);
     model = validateMusicModel(req.body?.model);
+    title = validateSongTitle(req.body?.title);
   } catch (error: unknown) {
     res.status(400).json({ error: error instanceof Error ? error.message : 'invalid music prompt.' });
     return;
@@ -255,12 +306,12 @@ app.post('/api/music', locked(async (req: Request, res: Response) => {
 
   if (req.body?.operationId !== undefined) {
     const operation = await startOperation(sessionId, req.body.operationId, 'music', async () => ({
-      track: await generateMusic(prompt, model, sessionId, req.body.operationId, { metadata: { thread_id: sessionId, ls_model_name: model } }),
+      track: await generateMusic(prompt, model, sessionId, req.body.operationId, { metadata: { thread_id: sessionId, ls_model_name: model } }, title),
     })).catch((error: unknown) => storageFailure(res, error));
     if (operation) res.status(202).json({ operation });
     return;
   }
-  const track = await generateMusic(prompt, model, sessionId, undefined, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
+  const track = await generateMusic(prompt, model, sessionId, undefined, { metadata: { thread_id: sessionId, ls_model_name: model } }, title).catch((error: unknown) => {
     if (error instanceof QuotaError || error instanceof SongStorageError) return storageFailure(res, error);
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
       .json({ error: error instanceof Error ? error.message : 'music generation failed.' });

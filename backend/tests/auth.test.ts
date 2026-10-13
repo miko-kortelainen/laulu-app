@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import { request } from 'node:http';
 import test from 'node:test';
 import { userDirectory } from '../src/user-files.js';
+import { TERMS_VERSION } from '../src/terms.js';
 import { configureTestQuotas } from './quota-fixture.js';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
@@ -20,10 +21,29 @@ test('verified users own their API session and local media', async (t) => {
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'offline', alg: 'ES256', use: 'sig' };
   const originalFetch = globalThis.fetch;
   let authRequests = 0;
+  const termsAcceptances = new Map<string, Set<string>>();
+  let termsUnavailable = false;
   globalThis.fetch = async (input, options) => {
     const request = new Request(input, options);
     const database = await quotas.databaseResponse(request.clone());
     if (database) return database;
+    const requestUrl = new URL(request.url);
+    if (requestUrl.origin === process.env.SUPABASE_URL && requestUrl.pathname === '/rest/v1/terms_acceptances') {
+      if (termsUnavailable) return Response.json({ message: 'offline terms failure' }, { status: 503 });
+      if (request.method === 'POST') {
+        const acceptance: unknown = await request.json();
+        assert.ok(acceptance && typeof acceptance === 'object' && 'user_id' in acceptance &&
+          typeof acceptance.user_id === 'string' && 'version' in acceptance && acceptance.version === TERMS_VERSION);
+        const versions = termsAcceptances.get(acceptance.user_id) ?? new Set<string>();
+        if (versions.has(acceptance.version)) return Response.json({ code: '23505' }, { status: 409 });
+        versions.add(acceptance.version);
+        termsAcceptances.set(acceptance.user_id, versions);
+        return new Response(null, { status: 201 });
+      }
+      assert.equal(requestUrl.searchParams.get('version'), `eq.${TERMS_VERSION}`);
+      const userId = requestUrl.searchParams.get('user_id')?.replace(/^eq\./, '') ?? '';
+      return Response.json(termsAcceptances.get(userId)?.has(TERMS_VERSION) ? [{ version: TERMS_VERSION }] : []);
+    }
     if (request.url.startsWith(process.env.SUPABASE_URL!)) {
       authRequests++;
       assert.equal(request.url, `${process.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`);
@@ -67,7 +87,7 @@ test('verified users own their API session and local media', async (t) => {
     assert.equal(allowed.headers.get('access-control-allow-origin'), 'http://localhost:5173');
     const foreign = await fetch(`${url}/api/health`, { headers: { Origin: 'https://example.com' } });
     assert.equal(foreign.headers.get('access-control-allow-origin'), null);
-    for (const endpoint of ['context', 'usage', 'chat', 'music', 'reset', 'session/end', 'audio', `audio/${filename}`]) {
+    for (const endpoint of ['terms', 'context', 'usage', 'chat', 'music', 'reset', 'session/end', 'audio', `audio/${filename}`]) {
       assert.equal((await fetch(`${url}/api/${endpoint}`)).status, 401);
     }
     assert.equal(authRequests, 0);
@@ -80,6 +100,47 @@ test('verified users own their API session and local media', async (t) => {
       token(userA, { is_anonymous: true }), `${valid.slice(0, -8)}AAAAAAAA`]) {
       assert.equal((await fetch(`${url}/api/context`, { headers: { Authorization: `Bearer ${invalid}` } })).status, 401);
     }
+
+    assert.equal((await fetch(`${url}/api/terms`, { method: 'POST' })).status, 401);
+    termsAcceptances.set(userA, new Set(['2026-10-12']));
+    assert.deepEqual(await (await fetch(`${url}/api/terms`, { headers: headersA })).json(), { accepted: false, version: TERMS_VERSION });
+    for (const endpoint of ['chat', 'music']) {
+      const denied = await fetch(`${url}/api/${endpoint}`, { method: 'POST', headers: { ...headersA, Accept: 'application/x-ndjson' },
+        body: JSON.stringify({ message: 'denied', operationId: randomUUID() }),
+      });
+      assert.equal(denied.status, 403, 'the previous terms version cannot authorize AI work');
+      assert.equal((await denied.json()).code, 'terms_required');
+      assert.equal(quotas.reservations.size, 0, 'deny before reserving paid usage');
+    }
+    for (const version of [undefined, '2026-10-12', 'old-version']) {
+      assert.equal((await fetch(`${url}/api/terms`, { method: 'POST', headers: headersA,
+        body: JSON.stringify({ version }),
+      })).status, 400);
+    }
+    assert.deepEqual([...termsAcceptances.get(userA)!], ['2026-10-12'], 'invalid versions do not record acceptance');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      assert.equal((await fetch(`${url}/api/terms`, { method: 'POST', headers: headersA,
+        body: JSON.stringify({ version: TERMS_VERSION, user_id: userB }),
+      })).status, 204, 'recording acceptance is idempotent');
+    }
+    assert.deepEqual([...termsAcceptances.keys()], [userA], 'the verified user owns acceptance, regardless of the request body');
+    assert.ok(termsAcceptances.get(userA)?.has(TERMS_VERSION));
+    const terms = await fetch(`${url}/api/terms?user_id=${userB}`, { headers: headersA });
+    assert.equal(terms.headers.get('cache-control'), 'private, no-store');
+    assert.deepEqual(await terms.json(), { accepted: true, version: TERMS_VERSION });
+    assert.deepEqual(await (await fetch(`${url}/api/terms`, { headers: headersB })).json(), { accepted: false, version: TERMS_VERSION });
+    termsUnavailable = true;
+    assert.equal((await fetch(`${url}/api/terms`, { headers: headersA })).status, 503);
+    assert.equal((await fetch(`${url}/api/terms`, { method: 'POST', headers: headersB,
+      body: JSON.stringify({ version: TERMS_VERSION }),
+    })).status, 503);
+    for (const endpoint of ['chat', 'music']) {
+      assert.equal((await fetch(`${url}/api/${endpoint}`, { method: 'POST', headers: headersA,
+        body: JSON.stringify({ message: 'denied' }),
+      })).status, 503, 'a failed acceptance check cannot authorize AI work');
+      assert.equal(quotas.reservations.size, 0);
+    }
+    termsUnavailable = false;
 
     const agentA = getOrCreateAgent(userA);
     const agentB = getOrCreateAgent(userB);

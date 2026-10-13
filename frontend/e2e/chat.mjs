@@ -12,7 +12,7 @@ const run = (...args) => execFileSync("agent-browser", ["--session", session, ..
 const input = 'textarea[aria-label="Prompt message"]';
 const send = 'button[aria-label="Send prompt"]';
 const uploadPath = `/tmp/musical-chat-upload-${process.pid}.wav`;
-const usage = { resetAt: '2099-01-01T00:00:00Z',
+const usage = { resetAt: '2099-01-01T00:00:00Z', generationResetAt: '2099-01-01T00:00:00Z', plan: 'free',
   chat: { limit: 20, used: 0, remaining: 20 }, analysis: { limit: 10, used: 0, remaining: 10 },
   generation: { limit: 5, used: 0, remaining: 5 }, storage: { limit: 536870912, used: 0, reserved: 0, remaining: 536870912 } };
 
@@ -276,6 +276,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("aside").getBoundingClientRect().top >= document.querySelector("section[aria-label=chat]").getBoundingClientRect().bottom'), "true");
   run("set", "viewport", "1280", "900");
   run("network", "unroute", "**/api/music");
+  run("fill", 'input[name="songTitle"]', "quiet morning");
   run("network", "route", "**/api/music", "--body", '{"error":"Failed to fetch"}');
   run("eval", `window.fetchBeforeGeneration = window.fetch;
     window.fetch = (input, options) => input === "/api/music"
@@ -291,12 +292,14 @@ try {
   assert.equal(run("eval", 'document.querySelector("textarea[name=lyrics]").value'), JSON.stringify(lyrics));
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3-clip-preview"');
   assert.equal(run("eval", 'window.musicRequests.at(-1).model'), '"lyria-3-clip-preview"');
+  assert.equal(run("eval", 'window.musicRequests.at(-1).title'), '"quiet morning"');
+  assert.equal(run("eval", 'document.querySelector("input[name=songTitle]").value'), '"quiet morning"', "a failed generation preserves the title");
   assert.equal(run("eval", 'window.musicRequests.at(-1).prompt'), JSON.stringify(
     "genre / style: indie pop\n\nmood: hopeful\n\nkey: E minor\n\nBPM: 110 with a swung feel\n\nduration: 2 minutes\n\nvocals / language: alto vocals in English\n\ninstruments: acoustic guitar\n\nproduction: natural\n\nLyrics:\n" + lyrics,
   ));
   run("network", "unroute", "**/api/music");
   run("network", "route", "**/api/music", "--body", JSON.stringify({
-    track: { url: generatedAudioUrl, lyrics },
+    track: { url: generatedAudioUrl, lyrics, title: "quiet morning" },
   }));
   run("select", "select[name=musicModel]", "lyria-3.5");
   // A failed save switches the action to storage retry, without another generation.
@@ -312,7 +315,7 @@ try {
           authenticated: new Headers(options.headers).get("authorization")?.startsWith("Bearer ") });
         return new Promise(resolve => { window.finishStorageRetry = () => resolve(window.failStorageRetry
           ? Response.json({ error: "saving is still unavailable." }, { status: 503 })
-          : Response.json({ track: { url: ${JSON.stringify(generatedAudioUrl)}, lyrics: ${JSON.stringify(lyrics)} } })); });
+          : Response.json({ track: { url: ${JSON.stringify(generatedAudioUrl)}, lyrics: ${JSON.stringify(lyrics)}, title: "quiet morning" } })); });
       }
       return window.fetchBeforeStorage(input, options);
     };`);
@@ -339,6 +342,7 @@ try {
   assert.equal(run("eval", 'window.musicRequests.length'), "2");
   assert.equal(run("eval", 'window.storageRetries.length === 2 && window.storageRetries.every(request => request.method === "POST" && request.authenticated)'), "true");
   assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"generate song"');
+  assert.equal(run("eval", 'document.querySelector("audio").closest("div.mt-3").querySelector("p").textContent'), '"quiet morning"');
   assert.equal(run("eval", 'window.musicRequests.at(-1).model'), '"lyria-3.5"');
   run("select", "select[name=musicModel]", "lyria-3-clip-preview");
   assert.equal(run("eval", 'document.querySelector("summary").textContent.trim()'), '"lyrics"');
@@ -454,7 +458,7 @@ try {
   run("eval", 'window.usageFailure = true');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("find", "role", "link", "click", "--name", "my profile", "--exact");
-  run("wait", "--text", "could not load daily allowances. try again.");
+  run("wait", "--text", "could not load allowances. try again.");
   run("wait", "--text", "19 / 20 remaining");
   run("eval", 'window.usageFailure = false; window.usage.generation = { limit: 5, used: 1, remaining: -1 }');
   run("find", "role", "button", "click", "--name", "retry allowances", "--exact");

@@ -17,7 +17,7 @@ export async function seedAuth(run, url, session = authSession()) {
   await run("open", "about:blank");
   await run("network", "route", `${authOrigin}/auth/v1/user`, "--body", JSON.stringify(session.user));
   // Matches TERMS_VERSION in frontend/src/lib/terms.ts; seeded users have already accepted.
-  await run("network", "route", "**/rest/v1/terms_acceptances*", "--body", '{"version":"2026-10-12"}');
+  await run("network", "route", "**/api/terms", "--body", '{"accepted":true,"version":"2026-10-13"}');
   await run("open", url);
   await run("eval", `localStorage.setItem(${JSON.stringify(storageKey)}, ${JSON.stringify(JSON.stringify(session))}); location.reload();`);
 }

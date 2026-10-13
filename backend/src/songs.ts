@@ -14,6 +14,7 @@ interface Song {
   id: string;
   owner_id: string;
   object_key: string;
+  title: string;
   prompt: string;
   model: string;
   lyrics: string;
@@ -27,12 +28,20 @@ const memoryRecovery = new Map<string, { song: Song; audio: Buffer }>();
 
 export interface SavedSong {
   id: string;
+  title: string;
   url: string;
   lyrics: string;
   prompt: string;
   model: string;
   sizeBytes: number;
   createdAt: string;
+}
+
+export function validateSongTitle(value: unknown = 'untitled'): string {
+  if (typeof value !== 'string' || value.trim().length > 200) {
+    throw new Error('song title must be text with at most 200 characters.');
+  }
+  return value.trim() || 'untitled';
 }
 
 function songPath(userId: unknown, id: unknown): string {
@@ -71,7 +80,7 @@ async function clearSongRecovery(userId: string, id: string): Promise<void> {
 export async function checkSongStorage(userId: string): Promise<void> {
   r2Storage();
   // Check the table and database credentials before the paid generation call.
-  const { error } = await database().from('songs').select('id').eq('owner_id', userId).limit(1);
+  const { error } = await database().from('songs').select('id, title').eq('owner_id', userId).limit(1);
   if (error) throw new Error('song database is unavailable. generation was not started.');
   const pending = await listSongRecovery(userId);
   // Limit unfinished recovery to five songs per account.
@@ -80,7 +89,7 @@ export async function checkSongStorage(userId: string): Promise<void> {
 
 function publicSong(song: Song): SavedSong {
   return {
-    id: song.id, url: `/api/music/${song.id}.mp3`, lyrics: song.lyrics,
+    id: song.id, title: validateSongTitle(song.title), url: `/api/music/${song.id}.mp3`, lyrics: song.lyrics,
     prompt: song.prompt, model: song.model, sizeBytes: song.size_bytes, createdAt: song.created_at,
   };
 }
@@ -164,10 +173,11 @@ async function persistSong(song: Song, audio: Buffer): Promise<SavedSong> {
   return publicSong(data as Song);
 }
 
-export async function saveSong(userId: string, audio: Buffer, prompt: string, model: string, lyrics: string, id: string = randomUUID()): Promise<SavedSong> {
+export async function saveSong(userId: string, audio: Buffer, prompt: string, model: string, lyrics: string,
+  id: string = randomUUID(), title: string = 'untitled'): Promise<SavedSong> {
   const filename = songPath(userId, id);
   const song: Song = {
-    id, owner_id: userId, object_key: `users/${userId}/${id}.mp3`,
+    id, owner_id: userId, object_key: `users/${userId}/${id}.mp3`, title: validateSongTitle(title),
     prompt, model, lyrics, size_bytes: audio.length, status: 'pending', created_at: new Date().toISOString(),
   };
   try {
@@ -207,12 +217,14 @@ export async function retrySongStorage(userId: string, id: string): Promise<Save
       !('prompt' in value) || typeof value.prompt !== 'string' ||
       !('model' in value) || typeof value.model !== 'string' ||
       !('lyrics' in value) || typeof value.lyrics !== 'string' ||
+      ('title' in value && (typeof value.title !== 'string' || value.title.trim().length > 200)) ||
       !('size_bytes' in value) || typeof value.size_bytes !== 'number' || !Number.isSafeInteger(value.size_bytes) || value.size_bytes <= 0 ||
       !('status' in value) || value.status !== 'pending' ||
       !('created_at' in value) || typeof value.created_at !== 'string' || !Number.isFinite(Date.parse(value.created_at))) {
     throw new SongNotFoundError('unsaved song not found.');
   }
-  const song: Song = { id, owner_id: userId, object_key: value.object_key, prompt: value.prompt, model: value.model,
+  const song: Song = { id, owner_id: userId, object_key: value.object_key, title: validateSongTitle('title' in value ? value.title : undefined),
+    prompt: value.prompt, model: value.model,
     lyrics: value.lyrics, size_bytes: value.size_bytes, status: 'pending', created_at: value.created_at };
   const audio = await readFile(filename);
   if (audio.length !== song.size_bytes) throw new Error('unsaved song audio is incomplete.');

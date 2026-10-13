@@ -3,7 +3,9 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { clearTermsAcceptancePending, hasAcceptedTerms, hasTermsAcceptancePending, recordTermsAcceptance } from "@/lib/terms";
 
-export function TermsGate({ userId, children }: { userId: string; children: ReactNode }) {
+export function TermsGate({ userId, children, logout, logoutBusy, logoutError }: {
+  userId: string; children: ReactNode; logout: () => Promise<void>; logoutBusy: boolean; logoutError?: string;
+}) {
   const { pathname } = useLocation();
   const [status, setStatus] = useState<"checking" | "accepted" | "required" | "failed">("checking");
   const [error, setError] = useState<string>();
@@ -14,7 +16,7 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
   useEffect(() => {
     const controller = new AbortController();
     async function check(): Promise<void> {
-      const accepted = await hasAcceptedTerms(userId, controller.signal).catch((cause: unknown) =>
+      const accepted = await hasAcceptedTerms(controller.signal).catch((cause: unknown) =>
         cause instanceof Error ? cause : new Error("could not check terms acceptance. try again."));
       if (controller.signal.aborted) return;
       if (accepted instanceof Error) {
@@ -32,7 +34,7 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
         return;
       }
       // Registration already collected acceptance; record it now that a session exists.
-      const recorded = await recordTermsAcceptance(userId).catch((cause: unknown) =>
+      const recorded = await recordTermsAcceptance(controller.signal).catch((cause: unknown) =>
         cause instanceof Error ? cause : new Error("could not record terms acceptance. try again."));
       if (controller.signal.aborted) return;
       if (recorded instanceof Error) {
@@ -50,7 +52,16 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
   if (pathname === "/terms" || pathname === "/privacy") return children;
   if (status === "accepted") return children;
   if (status === "checking") {
-    return <main className="flex min-h-dvh items-center justify-center"><p role="status">checking terms acceptance...</p></main>;
+    return (
+      <main className="min-h-dvh" aria-busy="true">
+        <p role="status">
+          <span className="sr-only">checking terms acceptance...</span>
+          <span aria-hidden="true" className="terms-loading-indicator fixed right-4 top-4">
+            <span className="block size-3 rounded-full border border-white/10 border-t-white/40 motion-safe:animate-spin" />
+          </span>
+        </p>
+      </main>
+    );
   }
   if (status === "failed") {
     return (
@@ -68,10 +79,10 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
   }
 
   async function accept(): Promise<void> {
-    if (!checked || busy) return;
+    if (!checked || busy || logoutBusy) return;
     setBusy(true);
     setError(undefined);
-    const recorded = await recordTermsAcceptance(userId).catch((cause: unknown) =>
+    const recorded = await recordTermsAcceptance().catch((cause: unknown) =>
       cause instanceof Error ? cause : new Error("could not record terms acceptance. try again."));
     setBusy(false);
     if (recorded instanceof Error) {
@@ -87,20 +98,24 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
       <section className="w-full space-y-6" aria-labelledby="terms-gate-title">
         <div>
           <h1 id="terms-gate-title" className="text-2xl font-semibold">terms of service</h1>
-          <p className="mt-2 text-sm text-zinc-400">accept the terms of service to continue to laulu. your acceptance is recorded with the terms version and time.</p>
+          <p className="mt-2 text-sm text-zinc-400">laulu is for adults aged 18 and over. confirm your age and accept the terms of service to continue.</p>
         </div>
         <div className="flex min-h-8 items-center gap-3 text-sm text-zinc-300">
-          <input id="terms-acceptance" name="termsAcceptance" type="checkbox" required checked={checked} disabled={busy}
+          <input id="terms-acceptance" name="termsAcceptance" type="checkbox" required checked={checked} disabled={busy || logoutBusy}
             onChange={(event) => setChecked(event.currentTarget.checked)}
             className="size-5 shrink-0 accent-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300" />
           <label htmlFor="terms-acceptance" className="py-1">
-            i accept the <Link to="/terms" className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">terms of service</Link>
+            i am 18 or older and accept the <Link to="/terms" className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">terms of service</Link>
           </label>
         </div>
-        {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-        <button type="button" disabled={!checked || busy} onClick={() => void accept()}
+        {(error || logoutError) && <p role="alert" className="text-sm text-red-300">{error || logoutError}</p>}
+        <button type="button" disabled={!checked || busy || logoutBusy} onClick={() => void accept()}
           className="inline-flex min-h-11 w-full items-center justify-center rounded-sm bg-white px-4 py-2.5 text-sm font-semibold text-black hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50">
           {busy ? "please wait..." : "accept and continue"}
+        </button>
+        <button type="button" disabled={busy || logoutBusy} onClick={() => void logout()}
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-sm border border-white/15 px-3 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300 disabled:opacity-50">
+          log out
         </button>
       </section>
     </main>

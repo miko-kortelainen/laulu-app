@@ -8,10 +8,11 @@ import { TermsPage } from "./TermsPage";
 import { useAuth } from "./useAuth";
 
 interface AuthGateProps {
+  publicPage?: ReactNode;
   children: (props: { user: User; logout: () => Promise<void>; busy: boolean; error?: string }) => ReactNode;
 }
 
-export function AuthGate({ children }: AuthGateProps) {
+export function AuthGate({ children, publicPage }: AuthGateProps) {
   const auth = useAuth();
   const location = useLocation();
   const loginRoute = useMatch("/login");
@@ -20,6 +21,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const termsRoute = useMatch("/terms");
   if (privacyRoute && (!auth.session || auth.view === "update")) return <PrivacyPage />;
   if (termsRoute && (!auth.session || auth.view === "update")) return <TermsPage />;
+  if (publicPage && !auth.loading && (!auth.session || auth.view === "update")) return publicPage;
   if (auth.loading) return <main className="flex min-h-dvh items-center justify-center"><p role="status">restoring your session...</p></main>;
   if (auth.view === "update") return <AuthPage {...auth} />;
   if (!auth.session) {
@@ -33,7 +35,7 @@ export function AuthGate({ children }: AuthGateProps) {
     return <Navigate to={from} replace />;
   }
   return (
-    <TermsGate userId={auth.session.user.id}>
+    <TermsGate userId={auth.session.user.id} logout={auth.logout} logoutBusy={auth.busy} logoutError={auth.error}>
       {children({ user: auth.session.user, logout: auth.logout, busy: auth.busy, error: auth.error })}
     </TermsGate>
   );

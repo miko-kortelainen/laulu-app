@@ -40,11 +40,11 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
           ))}
         </dl>
         <section aria-labelledby="allowances-heading" className="space-y-2 border-t border-white/10 pt-4 text-xs text-zinc-400">
-          <h2 id="allowances-heading" className="font-medium text-zinc-300">daily allowances</h2>
+          <h2 id="allowances-heading" className="font-medium text-zinc-300">allowances{usage && ` · ${usage.plan}`}</h2>
           {usage ? <>
             <dl className="space-y-1 tabular-nums">
               {([
-                ["chat messages", usage.chat], ["songs", usage.generation], ["audio analyses", usage.analysis],
+                ["chat messages per day", usage.chat], [usage.plan === "free" ? "songs per day" : "songs per billing month", usage.generation], ["audio analyses per day", usage.analysis],
               ] as const).map(([label, allowance]) => (
                 <div key={label} className="flex justify-between gap-3">
                   <dt>{label}</dt><dd>{allowance.remaining} / {allowance.limit} remaining</dd>
@@ -52,7 +52,8 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
               ))}
               <div className="flex justify-between gap-3"><dt>saved-song space</dt><dd>{Math.floor(usage.storage.remaining / 1024 / 1024)} MiB remaining</dd></div>
             </dl>
-            <p>resets <time dateTime={usage.resetAt}>{new Date(usage.resetAt).toLocaleString()}</time></p>
+            <p>daily allowances reset <time dateTime={usage.resetAt}>{new Date(usage.resetAt).toLocaleString()}</time></p>
+            {usage.plan !== "free" && <p>songs reset <time dateTime={usage.generationResetAt}>{new Date(usage.generationResetAt).toLocaleString()}</time> · no rollover</p>}
             <p>pending songs reserve allowance. shared daily limits also apply.</p>
           </> : !usageError && <p>loading allowances...</p>}
           {usageError && <div className="space-y-1">
