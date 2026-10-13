@@ -1,693 +1,148 @@
-# Nebius Nemotron Super AI Chatbot
+# laulu / lau.lu
 
-A simple full-stack AI chatbot built with:
-- **Frontend:** Vite + React + Tailwind CSS v4
-- **Backend:** Node.js + TypeScript (Express)
-- **AI Agent Framework:** [Strands Agents SDK](https://github.com/strands-agents/sdk-typescript) (`@strands-agents/sdk`)
-- **LLM / Inference:** [Nebius Token Factory](https://tokenfactory.nebius.com) running NVIDIA Nemotron Super (`nvidia/nemotron-3-super-120b-a12b`)
+An AI music studio. Describe a song, refine its lyrics and sound, then generate it.
 
-The login page shows the `laulu` wordmark in Monoton above the form.
-Its gradient follows [Scriabin's note-color mapping](https://www.scriabin-association.com/scriabin-poet-of-fire-and-ecstasy-guillaume-fournier/) along the circle of fifths: C (red), G (orange), D (yellow), A (green).
+- Chat with a music copilot and edit the song brief.
+- Generate full songs with Lyria 3.5 or 30-second clips with Lyria 3 Clip Preview.
+- Upload audio for analysis and production feedback.
+- Save, play, download, and delete your own songs.
 
----
+The frontend uses React, Vite, and Tailwind CSS. The backend uses Express, TypeScript, and the Strands Agents SDK.
+Supabase provides authentication and metadata. Private Cloudflare R2 storage holds saved songs.
+All hosted AI calls use Cloudflare AI Gateway BYOK: Nebius for chat and lyrics, Google for music, and QwenCloud for analysis.
 
-## Architecture Overview
+## Local development
 
-```
-├── backend/
-│   ├── prompts/
-│   │   ├── system.md      # Agent behavior and reply style
-│   │   ├── music-form.md  # Music form tool instructions
-│   │   ├── lyrics.md      # Dedicated lyric agent instructions
-│   │   └── analysis.md    # Detailed Qwen listening analysis instructions
-│   ├── src/
-│   │   ├── agent.ts       # Strands Agent setup with OpenAIModel pointing to Nebius Token Factory
-│   │   ├── auth.ts        # Supabase access token verification
-│   │   ├── database.ts    # Server-only Supabase database client
-│   │   ├── quotas.ts      # Durable paid-operation allowances and storage reservations
-│   │   ├── operations.ts  # Background requests, results, and restart recovery
-│   │   ├── user-files.ts  # Per-user local audio directories
-│   │   ├── model.ts       # Shared Nebius configuration and model setup
-│   │   ├── gateway.ts     # Required Cloudflare AI Gateway BYOK routing
-│   │   ├── lyrics.ts      # Dedicated GLM lyric agent
-│   │   ├── music.ts       # Music prompt tool and confirmed Lyria 3.5 generation
-│   │   ├── songs.ts       # Generated-song ownership, metadata, and storage recovery
-│   │   ├── r2.ts          # Private Cloudflare R2 object reads and writes
-│   │   ├── audio.ts       # Audio uploads, validation, and analysis conversion
-│   │   ├── analysis.ts    # QwenCloud listening analysis tool
-│   │   └── index.ts       # Express server with /api/chat and /api/health endpoints
-│   ├── .env.example       # Sample environment variables
-│   ├── .env               # Active Cloudflare gateway configuration
-│   ├── package.json
-│   └── tsconfig.json
-│
-└── frontend/
-    ├── src/
-    │   ├── App.tsx        # Application composition
-    │   ├── features/chat/ # Chat page, message UI, state hook, and API functions
-    │   ├── features/auth/ # Login, registration, email confirmation, and recovery
-    │   ├── features/songs/ # Saved-song page, state hook, and API functions
-    │   ├── components/ui/ # Shared component library
-    │   ├── lib/           # Shared utilities
-    │   ├── index.css      # Tailwind CSS styles
-    │   └── main.tsx
-    ├── vite.config.ts     # Vite config with Tailwind & proxy to backend (:3001)
-    └── package.json
-```
+Requirements: Node.js 24, npm, and FFmpeg with `ffmpeg` and `ffprobe` on `PATH`.
 
----
+1. Install dependencies from the repository root:
 
-## Production deployment
+   ```bash
+   npm run install:all
+   ```
 
-Use [COOLIFY.md](COOLIFY.md) to deploy `studio.lau.lu` on Hetzner with Coolify.
-The root Dockerfile builds both applications and includes FFmpeg.
-Docker Compose configures persistent song recovery, an HTTP health check, and bounded runtime logs.
-Runtime variables come from the deployment's `.env` file. Coolify can populate it from Doppler; see [COOLIFY.md](COOLIFY.md#import-values-from-doppler).
-The backend serves the built frontend with page-route fallback and keeps `/api` behind authentication.
+2. Create the environment files from the examples. Keep existing files if they already exist.
 
-## Quick Start
+   ```bash
+   cp backend/.env.example backend/.env
+   cp frontend/.env.example frontend/.env.local
+   ```
+
+3. Configure the services described in the next sections.
+4. Start the backend:
+
+   ```bash
+   npm run dev:backend
+   ```
+
+5. In another terminal, start the frontend:
+
+   ```bash
+   npm run dev:frontend
+   ```
+
+6. Open `http://localhost:5173`. The backend listens on port `3001`.
+
+Restart the development servers after environment changes. Keep secrets out of Git and all `VITE_` variables.
 
 ### Configure authentication
 
-Authentication uses Supabase Auth. This step needs no custom tables, SQL migration, or backend secret key.
+1. Enable Supabase email/password authentication, open registration, and email confirmation.
+2. Set the development Site URL to `http://localhost:5173` and allow `http://localhost:5173/` as a redirect URL.
+3. Keep the standard email templates that use `{{ .ConfirmationURL }}`.
+4. Configure custom SMTP before public use.
+5. Set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` in `backend/.env`.
+6. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in `frontend/.env.local` for the same project.
+7. Run the SQL files in [supabase/migrations](supabase/migrations) in filename order, including the terms acceptance migration.
+8. Set `SUPABASE_SECRET_KEY` in `backend/.env` for database access. Keep this key on the backend.
 
-1. Open the existing Supabase project.
-2. Enable email/password authentication and open registration.
-3. Enable **Confirm email**.
-4. Set the development Site URL to `http://localhost:5173`.
-5. Add `http://localhost:5173/` to the allowed redirect URLs.
-6. Add the exact production origin and redirect URL before deployment.
-7. Configure custom SMTP for users outside the Supabase project team.
-8. Keep the standard confirmation and recovery templates that use `{{ .ConfirmationURL }}`.
-
-The browser handles the email callback through the Supabase SDK. It supports confirmation, resend, and password recovery.
-[Supabase password authentication](https://supabase.com/docs/guides/auth/passwords) and [SMTP configuration](https://supabase.com/docs/guides/auth/auth-smtp).
-
-Create `frontend/.env.local` from `frontend/.env.example`. Enter the project URL and publishable key:
-
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
-```
-
-Add the same project values to the existing `backend/.env`:
-
-```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
-```
-
-Restart both development servers after an environment change.
-The frontend shows a configuration error if its values are absent.
-Protected backend endpoints reject requests if server authentication is not configured.
-
-Each user has a separate in-memory conversation and separate local audio directories.
-The backend deletes idle conversations after 30 minutes. Agent access renews this timeout, but context reads do not.
-Running agent requests pause the timeout. The timeout restarts when each request finishes or fails.
-After expiration, the next chat request starts a new conversation. Saved songs remain available, but the backend deletes session uploads.
-Login persists across reloads. Logout clears the current browser session and stops its pending requests and audio playback.
-To create an account, select **i accept the terms of service**. The checkbox starts unchecked.
-Acceptance is recorded in the `terms_acceptances` table with the terms version and time once a session exists.
-Signed-in users without a recorded acceptance must accept before they can use the app.
-The terms link opens in a new tab so the registration form stays available.
-Account creation and confirmation open chat at `/`, instead of a previously requested page.
-Logout also deletes uploaded audio. If a job is active, the backend deletes its uploads when the job finishes.
-Use the profile link to see your email, confirmation status, account creation date, and last sign-in date.
-The profile link is at the bottom of the sidebar. Select **log out** on the profile page to sign out.
-React Router serves login at `/login`, registration at `/create-account`, chat at `/`, your saved songs at `/songs`, and your profile at `/profile`.
-Navigation preserves the current conversation and music form.
-The chat input stays compact until the text wraps or contains a new line.
-At widths of 1280px or more, the navigation sidebar stays visible on the left.
-On smaller screens, the hamburger button opens a sidebar from the left edge.
-The sidebar closes with its close button, Escape, a click outside, or a page selection.
-Configure production hosting to serve `index.html` for frontend routes such as `/login`, `/create-account`, `/profile`, and `/songs`.
-Keep `/api/` requests on the backend.
-Local audio playback and downloads use authenticated requests.
-Existing audio without an owner remains on disk but has no public route.
-Generated songs use private R2 storage and Supabase metadata. Uploads stay in local user directories for the current session.
-Use **my songs** to see your newest 100 saved songs, creation dates, prompts, and lyrics.
-Select a song card to view its genre, mood, key, BPM, and other prompt fields in the read-only details sidebar.
-The sidebar uses the same form as chat and includes the saved lyrics.
-Older prompts without field labels appear in an additional **original prompt** box.
-On small screens, the details appear below the song list.
-The selected card contains playback controls. Each card has an MP3 download icon beside the trash icon.
-Audio loads when you select a song or download its MP3.
-The three most recently opened players stay loaded until you leave **my songs**; older ones reload when reopened. Closing a card pauses its audio and preserves its playback position.
-The page reads songs for the signed-in user. It loads the list again when you return.
-If loading fails, select **try again**.
-Select the trash icon and confirm to permanently remove a saved song. If deletion fails, the song stays in the list for another attempt.
-The page also lists **unsaved songs**, including after a reload or backend restart when recovery audio is available.
-Select **retry saving** to store the existing audio without another generation call.
-If saving fails, the song stays in the unsaved list. A successful save moves it to the saved list.
-Older local songs are not included. Paid operations also require [usage quota setup](#configure-usage-quotas).
-
-### Configure signup protection
-
-1. Open **Cloudflare Dashboard → Turnstile → Add widget**. Choose **Managed** and add your production hostname.
-2. Copy the public site key into `frontend/.env.local` as `VITE_TURNSTILE_SITE_KEY`.
-3. In **Supabase Dashboard → Authentication → Bot and Abuse Protection**, enable CAPTCHA protection.
-4. Select **Turnstile**, enter the widget's secret key, and save. Keep this secret out of frontend files.
-5. Rebuild the frontend. Check registration, login, confirmation resend, and password recovery on the production hostname.
-
-The frontend sends the verification token to Supabase. Supabase validates it before accepting the authentication request.
-Each request needs a fresh token. Expired or failed verification disables submission; select **retry verification** after a verification error.
-Password updates from a recovery session need no additional challenge.
-The widget is omitted when its site key is absent, for local development. Public deployment requires both the site key and Supabase CAPTCHA enforcement.
-See [Supabase CAPTCHA protection](https://supabase.com/docs/guides/auth/auth-captcha).
+For public deployment, configure the production origin for email redirects.
+Enable Supabase Turnstile enforcement and set `VITE_TURNSTILE_SITE_KEY` to the matching public site key.
+Local development can leave the site key empty.
 
 ### Configure generated-song storage
 
-1. In the Supabase SQL Editor, run [the songs migration](supabase/migrations/20261005113828_songs.sql) on the same project.
-2. Create a private Cloudflare R2 bucket.
-3. Disable public access through `r2.dev` and custom domains.
-4. Create R2 credentials with object read/write access for that bucket.
-5. Add these values to `backend/.env`:
+1. Create a private Cloudflare R2 bucket with public access disabled.
+2. Create credentials with object read/write access for that bucket.
+3. Set `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` in `backend/.env`.
 
-```env
-SUPABASE_SECRET_KEY=sb_secret_your_server_key
-R2_ACCOUNT_ID=your_cloudflare_account_id
-R2_BUCKET_NAME=your_private_bucket
-R2_ACCESS_KEY_ID=your_bucket_access_key
-R2_SECRET_ACCESS_KEY=your_bucket_secret
-```
-
-Keep these credentials on the backend. Restart the backend after the configuration change.
-Generation stops before the model call if credentials are absent or the metadata table is unavailable.
-
-Each `songs.owner_id` references `auth.users.id`. The backend gets this ID from verified access-token claims.
-The R2 key is `users/<owner-id>/<song-id>.mp3`. The database constraint requires the same owner and song ID in this key.
-Row-level security permits users to read only their own ready songs. Direct client writes are disabled.
-See the [Supabase RLS guide](https://supabase.com/docs/guides/database/postgres/row-level-security).
-
-The backend inserts pending metadata, uploads the MP3, then marks the song ready.
-It stores the prompt, model, lyrics, size, and creation time with the song.
-Playback and downloads keep the authenticated `/api/music/<song-id>.mp3` address and read the private object through Express.
-R2 supports single byte ranges through this endpoint. The browser needs no R2 URL or bucket CORS configuration.
-See the [Cloudflare S3 SDK example](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-js-v3/).
-
-These endpoints require the user's bearer token:
-
-| Endpoint | Result |
-| --- | --- |
-| `GET /api/songs` | The user's newest 100 ready songs, including stable URLs and lyrics |
-| `GET /api/songs/recovery` | IDs of local songs with unfinished storage |
-| `POST /api/songs/<song-id>/retry` | Store an unfinished song without another model call |
-| `DELETE /api/songs/<song-id>` | Delete the user's saved song, its R2 object, and local recovery copies |
-| `GET /api/music/<song-id>.mp3` | Private playback or download after an ownership check |
-
-A failed save returns HTTP 502 with `songId` and `retryUrl`. The generation button changes to **retry saving**.
-This action stores the existing song. It does not call the music model again.
-The retry returns `{ track }`, with the same URL and lyrics as a successful generation.
-Repeated retries of a ready song return that song without another upload.
-
-Deletion checks the verified owner before it removes the R2 object or local copies.
-It deletes metadata last. If cleanup fails, the metadata remains so deletion can be retried.
-If the R2 object was already deleted, the song can remain listed while playback is unavailable until deletion succeeds.
-Deletion uses the same per-user action lock as generation and chat. No database migration is required.
-The recovery endpoint also finds unfinished local saves after a backend restart or lost response.
-
-Keep `backend/generated-music/` on persistent disk until unfinished saves succeed.
-The backend retains at most five unfinished saves per user before it blocks further generation.
-If the local recovery write fails, the backend still attempts the R2 save.
-If both saves fail, it retains the song in memory for storage retry and reports this condition.
-Keep the backend running until that retry succeeds. Memory recovery does not survive a restart.
-Successful storage deletes the local recovery audio and metadata.
-Local processing downloads each owned song into a separate temporary file.
-The backend checks its size and renames the completed download before use. It deletes the file after processing, including failure.
-The current implementation needs one backend instance because its request locks and recovery files are local.
-Unfinished saves expire after seven days. Saved-song pagination remains separate work.
-Existing owned local songs keep their private playback and processing URLs. They are not imported or included in the saved-song list automatically.
-Account deletion requires song cleanup first. The ownership foreign key prevents database rows from becoming ownerless.
-
-Offline checks: `npm --prefix backend run test:songs` and `npm --prefix backend run test:music`.
-These checks mock Supabase, R2, and model responses. They make no paid calls.
-The database policy checks are in `supabase/tests/songs.sql`.
-After local Supabase setup and migration, run `npx supabase test db supabase/tests/songs.sql --local`.
-
-### Recover interrupted requests
-
-Apply [the operation recovery migration](supabase/migrations/20261008150439_recover_operations.sql) after the existing quota migrations.
-Keep one backend instance and mount `backend/generated-music/` on persistent storage.
-The volume contains unfinished audio, metadata, and temporary operation result journals.
-Database operation records have RLS enabled. Only the backend service role can read or change them.
-See the [Supabase RLS guide](https://supabase.com/docs/guides/database/postgres/row-level-security).
-
-The frontend sends a UUID `operationId` with each confirmed generation or chat request.
-The backend returns HTTP 202 with `{ operation }` before the paid work completes.
-Repeated submissions with the same ID cannot start another provider request.
-Legacy callers without `operationId` retain their synchronous response format.
-
-| Endpoint | Result |
-| --- | --- |
-| `GET /api/operations` | The owner's unacknowledged operations, up to 100 |
-| `GET /api/operations/<id>` | Current activity, final result, or failure |
-| `POST /api/operations/<id>/acknowledge` | Mark a delivered final result as acknowledged |
-
-The browser polls progress. Discovery and polling retry temporary connection failures.
-A reload restores unfinished requests and unacknowledged results.
-Acknowledgement retries do not block other results.
-Recovered chat updates apply only to the draft linked to that request. Older results preserve later edits and attachments.
-Music fields, model selection, and attachment references stay in session storage, separate for each account.
-This storage preserves the draft in the same browser tab. It does not store chat history or audio bytes.
-Expired session uploads require another upload after a backend restart.
-
-The backend holds account locks until server work ends, including deletion after a browser disconnect.
-Audio analysis runs inside the recoverable chat operation. Logout defers upload deletion until active work ends.
-Completed results get an atomic local journal before their database update.
-Generation writes its local MP3 and metadata before the remote save attempt.
-If both disk and remote storage fail, existing memory recovery requires the backend to keep running.
-
-Startup and hourly maintenance reconcile unfinished operations, up to 100 per pass.
-Saved metadata or complete recovery audio restores a generated track without a new model call.
-A journaled confirmed failure restores personal allowance exactly once.
-If no result proves the provider outcome, the operation becomes `unknown` and keeps its paid allowance charge.
-Uncertain operations never cause automatic paid retries. A backend restart can end an unfinished chat without a result.
-
-Cleanup removes at most 100 expired recovery entries per pass and skips active accounts.
-Unfinished songs and final operation records expire after seven days.
-Partial writes and abandoned processing caches expire after one hour.
-Cleanup releases abandoned storage capacity after seven days, while personal and global usage charges remain unchanged.
-Zero-capacity reservation records expire after 30 days, after their operation records expire.
-Ready saved songs are retained until the owner deletes them.
-
-Offline recovery checks:
-
-- `cd backend` then `node --import tsx --test tests/operations.test.ts`.
-- `node frontend/e2e/run.mjs operations` from the repository root.
-- `npm --prefix backend run test:quotas:db` with a disposable local database and `QUOTA_TEST_DATABASE_URL`.
+Saved songs use private R2 objects and Supabase metadata. Playback and downloads require authentication.
+If storage fails, use **retry saving** to save the existing audio without another generation call.
 
 ### Configure usage quotas
 
-1. Open the same Supabase project, then select **SQL Editor → New query**.
-2. Run [the quota migration](supabase/migrations/20261006150319_usage_quotas.sql) after the songs migration, then run [the global usage migration](supabase/migrations/20261007130543_global_usage_limits.sql).
-   Then run [the beta allowance migration](supabase/migrations/20261008141601_beta_allowances.sql) with the updated backend.
-   Run [the operation recovery migration](supabase/migrations/20261008150439_recover_operations.sql) before starting this backend version.
-3. Keep `SUPABASE_SECRET_KEY` in `backend/.env`. Chat and analysis now require this server-only key too.
-4. Add these allowance defaults to `backend/.env`, or use the same built-in values:
+Set positive `GLOBAL_CHAT_DAILY`, `GLOBAL_ANALYSIS_DAILY`, and `GLOBAL_GENERATION_DAILY` limits in `backend/.env`.
+The example values are `200`, `30`, and `20`. Missing or zero values disable the corresponding paid operation.
 
-```env
-QUOTA_CHAT_DAILY=20
-QUOTA_ANALYSIS_DAILY=10
-QUOTA_GENERATION_DAILY=5
-QUOTA_STORAGE_BYTES=536870912
-MAX_GENERATED_SONG_BYTES=26214400
-GLOBAL_CHAT_DAILY=0
-GLOBAL_ANALYSIS_DAILY=0
-GLOBAL_GENERATION_DAILY=0
-```
+New users receive 20 chat messages, 10 analyses, 5 songs per UTC day, and 512 MiB of song storage by default.
+The `QUOTA_*` values configure new users. Existing user allowances live in `public.user_quotas`.
+Shared limits also apply. Daily usage resets at midnight UTC.
 
-5. Replace the three `GLOBAL_*_DAILY` values with your chosen shared daily attempt limits, then restart the backend.
+### Configure Cloudflare AI Gateway
 
-The global limits apply across all users. Their defaults are `0`, so paid operations stay disabled until you set positive values.
-These are operation limits, not dollar budgets. Chat includes bounded agent turns and delegated lyric generation.
-Both per-user and global allowances must permit each request. The same database transaction reserves both before the paid call.
-Backend restarts, conversation resets, and account deletion do not restore the shared allowance.
-Each operation resets at midnight UTC. Changing a global environment value takes effect after restarting the backend; it does not reset usage.
-The migration includes today's existing per-user usage and removes the old reservation entry point.
-Deploy the migration and updated backend together. An outdated backend fails before paid calls.
-Exhaustion returns the usual `429 quota_exceeded` response with an app-wide message and reset time.
-Storage retries remain available after generation limits are exhausted and do not consume another attempt.
+1. Enable authentication on the gateway.
+2. Create the custom providers:
 
-The per-user defaults allow 20 chat messages, 10 analyses, and 5 completed songs per UTC day, subject to the global limits.
-Each user has 512 MiB of generated-song storage. Generation reserves 25 MiB before the paid Lyria call.
-The backend converts this reservation to the exact MP3 size when it inserts pending song metadata.
-An analysis also consumes its surrounding chat request. Bounded agent turns and lyric generation belong to that chat allowance.
-Uploads and local recovery copies do not count toward this storage quota.
-Existing pending and ready song metadata counts immediately. No byte-counter backfill is necessary.
-
-The first usage request creates a row in `public.user_quotas` from these defaults.
-To change an existing user's allowances, open **Table Editor → user_quotas** and edit that user's row.
-Environment changes affect new rows only. Set a daily allowance to `0` to disable that operation for a user.
-The beta migration lowers existing chat allowances above 20. Disabled accounts and stricter allowances stay unchanged.
-Per-user allowance changes take effect on the next reservation.
-Credit balances, paid tiers, and payments remain separate work. Their debit logic can use the existing reservation transaction.
-
-Authenticated `GET /api/usage` returns limits, used counts, remaining allowances, reserved bytes, and the next UTC reset time.
-The **my profile** page displays remaining allowances and the reset time in the user's local time.
-It refreshes after chat actions, page navigation, and the daily reset.
-Failed refreshes preserve the previous values and show a retry control.
-The database owns the date and counters. Backend restarts and conversation resets do not clear them.
-Quota exhaustion returns HTTP `429` with `code: "quota_exceeded"` and the exhausted `resource`.
-Daily exhaustion also returns `resetAt` and a `Retry-After` header.
-Database failures return HTTP `503` and prevent paid calls.
-An analysis quota failure after streaming starts returns a terminal NDJSON error with the same code and resource.
-
-Local validation occurs before reservation. Chat and analysis reservations count as attempts. Lyrics use their surrounding chat allowance.
-Generation reserves one personal song and its storage before the paid call.
-Confirmed provider rejections and terminal responses without valid audio restore that personal song and release unused storage exactly once.
-Global generation attempts stay charged after a personal refund.
-Timeouts, connection failures, interrupted responses, and unfinished provider statuses retain both reservations until the outcome is known.
-Completion and refunds use the original reservation date, including operations that cross UTC midnight.
-If refund settlement fails, the reservation stays charged and the error reports that the refund needs attention.
-Pending saves keep their capacity until storage succeeds or cleanup completes. Storage retries do not consume another generation attempt.
-Storage failures and song deletion do not restore generation allowance.
-Deletion releases bytes when the backend deletes metadata after object and local-file cleanup.
-If a track exceeds `MAX_GENERATED_SONG_BYTES`, its local recovery copy remains available.
-Increase that limit before storage retry. The exact track must still fit the user's storage allowance.
-
-Interrupted generations can leave storage reservations after a restart. Abandoned storage capacity expires after seven days.
-Cleanup preserves uncertain personal usage and global attempts. It never refunds a generation because its browser disconnected.
-To find them, inspect `usage_reservations` rows with `storage_bytes > 0` in the SQL Editor.
-Before release, make sure that the operation stopped and that no song metadata, R2 object, or local recovery copy needs this capacity.
-Then run this server-administrator query with the actual owner and reservation IDs:
-
-```sql
-select public.release_song_reservation('USER_UUID', 'RESERVATION_UUID');
-```
-
-This query releases only unused storage. It preserves the daily attempt count and does not release capacity held by song metadata.
-Automatic reconciliation remains deferred. Keep one backend instance for the existing local conversation locks and recovery files.
-
-The database concurrency and permission check uses separate PostgreSQL connections:
-
-```bash
-QUOTA_TEST_DATABASE_URL=postgresql://localhost/quota_test_musical npm --prefix backend run test:quotas:db
-```
-
-Use a disposable local database named `quota_test...` with Supabase auth roles and both repository migrations.
-The command requires `psql` and an administrator connection. It creates and deletes fixture users and songs only.
-Set `QUOTA_TEST_PSQL` if the executable is outside `PATH`.
-The mocked music, analysis, authentication, and song checks also cover quota failures without paid provider calls.
-
-### Authentication checks
-
-```bash
-npm --prefix backend run test:auth
-npm --prefix frontend run test:all
-```
-
-Frontend checks build an isolated app with a mock Supabase project.
-They cover auth, chat, and audio without real accounts, outgoing email, or paid AI calls.
-Backend auth checks use signed fixture tokens and mocked Supabase signing keys.
-
-### 1. Configure Cloudflare AI Gateway
-
-Create `backend/.env` from `backend/.env.example` if it does not exist.
-Add the Cloudflare gateway values to the existing file:
-
-```env
-CF_AI_GATEWAY_ACCOUNT_ID=your_cloudflare_account_id
-CF_AI_GATEWAY_ID=your_gateway_id
-CF_AI_GATEWAY_TOKEN=your_gateway_api_token
-CF_AI_GATEWAY_NEBIUS_SLUG=nebius
-CF_AI_GATEWAY_QWENCLOUD_SLUG=qwencloud
-NEBIUS_MODEL=nvidia/nemotron-3-super-120b-a12b
-LYRICS_MODEL=zai-org/GLM-5.3-Flash
-PORT=3001
-```
-
-Store the provider keys in Cloudflare as described below. All hosted AI calls require this gateway.
-
-### 2. Start the Backend
-
-In one terminal:
-```bash
-npm run dev:backend
-```
-The backend server runs on `http://localhost:3001`.
-
-### 3. Start the Frontend
-
-In a second terminal:
-```bash
-npm run dev:frontend
-```
-The frontend dev server runs on `http://localhost:5173`. Open your browser at `http://localhost:5173` to chat with the agent!
-
----
-
-## Cloudflare AI Gateway BYOK
-
-Cloudflare routing covers Nebius chat and lyrics, Google Lyria token counting and generation, and QwenCloud audio analysis.
-Local audio processing continues to run on this machine.
-
-1. Enable authentication on your Cloudflare gateway.
-2. Create these custom providers in Cloudflare. If they already exist, check their slugs and base URLs.
-
-   | Provider | Slug | Base URL |
+   | Provider | Default slug | Base URL |
    | --- | --- | --- |
    | Nebius | `nebius` | `https://api.tokenfactory.nebius.com` |
    | QwenCloud | `qwencloud` | `https://maas.qwencloudapi.com` |
 
-   Use the root domains above. The backend adds `/v1` for Nebius and `/compatible-mode/v1` for QwenCloud.
+   Use these root URLs. The backend adds each provider's API path.
    Google uses the built-in `google-ai-studio` provider.
-3. In your gateway's **Provider Keys**, store each provider key with the `default` alias.
-4. Set these values in `backend/.env`:
 
-   ```env
-   CF_AI_GATEWAY_ACCOUNT_ID=your_cloudflare_account_id
-   CF_AI_GATEWAY_ID=your_gateway_id
-   CF_AI_GATEWAY_TOKEN=your_gateway_api_token
-   CF_AI_GATEWAY_NEBIUS_SLUG=nebius
-   CF_AI_GATEWAY_QWENCLOUD_SLUG=qwencloud
-   ```
+3. Store each provider key in the gateway's **Provider Keys** with the `default` alias.
+4. Set `CF_AI_GATEWAY_ACCOUNT_ID`, `CF_AI_GATEWAY_ID`, and `CF_AI_GATEWAY_TOKEN` in `backend/.env`.
+   The token needs the **AI Gateway - Run** permission.
+5. If the custom provider slugs differ, set `CF_AI_GATEWAY_NEBIUS_SLUG` and `CF_AI_GATEWAY_QWENCLOUD_SLUG`.
+   Omit the `custom-` prefix.
 
-   The token needs the **AI Gateway - Run** permission. Use custom provider slugs without the `custom-` prefix.
-   If your custom providers have different slugs, change the two slug values.
-5. Restart the backend.
+Provider keys stay in Cloudflare. The backend requires the gateway for every hosted AI call.
+Chat, lyric generation, audio analysis, and music generation incur provider charges.
+The **generate song** button starts music generation from the edited brief.
 
-All three gateway values are required. Store provider keys only in Cloudflare.
-The backend removes provider authorization headers before each request so Cloudflare can use its stored keys.
-It bypasses caching, permits one gateway attempt, and requires provider credentials instead of Cloudflare Unified Billing.
-Missing or incomplete gateway configuration causes an error before any hosted AI call.
+## Storage and recovery
 
-The backend sends `cf-aig-custom-cost` for these custom-provider models. Rates are USD per million tokens:
+Uploads accept mono or stereo MP3, WAV, FLAC, and OGG files, up to 50 MB and 10 minutes.
+Uploads stay local and expire after a new session, logout, inactivity, or a backend restart.
+Saved songs remain available until you delete them. Chat history does not persist across backend restarts.
 
-| Model | Input | Output |
-| --- | ---: | ---: |
-| Nebius `nvidia/nemotron-3-super-120b-a12b` | $0.30 | $0.90 |
-| Nebius `zai-org/GLM-5.3-Flash` | $0.15 | $0.50 |
-| QwenCloud `qwen3.8-omni-flash` | $0.15 | $0.47 |
+Run one backend instance. Keep `backend/generated-music/` on persistent storage for unfinished songs and operation recovery.
+Unknown provider outcomes retain their allowance charge and never trigger automatic paid retries.
 
-Update `customPrices` in `backend/src/gateway.ts` when your rates change.
-The code stores these rates as USD per token. Divide rates per million tokens by 1,000,000 before updating the code.
-Other models receive no custom-cost header.
-Cloudflare calculates costs only for responses that include token usage.
-See [Cloudflare custom costs](https://developers.cloudflare.com/ai-gateway/configuration/custom-costs/).
+## Project layout
 
-Restart the backend after configuration changes.
+| Path | Contents |
+| --- | --- |
+| `frontend/src/features/` | Chat, authentication, saved songs, and profile |
+| `frontend/src/components/ui/` | Shared UI components |
+| `backend/src/` | HTTP API, agents, audio, storage, and quotas |
+| `backend/prompts/` | Chat, song brief, lyrics, and analysis instructions |
+| `supabase/migrations/` | Database migrations |
 
-Offline routing check: run `node --import tsx tests/gateway.test.ts` from `backend/`.
+Restart the backend after prompt changes.
 
-Cloudflare's documentation covers [BYOK](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/),
-[custom providers](https://developers.cloudflare.com/ai-gateway/configuration/custom-providers/), and
-[gateway authentication](https://developers.cloudflare.com/ai-gateway/configuration/authentication/).
+## Checks
 
-## Features
-- **User sends message:** Interactive chat bar with Enter key submission.
-- **Agent answers:** Strands Agents SDK loop powered by Nebius Token Factory + Nemotron Super.
-- **Live Health & Status Indicator:** Visual badge displaying backend connection and model state.
-- **new session:** Button beside music generation to reset conversation history.
-
-## Music generation
-
-Edit agent behavior in [backend/prompts/system.md](backend/prompts/system.md)
-and music form instructions in [backend/prompts/music-form.md](backend/prompts/music-form.md).
-[backend/prompts/lyrics.md](backend/prompts/lyrics.md) guides the dedicated lyric agent.
-Restart the backend after editing these files. The backend loads them directly;
-include `backend/prompts/` alongside `backend/dist/` when deploying a build.
-
-Store a Gemini API key in your gateway's **Provider Keys** under `google-ai-studio`, with access to
-[`lyria-3.5` or `lyria-3-clip-preview`](https://ai.google.dev/gemini-api/docs/music-generation).
-
-The music form stays beside the chat, or below it on small screens.
-Ask the agent to create music. It fills editable fields for genre/style, mood,
-key, BPM, duration, vocals/language, instruments, production, and lyrics.
-Edit these fields directly before you approve the song.
-Use **music model** to select **Lyria 3.5** (the default) or **Lyria 3 Clip Preview**.
-Clip Preview always generates a 30-second clip.
-Chat revisions and failed generation keep the selection. Clearing the conversation resets it.
-Click **generate song** to send the edited fields as one prompt and start the paid API call.
-The backend uses the official `@google/genai` SDK for token counting and generation.
-Before generation, it calls Google's [token counting API](https://ai.google.dev/gemini-api/docs/tokens)
-with the final prompt and selected model. Prompts above 131,072 input tokens return
-HTTP 400 without starting generation. If counting fails, generation does not start.
-The separate 10,000-character prompt limit still applies.
-Service failures show Google's error message so request errors can be diagnosed.
-You can also tell the agent what to change. Each chat request includes the current
-form, including manual edits, so revisions can preserve the other fields.
-Fields changed by the agent glow briefly. Manual edits do not trigger the glow.
-With reduced motion enabled, changed fields show a steady highlight for the same time.
-Music advice and prompt preparation do not call Lyria.
-The chat spinner shows the current action: thinking, editing fields or lyrics,
-generating a track, uploading audio, or analyzing audio.
-Chat requests stream tool activity before the final reply.
-
-Prompt preparation follows Google's [Lyria prompt guide](https://ai.google.dev/gemini-api/docs/lyria-prompt-guide)
-for Lyria 3.5 batch generation. The agent leads with genre, describes the sound
-and song progression, and specifies vocal delivery and lyric language or an
-instrumental arrangement. It adds tempo, key, and duration when appropriate.
-Supplied lyrics keep their original text under `Lyrics:` with section tags.
-The main agent handles chat and form changes. For lyric writing or revision, it
-sets `lyricRequest` in `update_music_form`. The tool passes the complete brief,
-current lyrics, and requested changes to a fresh lyric agent that uses
-`zai-org/GLM-5.3-Flash` through the same Nebius API key and base URL.
-Set `LYRICS_MODEL` to override the lyric model. `NEBIUS_MODEL` still controls chat.
-The lyric agent reads `lyrics.md` and returns the complete lyric text.
-The tool adds nonempty lyric text to the form, keeping its first 3,000 characters.
-If the model hits its token limit after producing lyric text, that text is also
-accepted and capped. Reasoning-only responses are rejected.
-Lyric calls have a two-minute timeout and an 8,192-token completion
-limit, including reasoning and lyric text. Reasoning effort is set to `low`.
-The lyrics field has a 3,000-character limit, including section tags and line breaks.
-Supplied lyrics and edits to other song fields do not trigger a lyric call.
-Empty or whitespace-only lyric requests do not trigger a lyric call.
-Lyric generation uses paid Nebius inference during chat, before the separate
-Generate music action. Failed lyric calls preserve the current form.
-Each chat request allows at most six main-agent model turns and one lyric-agent
-call, including failed attempts. Each main-model response is capped at 4,096 output
-tokens. Main-agent requests also stop at 12,288 cumulative output tokens or 30,000
-total tokens. These token budgets are checked between turns, can overshoot by one
-response, and exclude the separate lyric call. SDK and HTTP model retries are
-disabled. A limit returns a clear stop message; a new user message gets a fresh
-budget. Successful form updates remain available when a turn limit is reached.
-When the lyrics field is empty, Lyria writes lyrics from the requested story, emotion, and hook.
-Each revised prompt includes the full song brief for review.
-
-The result includes an audio player, an MP3 download, and a lyrics dropdown when
-lyrics are returned. Structure markers are removed from the displayed lyrics.
-All audio players show a waveform and playhead with play/pause, stop, volume,
-and elapsed/total time. Click or drag the waveform to seek, or focus it and use
-the arrow keys, Home, or End. Stop returns to the beginning.
-Only one audio player plays at a time. When another player starts, the previous player pauses and keeps its playback position.
-The browser decodes the waveform with the Web Audio API; no player library or
-model call is used. If decoding fails, playback keeps a plain seek timeline.
-The agent acknowledges form changes briefly and conversationally, without follow-up
-questions or repeated button reminders. It does not repeat the music prompt in chat.
-Generated tracks are saved in private R2 storage with owner-linked Supabase metadata.
-The backend uses `backend/generated-music/` for unfinished saves and temporary processing files. Git ignores this directory.
-Songs survive backend restarts and are available through `GET /api/songs` after another login.
-Chat messages remain in the current browser session. Saved songs are available on **my songs**.
-The **new session** button resets the conversation and music form and leaves saved tracks in place.
-The conversation context bar below the music form shows the backend's retained
-chat and tool message count against its 40-message sliding window. The count
-loads when the page opens and updates after each chat request, including failures.
-The **new session** button discards the backend agent and resets the bar only after reset succeeds.
-Tool pairs stay together, so the retained count can briefly exceed the window.
-
-The backend uses the Interactions REST API with `store: false`, reads audio from
-`model_output` steps, and allows five minutes for generation. Failed requests
-show an error and keep your edits available for retry. After success, the form
-stays editable for the next track, and previous tracks remain in chat. Chat, reset, and music
-generation cannot overlap within the same conversation.
-
-Offline backend check: `npm --prefix backend run test:music`.
-Offline lyric routing and failure recovery check: `npm --prefix backend run test:lyrics`.
-
-## Audio analysis
-
-Store a QwenCloud API key in your gateway's **Provider Keys** for the QwenCloud custom provider.
-Analysis uses `qwen3.8-omni-flash` through Cloudflare AI Gateway with the installed OpenAI SDK.
-Nebius still runs the producer agent and lyric agent. Google still generates music.
-
-Upload or generate a track, then ask the copilot to analyze it or give production
-feedback. The agent calls `analyze_audio`, shows **analyzing audio...**, and uses the returned
-observations in its chat reply. Uploading or generating audio does not start analysis.
-Analysis sends audio to QwenCloud and makes a paid inference call.
-
-The backend sends small MP3 and WAV files directly.
-For larger files and FLAC/OGG inputs, the Node backend runs FFmpeg to create a temporary MP3.
-Conversion preserves the source file and its mono or stereo channel count.
-The output uses 44.1 kHz and 80 kbps. A ten-minute track fits within the provider's 10 MB base64 limit.
-The backend deletes temporary files after preparation.
-
-Edit the listening analysis instructions in `backend/prompts/analysis.md`, then
-restart the backend. General analysis covers mood, instrument roles and timbres,
-rhythm, melody and harmony, vocals, arrangement, and production. It aims for
-400–700 words when the recording supports that detail, with approximate timestamps
-and prioritized suggestions when relevant. Focused questions get focused answers.
-The producer agent preserves the detailed breakdown in chat.
-It is an interpretation, not a calibrated assessment of mix quality or a measurement
-of BPM, key, loudness, peaks, or clipping. Failed analysis leaves the music form
-and source files intact. Each message allows one analysis attempt, with no HTTP
-retries, a two-minute inference timeout, and a 2,048-token output limit.
-
-Offline analysis and failure recovery check: `npm --prefix backend run test:analysis`.
-It mocks inference and makes no paid calls. Its format-conversion checks require
-FFmpeg on `PATH`.
-
-## Audio uploads and local storage
-
-Install FFmpeg on the backend host. On Ubuntu or Debian, run:
+Run commands from the repository root:
 
 ```bash
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends ffmpeg
+npm run build
+npm --prefix frontend run lint
+npm --prefix frontend run test:all
+npm --prefix backend run test:auth
+npm --prefix backend run test:music
+npm --prefix backend run test:lyrics
+npm --prefix backend run test:analysis
+npm --prefix backend run test:audio
+npm --prefix backend run test:songs
 ```
 
-Make sure that `ffmpeg` and `ffprobe` are on `PATH`.
-The Node backend runs `ffprobe` for upload validation and `ffmpeg` for analysis conversion.
+Frontend checks require the `agent-browser` CLI. These checks use mocked services and make no paid AI calls.
+Audio checks require FFmpeg. Additional backend checks are listed in [backend/package.json](backend/package.json).
 
-Use **upload audio** to add an MP3, WAV, FLAC, or OGG file.
-Uploads must be mono or stereo, at most 50 MB, and no longer than 10 minutes.
-The attachment area shows the filename and an audio player.
-You can replace or remove the attachment before sending.
-A failed upload or send preserves the previous attachment.
-Chat requests use the latest sent attachment or generated track.
+## Deployment
 
-Uploads stay in `backend/uploaded-audio/` for session analysis and playback. Git ignores this directory.
-The backend reserves disk space before each upload, with a **1 GiB limit across all users**.
-If capacity is insufficient, the upload endpoint returns HTTP 507 and preserves existing files.
-The server accepts `MAX_AUDIO_JOBS` simultaneous uploads (default `2`) and returns HTTP 503 with `Retry-After: 5` when all slots are busy.
-The same limit applies to simultaneous FFmpeg and ffprobe processes. Extra processes wait for a free slot.
-
-The backend lets browsers from the `ALLOWED_ORIGINS` list (comma-separated) read cross-origin API responses.
-The default is the local Vite origins. Production on one origin needs no entry; set it to the studio origin only if another origin calls the API.
-
-A new session, logout, or 30 minutes of inactivity deletes session uploads.
-Active uploads and agent requests pause expiration.
-A backend restart ends all in-memory sessions. Startup cleanup deletes uploads from those sessions.
-Cleanup runs at startup, hourly, and before new writes.
-Active sessions and analysis operations protect their input files until they finish.
-
-The disk policy covers `uploaded-audio/` only.
-Generated-song recovery files remain outside this limit.
-Temporary analysis conversion uses protected `.analysis-*` directories inside `uploaded-audio/`.
-Normal completion deletes these directories. Startup cleanup deletes conversion files from interrupted sessions.
-One backend process must own the upload directory. Concurrent processes require a shared disk lock.
-The limits are defined in `backend/src/local-audio.ts`.
-
-Upload validation and session cleanup check: `npm --prefix backend run test:audio`.
-This check requires FFmpeg and makes no paid calls.
-Disk policy check: `cd backend` then `node --import tsx --test tests/local-audio.test.ts`.
-This check uses isolated temporary directories and makes no model calls.
-
-## LangSmith tracing
-
-Production beta tracing is disabled. Deploy with `NODE_ENV=production`.
-In production, the backend overrides `LANGSMITH_TRACING` to `false`.
-Old environment settings cannot enable tracing.
-The public `/privacy` page explains storage, AI processing, temporary data, and beta limits.
-The public `/terms` page sets the terms of service for the beta, including acceptable use, AI output, and copyright complaints.
-Both are linked from login and the app footer. Privacy, copyright, and account deletion requests go to `miko@kortelainen.dev`.
-Serve `index.html` for `/privacy` and `/terms`, as for the other frontend routes.
-
-For development tracing, set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in `backend/.env`, then
-restart the backend. `LANGSMITH_PROJECT=musical-copilot` groups the traces.
-`LANGSMITH_ENDPOINT` defaults to `https://api.smith.langchain.com`; use
-`https://eu.api.smith.langchain.com` for an EU workspace.
-
-Each agent invocation records its input, reply, errors, and duration. Model calls,
-`update_music_form` and `analyze_audio` appear as child runs, including model token
-usage and tool inputs and results. Conversation session IDs group runs into LangSmith threads.
-Confirmed audio generation records a separate `generate_audio` run in the same
-thread, with the prompt, download URL, and lyrics. Audio bytes and API keys are
-excluded. Prompt preparation still requires user approval before generation.
-Delegated lyric calls appear as `generate_lyrics` child chains with their GLM model runs.
-Qwen analysis records a `QwenOmni` model run under `analyze_audio`, including
-token usage. Analysis traces contain the source URL, question, instructions,
-and response. Audio bytes and API keys are excluded.
-
-Tracing sends conversation and music prompt text to LangSmith. Set
-`LANGSMITH_TRACING=false` to disable it.
-
-Offline tracing check: `npm --prefix backend run test:tracing`.
-
-Frontend chat E2E check: start `npm run dev:frontend`, then run
-`npm --prefix frontend run test:e2e`. It requires the `agent-browser` CLI and
-mocks all API calls. Set `E2E_URL` to test another local frontend URL.
-
-Audio player E2E check: run `npm run build:frontend`, then
-`npm --prefix frontend run test:audio`. It uses the same browser CLI and a local
-test server with real WAV audio. It checks waveform rendering, playback controls,
-seeking, volume, attachment sending, playback switching between players, mobile layout, and load failure recovery.
+See [COOLIFY.md](COOLIFY.md) for deployment at `studio.lau.lu`, environment configuration, persistent storage, and backups.
+The Docker image includes FFmpeg and serves both the frontend and API.
+Production tracing is disabled. Development tracing is optional through `LANGSMITH_*` values in the backend environment example.
