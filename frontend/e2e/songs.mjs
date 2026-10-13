@@ -236,18 +236,37 @@ try {
   await run("wait", "--text", "no saved songs yet.");
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
 
-  // A signed-in user without a recorded acceptance must accept before reaching the app.
+  // Existing users must confirm adulthood, even with a pending acceptance of the previous terms.
   await run("network", "unroute", "**/api/terms");
-  await run("network", "route", "**/api/terms", "--body", '{"accepted":false,"version":"2026-10-12"}');
-  await run("eval", "location.reload()");
-  await run("wait", "--text", "accept the terms of service to continue");
+  await run("network", "route", "**/api/terms", "--body", '{"accepted":false,"version":"2026-10-13"}');
+  await run("eval", "sessionStorage.setItem('terms-acceptance-pending', '2026-10-12'); location.reload()");
+  await run("wait", "--text", "laulu is for adults aged 18 and over.");
   assert.equal(await run("eval", "document.querySelector('#songs-title')"), "null");
-  await run("eval", `const beforeTerms = window.fetch;
-    window.fetch = (input, options) => input === '/api/terms' && options?.method === 'POST'
-      ? Promise.resolve(new Response(null, { status: 204 })) : beforeTerms(input, options);`);
+  assert.equal(await run("eval", "document.querySelector('#terms-acceptance').checked"), "false");
+  assert.equal(await run("eval", "Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'accept and continue').disabled"), "true");
+  await run("eval", `const beforeTerms = window.fetch; window.termsRequests = []; window.failTerms = true;
+    window.fetch = (input, options) => {
+      if (input === '/api/terms' && options?.method === 'POST') {
+        window.termsRequests.push(JSON.parse(options.body));
+        return Promise.resolve(window.failTerms
+          ? Response.json({ error: 'could not record terms acceptance. try again.' }, { status: 503 })
+          : new Response(null, { status: 204 }));
+      }
+      return beforeTerms(input, options);
+    };`);
   await run("check", "#terms-acceptance");
   await run("find", "role", "button", "click", "--name", "accept and continue", "--exact");
+  await run("wait", "--text", "could not record terms acceptance. try again.");
+  assert.equal(await run("eval", "document.querySelector('#songs-title')"), "null");
+  await run("eval", "window.failTerms = false");
+  await run("find", "role", "button", "click", "--name", "accept and continue", "--exact");
   await run("wait", "--text", "no saved songs yet.");
+  assert.equal(await run("eval", "JSON.stringify(window.termsRequests)"), JSON.stringify(JSON.stringify([{ version: "2026-10-13" }, { version: "2026-10-13" }])));
+  await run("eval", "location.reload()");
+  await run("wait", "--text", "laulu is for adults aged 18 and over.");
+  await run("find", "role", "button", "click", "--name", "log out", "--exact");
+  await run("wait", "--text", "log in");
+  assert.equal(await run("eval", "document.querySelector('#songs-title')"), "null");
   console.log("Songs E2E passed: authenticated navigation and reload, empty state, saved metadata, read-only details sidebar and keyboard selection, playback and download, deletion confirmation and failure recovery, retained chat form, load failure recovery, unsaved-song discovery and retry without generation, invalid-response rejection, narrow layout, and account switching.");
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);

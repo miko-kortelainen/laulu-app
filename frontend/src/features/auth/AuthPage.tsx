@@ -47,7 +47,7 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
                 disabled={busy || !configured} onChange={(event) => setTermsAccepted(event.currentTarget.checked)}
                 className="size-5 shrink-0 accent-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300" />
               <label htmlFor="auth-terms" className="py-1">
-                i accept the <Link to="/terms" target="_blank" rel="noopener noreferrer"
+                i am 18 or older and accept the <Link to="/terms" target="_blank" rel="noopener noreferrer"
                   className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">terms of service<span className="sr-only"> (opens in a new tab)</span></Link>
               </label>
             </div>

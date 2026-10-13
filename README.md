@@ -61,8 +61,11 @@ For public deployment, configure the production origin for email redirects.
 Enable Supabase Turnstile enforcement and set `VITE_TURNSTILE_SITE_KEY` to the matching public site key.
 Local development can leave the site key empty.
 
+Users must confirm they are 18 or older and accept the current terms before using the studio.
 The frontend checks terms acceptance with `GET /api/terms` and records it with `POST /api/terms`.
 The backend uses the authenticated user ID and stores the terms version and acceptance time in Supabase.
+Chat, analysis through chat, and music generation require current terms acceptance on the backend.
+Age is self-declared; the app does not collect birth dates or verify identity documents.
 Keep `TERMS_VERSION` in `backend/src/terms.ts` and `frontend/src/lib/terms.ts` in sync when the terms change.
 
 ### Configure generated-song storage

@@ -21,7 +21,7 @@ test('verified users own their API session and local media', async (t) => {
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'offline', alg: 'ES256', use: 'sig' };
   const originalFetch = globalThis.fetch;
   let authRequests = 0;
-  const termsAcceptances = new Set<string>();
+  const termsAcceptances = new Map<string, Set<string>>();
   let termsUnavailable = false;
   globalThis.fetch = async (input, options) => {
     const request = new Request(input, options);
@@ -34,13 +34,15 @@ test('verified users own their API session and local media', async (t) => {
         const acceptance: unknown = await request.json();
         assert.ok(acceptance && typeof acceptance === 'object' && 'user_id' in acceptance &&
           typeof acceptance.user_id === 'string' && 'version' in acceptance && acceptance.version === TERMS_VERSION);
-        if (termsAcceptances.has(acceptance.user_id)) return Response.json({ code: '23505' }, { status: 409 });
-        termsAcceptances.add(acceptance.user_id);
+        const versions = termsAcceptances.get(acceptance.user_id) ?? new Set<string>();
+        if (versions.has(acceptance.version)) return Response.json({ code: '23505' }, { status: 409 });
+        versions.add(acceptance.version);
+        termsAcceptances.set(acceptance.user_id, versions);
         return new Response(null, { status: 201 });
       }
       assert.equal(requestUrl.searchParams.get('version'), `eq.${TERMS_VERSION}`);
       const userId = requestUrl.searchParams.get('user_id')?.replace(/^eq\./, '') ?? '';
-      return Response.json(termsAcceptances.has(userId) ? [{ version: TERMS_VERSION }] : []);
+      return Response.json(termsAcceptances.get(userId)?.has(TERMS_VERSION) ? [{ version: TERMS_VERSION }] : []);
     }
     if (request.url.startsWith(process.env.SUPABASE_URL!)) {
       authRequests++;
@@ -100,19 +102,29 @@ test('verified users own their API session and local media', async (t) => {
     }
 
     assert.equal((await fetch(`${url}/api/terms`, { method: 'POST' })).status, 401);
+    termsAcceptances.set(userA, new Set(['2026-10-12']));
     assert.deepEqual(await (await fetch(`${url}/api/terms`, { headers: headersA })).json(), { accepted: false, version: TERMS_VERSION });
-    for (const version of [undefined, 'old-version']) {
+    for (const endpoint of ['chat', 'music']) {
+      const denied = await fetch(`${url}/api/${endpoint}`, { method: 'POST', headers: { ...headersA, Accept: 'application/x-ndjson' },
+        body: JSON.stringify({ message: 'denied', operationId: randomUUID() }),
+      });
+      assert.equal(denied.status, 403, 'the previous terms version cannot authorize AI work');
+      assert.equal((await denied.json()).code, 'terms_required');
+      assert.equal(quotas.reservations.size, 0, 'deny before reserving paid usage');
+    }
+    for (const version of [undefined, '2026-10-12', 'old-version']) {
       assert.equal((await fetch(`${url}/api/terms`, { method: 'POST', headers: headersA,
         body: JSON.stringify({ version }),
       })).status, 400);
     }
-    assert.equal(termsAcceptances.size, 0, 'invalid versions do not record acceptance');
+    assert.deepEqual([...termsAcceptances.get(userA)!], ['2026-10-12'], 'invalid versions do not record acceptance');
     for (let attempt = 0; attempt < 2; attempt++) {
       assert.equal((await fetch(`${url}/api/terms`, { method: 'POST', headers: headersA,
         body: JSON.stringify({ version: TERMS_VERSION, user_id: userB }),
       })).status, 204, 'recording acceptance is idempotent');
     }
-    assert.deepEqual([...termsAcceptances], [userA], 'the verified user owns acceptance, regardless of the request body');
+    assert.deepEqual([...termsAcceptances.keys()], [userA], 'the verified user owns acceptance, regardless of the request body');
+    assert.ok(termsAcceptances.get(userA)?.has(TERMS_VERSION));
     const terms = await fetch(`${url}/api/terms?user_id=${userB}`, { headers: headersA });
     assert.equal(terms.headers.get('cache-control'), 'private, no-store');
     assert.deepEqual(await terms.json(), { accepted: true, version: TERMS_VERSION });
@@ -122,6 +134,12 @@ test('verified users own their API session and local media', async (t) => {
     assert.equal((await fetch(`${url}/api/terms`, { method: 'POST', headers: headersB,
       body: JSON.stringify({ version: TERMS_VERSION }),
     })).status, 503);
+    for (const endpoint of ['chat', 'music']) {
+      assert.equal((await fetch(`${url}/api/${endpoint}`, { method: 'POST', headers: headersA,
+        body: JSON.stringify({ message: 'denied' }),
+      })).status, 503, 'a failed acceptance check cannot authorize AI work');
+      assert.equal(quotas.reservations.size, 0);
+    }
     termsUnavailable = false;
 
     const agentA = getOrCreateAgent(userA);

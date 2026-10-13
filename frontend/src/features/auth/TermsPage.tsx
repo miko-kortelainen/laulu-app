@@ -8,12 +8,12 @@ export function TermsPage() {
       <article className="space-y-7 text-sm leading-relaxed text-zinc-300" aria-labelledby="terms-title">
         <header>
           <h1 id="terms-title" className="text-2xl font-semibold text-zinc-100">terms of service</h1>
-          <p className="mt-2 text-xs text-zinc-400">lau.lu beta · updated 12 October 2026</p>
+          <p className="mt-2 text-xs text-zinc-400">lau.lu beta · updated 13 October 2026</p>
         </header>
         <section className="space-y-2" aria-labelledby="terms-acceptance">
           <h2 id="terms-acceptance" className="text-base font-semibold text-zinc-100">using lau.lu</h2>
           <p>By creating an account or using lau.lu, you agree to these terms. If you do not agree, do not use the service. The <Link to="/privacy" className={linkClass}>privacy and beta limits</Link> page explains what is stored and how AI processing works, and forms part of these terms.</p>
-          <p>You must be at least 13 years old, or older if your country requires it, or have permission from a parent or guardian. You must provide accurate account details, keep your sign-in secure, and are responsible for activity under your account. For any question about these terms, contact <a href="mailto:miko@kortelainen.dev" className={`break-all ${linkClass}`}>miko@kortelainen.dev</a>.</p>
+          <p>You must be at least 18 years old to create an account or use lau.lu. If you are under 18, you may not use the service, even with permission from a parent or guardian. You must provide accurate account details, keep your sign-in secure, and are responsible for activity under your account. For any question about these terms, contact <a href="mailto:miko@kortelainen.dev" className={`break-all ${linkClass}`}>miko@kortelainen.dev</a>.</p>
           <p>lau.lu, including its software, design, and name, belongs to its operator and licensors. These terms do not give you any right to it beyond normal use of the service.</p>
         </section>
         <section className="space-y-2" aria-labelledby="terms-use">

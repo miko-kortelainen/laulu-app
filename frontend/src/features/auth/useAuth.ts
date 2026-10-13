@@ -109,7 +109,7 @@ export function useAuth() {
 
   async function submit(): Promise<void> {
     if (view === "register" && !termsAccepted) {
-      setError("accept the terms of service to create an account.");
+      setError("confirm you are 18 or older and accept the terms of service to create an account.");
       return;
     }
     await perform(() => submitAuth(view, email.trim(), password, captchaToken), () => {

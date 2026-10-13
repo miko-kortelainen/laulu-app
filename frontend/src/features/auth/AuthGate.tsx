@@ -33,7 +33,7 @@ export function AuthGate({ children }: AuthGateProps) {
     return <Navigate to={from} replace />;
   }
   return (
-    <TermsGate userId={auth.session.user.id}>
+    <TermsGate userId={auth.session.user.id} logout={auth.logout} logoutBusy={auth.busy} logoutError={auth.error}>
       {children({ user: auth.session.user, logout: auth.logout, busy: auth.busy, error: auth.error })}
     </TermsGate>
   );

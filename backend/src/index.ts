@@ -8,7 +8,7 @@ import { getModelConfig } from './model.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
-import { hasAcceptedTerms, recordTermsAcceptance, TERMS_VERSION } from './terms.js';
+import { hasAcceptedTerms, recordTermsAcceptance, requireTerms, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
 import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError, validateSongTitle } from './songs.js';
 import { getUsage, QuotaError, reserveUsage } from './quotas.js';
@@ -182,7 +182,7 @@ app.get('/api/context', (_req: Request, res: Response) => {
   res.json(getChatContext(res.locals.userId));
 });
 
-app.post('/api/chat', locked(async (req: Request, res: Response) => {
+app.post('/api/chat', requireTerms, locked(async (req: Request, res: Response) => {
   const message: unknown = req.body?.message;
   const sessionId: string = res.locals.userId;
   const streamProgress = req.get('accept') === 'application/x-ndjson';
@@ -262,7 +262,7 @@ app.post('/api/chat', locked(async (req: Request, res: Response) => {
 }));
 
 // Only this explicit confirmation request can make a paid Lyria call.
-app.post('/api/music', locked(async (req: Request, res: Response) => {
+app.post('/api/music', requireTerms, locked(async (req: Request, res: Response) => {
   const sessionId: string = res.locals.userId;
   let prompt: string;
   let title: string;

@@ -40,7 +40,7 @@ try {
       remove() { window.captchaOptions = undefined; }
     };`);
   await run("network", "route", `${authOrigin}/auth/v1/user`, "--body", JSON.stringify(first.user));
-  await run("network", "route", "**/api/terms", "--body", '{"accepted":true,"version":"2026-10-12"}');
+  await run("network", "route", "**/api/terms", "--body", '{"accepted":true,"version":"2026-10-13"}');
   await run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
   await run("open", `${url}/profile`);
   await run("wait", "--text", "log in");
@@ -69,9 +69,13 @@ try {
   await run("find", "role", "link", "click", "--name", "back to app", "--exact");
   await run("wait", "--text", "log in");
 
+  await run("open", `${url}/terms`);
+  await run("wait", "--text", "You must be at least 18 years old");
+  assert.equal(await run("eval", "document.body.textContent.includes('at least 13')"), "false");
   await run("open", `${url}/create-account`);
   await run("wait", 'section[aria-label="create account"]');
   assert.equal(await run("eval", "document.querySelector('#auth-terms').checked"), "false");
+  await run("wait", "--text", "i am 18 or older and accept the");
   assert.equal(await run("eval", "location.pathname"), '"/create-account"');
   await run("find", "role", "link", "click", "--name", "back to login", "--exact");
   await run("wait", "--text", "log in");
@@ -112,7 +116,7 @@ try {
   assert.equal(await run("eval", "document.querySelector('#auth-terms').validity.valueMissing"), "true");
   assert.equal(await run("eval", "window.signupRequests"), "0");
   await run("eval", "document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))");
-  await run("wait", "--text", "accept the terms of service to create an account.");
+  await run("wait", "--text", "confirm you are 18 or older and accept the terms of service to create an account.");
   assert.equal(await run("eval", "window.signupRequests"), "0", "the submit action also requires terms acceptance");
   assert.equal(await run("eval", "document.querySelector('label[for=auth-terms] a').getAttribute('href')"), JSON.stringify("/terms"));
   await run("focus", "#auth-terms");
