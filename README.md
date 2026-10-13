@@ -116,6 +116,7 @@ Use a `test_` client token from Paddle's sandbox authentication settings. Never 
 Set the default payment link in the sandbox checkout settings to a URL that serves this app, such as `http://localhost:5173/pricing`.
 Sandbox checkout uses [Paddle test cards](https://developer.paddle.com/concepts/payment-methods/credit-debit-card#test-cards).
 Restart the frontend after changing its environment values.
+In Coolify, enable build-time availability for the four `VITE_PADDLE_*` values. They are not needed at runtime.
 
 Set these server-only values in `backend/.env` (runtime variables in Coolify):
 
@@ -129,6 +130,7 @@ PADDLE_ULTRA_PRICE_ID=pri_01m4tvnr6xfnyk1nwtyt5vma9e
 
 The API key needs price read and transaction read/write permissions. The signing secret belongs to the webhook destination;
 it is not the API key. The public frontend price IDs must match the server price IDs.
+Keep these five server-side Paddle values runtime-only in Coolify; disable their build-time availability.
 The permanent sandbox destination is `https://studio.lau.lu/api/paddle/webhook`.
 Subscribe it to `customer.created`, `customer.updated`, `transaction.completed`, and
 `subscription.created`, `subscription.updated`, `subscription.canceled`, `subscription.activated`,

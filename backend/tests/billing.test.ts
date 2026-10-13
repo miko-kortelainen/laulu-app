@@ -44,6 +44,16 @@ test('raw webhook verification rejects tampering and dispatches only supported v
     const ignored = await verify(JSON.stringify({ ...event, event_type: 'future.unsupported' }));
     await processPaddleEvent(ignored);
     assert.equal(requests.length, 1, 'unhandled types are safely ignored');
+    const transaction = await verify(JSON.stringify({ ...event, event_type: 'transaction.completed', data: {
+      id: 'txn_01m4tvkjam9nptz0f1ngrbr9mj', customer_id: event.data.id, subscription_id: null,
+      status: 'completed', currency_code: 'USD', items: [], payments: [],
+      details: { totals: null, tax_rates_used: [], line_items: [] }, updated_at: event.data.updated_at,
+    } }));
+    await processPaddleEvent(transaction);
+    assert.deepEqual(requests[1], { p_entity: 'transaction', p_data: {
+      id: 'txn_01m4tvkjam9nptz0f1ngrbr9mj', customer_id: event.data.id, subscription_id: null,
+      status: 'completed', currency_code: 'USD', total: null, updated_at: event.data.updated_at,
+    }, p_occurred_at: event.occurred_at });
   } finally {
     globalThis.fetch = originalFetch;
   }

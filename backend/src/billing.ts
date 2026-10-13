@@ -128,7 +128,7 @@ async function handleTransaction(event: TransactionCompletedEvent): Promise<void
   await sync('transaction', {
     id: event.data.id, customer_id: event.data.customerId, subscription_id: event.data.subscriptionId,
     status: event.data.status, currency_code: event.data.currencyCode,
-    total: event.data.details?.totals.total ?? null, updated_at: event.data.updatedAt,
+    total: event.data.details?.totals?.total ?? null, updated_at: event.data.updatedAt,
   }, event.occurredAt);
 }
 
