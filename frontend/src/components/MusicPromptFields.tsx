@@ -4,16 +4,18 @@ import { musicPromptFields, type MusicPrompt } from "@/lib/music-prompt";
 type MusicPromptFieldsProps = {
   prompt: MusicPrompt;
   model: string;
+  title: string;
 } & ({ readOnly: true } | {
   readOnly?: false;
   updatedFields: (keyof MusicPrompt)[];
   disabled: boolean;
   onChange: (field: keyof MusicPrompt, value: string) => void;
   onModelChange: (model: string) => void;
+  onTitleChange: (title: string) => void;
 });
 
 export function MusicPromptFields(props: MusicPromptFieldsProps) {
-  const { prompt, model, readOnly } = props;
+  const { prompt, model, title, readOnly } = props;
   const updatedFields = props.readOnly ? [] : props.updatedFields;
   const controlClass = "w-full min-w-0 rounded-lg border border-white/15 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-60";
 
@@ -22,6 +24,11 @@ export function MusicPromptFields(props: MusicPromptFieldsProps) {
       <p aria-live="polite" className="sr-only">
         {updatedFields.length > 0 && `updated: ${musicPromptFields.filter(({ name }) => updatedFields.includes(name)).map(({ label }) => label).join(", ")}`}
       </p>
+      <label className="flex min-w-0 flex-col gap-1 sm:col-span-2">
+        <span className="text-xs text-zinc-400">song title</span>
+        <input name="songTitle" type="text" readOnly={readOnly} value={title} placeholder="untitled" maxLength={200}
+          onChange={(event) => { if (!props.readOnly) props.onTitleChange(event.target.value); }} className={controlClass} />
+      </label>
       <label className="flex min-w-0 flex-col gap-1 sm:col-span-2">
         <span className="text-xs text-zinc-400">music model</span>
         {readOnly ? (

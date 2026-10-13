@@ -4,6 +4,7 @@ An AI music studio. Describe a song, refine its lyrics and sound, then generate 
 
 - Chat with a music copilot and edit the song brief.
 - Generate full songs with Lyria 3.5 or 30-second clips with Lyria 3 Clip Preview.
+- Set a song title in the music generation form. Blank titles are saved as `untitled`.
 - Upload audio for analysis and production feedback.
 - Save, play, download, and delete your own songs.
 
@@ -72,6 +73,8 @@ Keep `TERMS_VERSION` in `backend/src/terms.ts` and `frontend/src/lib/terms.ts` i
 
 Saved songs use private R2 objects and Supabase metadata. Playback and downloads require authentication.
 If storage fails, use **retry saving** to save the existing audio without another generation call.
+Apply [the song title migration](supabase/migrations/20261013123303_song_titles.sql) before deploying the title field.
+It adds `songs.title`, sets existing song titles to `untitled`, and updates the metadata save function.
 
 ### Configure usage quotas
 

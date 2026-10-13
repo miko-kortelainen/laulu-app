@@ -9,6 +9,7 @@ interface AiGateway {
 const customPrices: Record<string, { per_token_in: number; per_token_out: number }> = {
   'nebius/nvidia/nemotron-3-super-120b-a12b': { per_token_in: 0.00000030, per_token_out: 0.00000090 },
   'nebius/zai-org/GLM-5.3-Flash': { per_token_in: 0.00000015, per_token_out: 0.00000050 },
+  'nebius/Qwen/Qwen3.8-27B': { per_token_in: 0.00000045, per_token_out: 0.00000300 },
   'qwencloud/qwen3.8-omni-flash': { per_token_in: 0.00000015, per_token_out: 0.00000047 },
 };
 

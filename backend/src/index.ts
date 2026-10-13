@@ -10,7 +10,7 @@ import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudi
 import { requireAuth } from './auth.js';
 import { hasAcceptedTerms, recordTermsAcceptance, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
-import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
+import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError, validateSongTitle } from './songs.js';
 import { getUsage, QuotaError, reserveUsage } from './quotas.js';
 import { cleanupLocalAudio, LocalAudioLimitError } from './local-audio.js';
 import { acknowledgeOperation, busySessions, getOperation, operationId, listOperations, recoverOperations, sessionBusy, startOperation } from './operations.js';
@@ -265,10 +265,12 @@ app.post('/api/chat', locked(async (req: Request, res: Response) => {
 app.post('/api/music', locked(async (req: Request, res: Response) => {
   const sessionId: string = res.locals.userId;
   let prompt: string;
+  let title: string;
   let model: ReturnType<typeof validateMusicModel>;
   try {
     prompt = validateMusicPrompt(req.body?.prompt);
     model = validateMusicModel(req.body?.model);
+    title = validateSongTitle(req.body?.title);
   } catch (error: unknown) {
     res.status(400).json({ error: error instanceof Error ? error.message : 'invalid music prompt.' });
     return;
@@ -276,12 +278,12 @@ app.post('/api/music', locked(async (req: Request, res: Response) => {
 
   if (req.body?.operationId !== undefined) {
     const operation = await startOperation(sessionId, req.body.operationId, 'music', async () => ({
-      track: await generateMusic(prompt, model, sessionId, req.body.operationId, { metadata: { thread_id: sessionId, ls_model_name: model } }),
+      track: await generateMusic(prompt, model, sessionId, req.body.operationId, { metadata: { thread_id: sessionId, ls_model_name: model } }, title),
     })).catch((error: unknown) => storageFailure(res, error));
     if (operation) res.status(202).json({ operation });
     return;
   }
-  const track = await generateMusic(prompt, model, sessionId, undefined, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
+  const track = await generateMusic(prompt, model, sessionId, undefined, { metadata: { thread_id: sessionId, ls_model_name: model } }, title).catch((error: unknown) => {
     if (error instanceof QuotaError || error instanceof SongStorageError) return storageFailure(res, error);
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
       .json({ error: error instanceof Error ? error.message : 'music generation failed.' });

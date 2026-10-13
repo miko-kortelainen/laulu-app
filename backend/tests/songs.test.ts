@@ -60,13 +60,17 @@ test('songs persist privately, restore from R2, and retry failed saves without r
   }
   const headersA = headers(userA);
   const headersB = headers(userB);
-  const generate = () => fetch(`${base}/api/music`, { method: 'POST', headers: headersA,
-    body: JSON.stringify({ prompt: 'instrumental folk', owner_id: userB, userId: userB }),
+  const generate = (title: unknown = '  quiet morning  ') => fetch(`${base}/api/music`, { method: 'POST', headers: headersA,
+    body: JSON.stringify({ prompt: 'instrumental folk', title, owner_id: userB, userId: userB }),
   });
 
   try {
     assert.equal((await fetch(`${base}/api/songs`)).status, 401);
     assert.equal((await fetch(`${base}/api/songs/recovery`)).status, 401);
+    for (const title of [123, null, 'a'.repeat(201)]) {
+      assert.equal((await generate(title)).status, 400);
+    }
+    assert.equal(generations, 0, 'invalid titles are rejected before generation');
     const response = await generate();
     assert.equal(response.status, 200);
     const { track } = await response.json();
@@ -76,10 +80,13 @@ test('songs persist privately, restore from R2, and retry failed saves without r
     assert.equal(row.status, 'ready');
     assert.equal(row.object_key, `users/${userA}/${track.id}.mp3`);
     assert.equal(track.lyrics, 'saved lyrics');
+    assert.equal(track.title, 'quiet morning');
+    assert.equal(row.title, 'quiet morning');
     assert.deepEqual(storage.objects.get(row.object_key as string), audio);
     const own = await (await fetch(`${base}/api/songs?owner_id=${userB}`, { headers: headersA })).json();
     assert.equal(own.songs.length, 1);
     assert.equal(own.songs[0].id, track.id);
+    assert.equal(own.songs[0].title, 'quiet morning');
     assert.equal('object_key' in own.songs[0], false);
     assert.deepEqual(await (await fetch(`${base}/api/songs`, { headers: headersB })).json(), { songs: [] });
     assert.deepEqual(await (await fetch(`${base}/api/songs/recovery`, { headers: headersA })).json(), { songIds: [] });
@@ -122,6 +129,8 @@ test('songs persist privately, restore from R2, and retry failed saves without r
     process.env.SUPABASE_SECRET_KEY = 'sb_secret_offline';
 
     const otherTrack = await saveSong(userB, audio, 'piano', 'lyria-3.5', '');
+    assert.equal(otherTrack.title, 'untitled');
+    assert.equal((await (await generate('  ')).json()).track.title, 'untitled');
     const deleteUrl = `${base}/api/songs/${track.id}`;
     assert.equal((await fetch(deleteUrl, { method: 'DELETE' })).status, 401);
     assert.equal((await fetch(deleteUrl, { method: 'DELETE', headers: headersB })).status, 404);
@@ -176,7 +185,9 @@ test('songs persist privately, restore from R2, and retry failed saves without r
       storage.failures[failure] = false;
       const retry = await fetch(`${base}${error.retryUrl}`, { method: 'POST', headers: headersA });
       assert.equal(retry.status, 200);
-      assert.equal((await retry.json()).track.id, error.songId);
+      const retried = (await retry.json()).track;
+      assert.equal(retried.id, error.songId);
+      assert.equal(retried.title, 'quiet morning', 'storage recovery preserves the original title');
       assert.equal(generations, beforeRetry);
       assert.equal(storage.quotas.reservations.size, reservationsBeforeRetry, 'storage retry never reserves another paid attempt');
       assert.equal(tokenCalls, tokensBeforeRetry);

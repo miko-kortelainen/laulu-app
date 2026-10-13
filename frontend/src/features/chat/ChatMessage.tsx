@@ -80,6 +80,7 @@ export function ChatMessage({ message }: { message: Message }) {
         <MessageContent text={isUser ? message.text : message.text.trim()} />
         {message.track && (
           <div className="mt-3 space-y-3">
+            <p className="break-words text-sm font-medium">{message.track.title}</p>
             <AudioPlayer src={message.track.url} label="generated music" className="w-full" />
             <div>
               <AudioDownload url={message.track.url} name="generated-music.mp3">download MP3</AudioDownload>

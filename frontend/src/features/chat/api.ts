@@ -31,6 +31,7 @@ export interface AudioTrack {
 
 export interface MusicTrack {
   operationId?: string;
+  title: string;
   url: string;
   lyrics: string;
 }
@@ -210,12 +211,12 @@ export async function uploadAudio(file: File): Promise<AudioTrack> {
   return { url: audio.url, name: audio.name };
 }
 
-export async function generateMusic(fields: MusicPrompt, model: string, onStatus: (status: string) => void, signal: AbortSignal): Promise<MusicTrack> {
+export async function generateMusic(fields: MusicPrompt, model: string, title: string, onStatus: (status: string) => void, signal: AbortSignal): Promise<MusicTrack> {
   const prompt = formatMusicPrompt(fields);
   if (!prompt.trim() || prompt.length > 10_000) {
     throw new Error("Music prompt must contain 1–10,000 characters.");
   }
-  const response = await startRequest("/api/music", { prompt, model }, onStatus, signal);
+  const response = await startRequest("/api/music", { prompt, model, title }, onStatus, signal);
   return readMusicResponse(response);
 }
 
@@ -242,10 +243,13 @@ async function readMusicResponse(response: Response): Promise<MusicTrack> {
   if (!track || typeof track !== "object" ||
       !("url" in track) || typeof track.url !== "string" ||
       !/^\/api\/music\/[0-9a-f-]{36}\.mp3$/.test(track.url) ||
+      ("title" in track && (typeof track.title !== "string" || track.title.length > 200)) ||
       !("lyrics" in track) || typeof track.lyrics !== "string") {
     throw new Error("Invalid music response.");
   }
-  return { url: track.url, lyrics: track.lyrics, operationId: response.headers.get("X-Operation-ID") ?? undefined };
+  return { url: track.url, lyrics: track.lyrics,
+    title: "title" in track && typeof track.title === "string" ? track.title.trim() || "untitled" : "untitled",
+    operationId: response.headers.get("X-Operation-ID") ?? undefined };
 }
 
 export async function resetChat(): Promise<void> {

@@ -17,6 +17,7 @@ function errorMessage(error: unknown): string {
 }
 
 interface Draft {
+  songTitle?: string;
   musicPrompt?: MusicPrompt;
   musicModel?: string;
   pendingAudio?: AudioTrack;
@@ -35,6 +36,7 @@ function readDraft(userId: string): Draft {
   const audio = fields.pendingAudio;
   const validAudio = (url: unknown) => typeof url === "string" && /^\/api\/(audio|music)\/[0-9a-f-]{36}\.(mp3|wav|flac|ogg)$/.test(url);
   return {
+    songTitle: typeof fields.songTitle === "string" && fields.songTitle.length <= 200 ? fields.songTitle : "",
     musicPrompt: isMusicPrompt(fields.musicPrompt) ? fields.musicPrompt : undefined,
     musicModel: fields.musicModel === "lyria-3-clip-preview" ? fields.musicModel : "lyria-3.5",
     pendingSongId: typeof fields.pendingSongId === "string" && /^[0-9a-f-]{36}$/.test(fields.pendingSongId) ? fields.pendingSongId : undefined,
@@ -66,6 +68,7 @@ export function useChat(userId: string) {
   const [musicPrompt, setMusicPrompt] = useState<MusicPrompt>(draft.musicPrompt ?? emptyMusicPrompt);
   const [updatedMusicFields, setUpdatedMusicFields] = useState<(keyof MusicPrompt)[]>([]);
   const [musicModel, setMusicModel] = useState(draft.musicModel ?? "lyria-3.5");
+  const [songTitle, setSongTitle] = useState(draft.songTitle ?? "");
   const [musicError, setMusicError] = useState<string>();
   const [pendingSongId, setPendingSongId] = useState<string | undefined>(draft.pendingSongId);
   const [pendingAudio, setPendingAudio] = useState<AudioTrack | undefined>(draft.pendingAudio);
@@ -83,10 +86,10 @@ export function useChat(userId: string) {
 
   useEffect(() => {
     saveDraft(userId, {
-      musicPrompt, musicModel, pendingAudio: pendingAudio ?? sendingAudio.current, pendingSongId,
+      musicPrompt, musicModel, songTitle, pendingAudio: pendingAudio ?? sendingAudio.current, pendingSongId,
       currentAudio: currentAudio.current, pendingChatId: pendingChatId.current,
     });
-  }, [userId, musicPrompt, musicModel, pendingAudio, pendingSongId, messages]);
+  }, [userId, musicPrompt, musicModel, songTitle, pendingAudio, pendingSongId, messages]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -212,7 +215,7 @@ export function useChat(userId: string) {
     if (attachment) currentAudio.current = attachment.url;
     const id = crypto.randomUUID();
     pendingChatId.current = id;
-    saveDraft(userId, { musicPrompt, musicModel, pendingAudio: attachment, pendingSongId,
+    saveDraft(userId, { musicPrompt, musicModel, songTitle, pendingAudio: attachment, pendingSongId,
       currentAudio: currentAudio.current, pendingChatId: id });
     const result = await sendMessage(message, currentAudio.current, musicPrompt, setActivity, requests.current.signal, id).catch(
       (error: unknown) => ({ reply: `Error: ${errorMessage(error)}`, failed: true, operationId: error instanceof OperationError ? error.operationId : undefined }),
@@ -271,12 +274,18 @@ export function useChat(userId: string) {
     setMusicError(undefined);
   }
 
+  function changeSongTitle(title: string): void {
+    if (busy.current) return;
+    setSongTitle(title);
+    setMusicError(undefined);
+  }
+
   async function confirmMusic(): Promise<void> {
     if (busy.current || (!pendingSongId && !isMusicPrompt(musicPrompt))) return;
 
     busy.current = true;
     setActivity(pendingSongId ? 'saving track...' : 'generating track...');
-    const result = await (pendingSongId ? retrySongStorage(pendingSongId) : generateMusic(musicPrompt, musicModel, setActivity, requests.current.signal))
+    const result = await (pendingSongId ? retrySongStorage(pendingSongId) : generateMusic(musicPrompt, musicModel, songTitle, setActivity, requests.current.signal))
       .catch((error: unknown) => error instanceof Error ? error : new Error(errorMessage(error)));
     if (requests.current.signal.aborted) return;
     if (result instanceof Error) {
@@ -318,6 +327,7 @@ export function useChat(userId: string) {
       setMusicPrompt(emptyMusicPrompt);
       setUpdatedMusicFields([]);
       setMusicModel("lyria-3.5");
+      setSongTitle("");
       setMusicError(undefined);
       setPendingSongId(undefined);
       setMessages([
@@ -329,5 +339,5 @@ export function useChat(userId: string) {
     setActivity(undefined);
   }
 
-  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, pendingSongId, context, contextError, usage, usageError, refreshUsage, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio };
+  return { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, songTitle, musicError, pendingSongId, context, contextError, usage, usageError, refreshUsage, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, changeSongTitle, upload, removeAudio };
 }

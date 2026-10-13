@@ -5,15 +5,10 @@ import { readFileSync } from 'node:fs';
 import { generateLyrics } from './lyrics.js';
 import { getAiGateway } from './gateway.js';
 import { userDirectory } from './user-files.js';
-import { checkSongStorage, musicDirectory, saveSong } from './songs.js';
+import { checkSongStorage, musicDirectory, saveSong, validateSongTitle, type SavedSong } from './songs.js';
 import { reserveUsage, settleGeneration, songOutputLimit } from './quotas.js';
 
 export { musicDirectory };
-
-export interface MusicTrack {
-  url: string;
-  lyrics: string;
-}
 
 export class MusicPromptTokenLimitError extends Error {}
 export class MusicGenerationError extends Error {
@@ -98,9 +93,11 @@ export const generateMusic = traceable(async (
   userId: string,
   operationId?: string,
   _traceConfig?: { metadata: { thread_id: string; ls_model_name?: string } },
-): Promise<MusicTrack> => {
+  title: string = 'untitled',
+): Promise<SavedSong> => {
   const input = validateMusicPrompt(prompt);
   const model = validateMusicModel(modelId);
+  const songTitle = validateSongTitle(title);
   userDirectory(musicDirectory, userId);
   const gateway = getAiGateway('google-ai-studio');
   await checkSongStorage(userId);
@@ -173,7 +170,7 @@ export const generateMusic = traceable(async (
     .replace(/^[ \t]*\[:\][ \t]*/gm, '')
     .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n')
     .trim();
-  return saveSong(userId, audio, input, model, text, songId);
+  return saveSong(userId, audio, input, model, text, songId, songTitle);
 }, {
   name: 'generate_audio',
   run_type: 'tool',

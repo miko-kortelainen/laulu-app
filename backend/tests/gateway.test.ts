@@ -50,6 +50,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     const expectedCosts: Record<string, { per_token_in: number; per_token_out: number }> = {
       'nvidia/nemotron-3-super-120b-a12b': { per_token_in: 0.00000030, per_token_out: 0.00000090 },
       'zai-org/GLM-5.3-Flash': { per_token_in: 0.00000015, per_token_out: 0.00000050 },
+      'Qwen/Qwen3.8-27B': { per_token_in: 0.00000045, per_token_out: 0.00000300 },
       'qwen3.8-omni-flash': { per_token_in: 0.00000015, per_token_out: 0.00000047 },
     };
     const cost = request.headers.get('cf-aig-custom-cost');
@@ -109,6 +110,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     assert.equal(config.baseURL, `${root}/custom-my-nebius/v1`);
     assert.equal(JSON.stringify(config).includes('offline-gateway-token'), false);
     assert.equal((await getOrCreateAgent(session).invoke('hello')).toString(), 'offline answer');
+    process.env.LYRICS_MODEL = 'Qwen/Qwen3.8-27B';
     assert.equal(await generateLyrics({ genre: 'folk' }, 'write a verse'), 'offline answer');
 
     const track = await generateMusic('instrumental folk', undefined, session);

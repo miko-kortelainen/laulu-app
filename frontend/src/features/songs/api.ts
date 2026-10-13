@@ -4,6 +4,7 @@ const songIdPattern = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 export interface SavedSong {
   id: string;
+  title: string;
   url: string;
   prompt: string;
   lyrics: string;
@@ -15,6 +16,7 @@ function isSavedSong(value: unknown): value is SavedSong {
   return !!value && typeof value === "object" &&
     "id" in value && typeof value.id === "string" &&
     songIdPattern.test(value.id) &&
+    "title" in value && typeof value.title === "string" && value.title.trim().length > 0 && value.title.length <= 200 &&
     "url" in value && value.url === `/api/music/${value.id}.mp3` &&
     "prompt" in value && typeof value.prompt === "string" &&
     "lyrics" in value && typeof value.lyrics === "string" &&

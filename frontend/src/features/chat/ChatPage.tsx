@@ -10,7 +10,7 @@ import { isMusicPrompt } from "@/lib/music-prompt";
 const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
-  const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, musicError, pendingSongId, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, upload, removeAudio } = chat;
+  const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, songTitle, musicError, pendingSongId, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, changeSongTitle, upload, removeAudio } = chat;
   const messagesRef = useRef<HTMLElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
 
@@ -111,8 +111,8 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
             new session
           </button>
         </div>
-        <MusicPromptFields prompt={musicPrompt} updatedFields={updatedMusicFields} model={musicModel} disabled={loading}
-          onChange={editMusicPrompt} onModelChange={changeMusicModel} />
+        <MusicPromptFields prompt={musicPrompt} updatedFields={updatedMusicFields} model={musicModel} title={songTitle} disabled={loading}
+          onChange={editMusicPrompt} onModelChange={changeMusicModel} onTitleChange={changeSongTitle} />
         <button type="button" onClick={() => void confirmMusic()} disabled={loading || (!pendingSongId && !isMusicPrompt(musicPrompt))}
           className="relative min-h-8 w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-50">
           <span aria-hidden="true" className="pointer-events-none absolute -inset-px rounded-[inherit] border-2 border-transparent opacity-10"
