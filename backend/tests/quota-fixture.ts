@@ -44,8 +44,7 @@ export function configureTestQuotas() {
     const owned = [...reservations.values()].filter((entry) => entry.userId === input.p_user_id);
     const allowance = (operation: string) => {
       const used = owned.filter((entry) => entry.operation === operation && entry.status !== 'failed').length;
-      const defaults = input.p_defaults as Record<string, number>;
-      const limit = defaults[`${operation}_daily`];
+      const limit = operation === 'chat' ? 20 : operation === 'analysis' ? 10 : 5;
       return { limit, used, remaining: Math.max(0, limit - used) };
     };
     return Response.json({ resetAt: '2099-01-01T00:00:00Z', generationResetAt: '2099-01-01T00:00:00Z', plan: 'free', chat: allowance('chat'), analysis: allowance('analysis'),

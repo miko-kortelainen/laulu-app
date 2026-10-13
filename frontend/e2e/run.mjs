@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 const frontend = fileURLToPath(new URL("../", import.meta.url));
 const directory = await mkdtemp(join(tmpdir(), "musical-auth-e2e-"));
 const target = process.argv[2];
-if (!["auth", "chat", "audio-player", "songs", "operations", "all"].includes(target)) throw new Error("unknown E2E target");
+if (!["auth", "chat", "audio-player", "songs", "operations", "pricing", "all"].includes(target)) throw new Error("unknown E2E target");
 const wav = Buffer.alloc(44 + 16000);
 wav.write("RIFF", 0);
 wav.writeUInt32LE(wav.length - 8, 4);
@@ -45,6 +45,21 @@ const server = createServer(async (req, res) => {
     content = await readFile(join(directory, "index.html"));
   }
   if (!content) { res.writeHead(404); return res.end(); }
+  if ((target === "pricing" || target === "all") && (pathname === "/pricing" || pathname === "/")) {
+    content = Buffer.from(content.toString().replace("</head>", `<script>
+      window.checkoutRequests = [];
+      window.PaddleBillingV1 = {
+        Initialized: false, Environment: { set() {} },
+        Initialize(options) { this.Initialized = true; this.callback = options.eventCallback; },
+        Update(options) { this.callback = options.eventCallback; },
+        PricePreview({ items }) { return Promise.resolve({ data: { details: { lineItems: items.map(item => ({
+          price: { id: item.priceId, status: 'active', billingCycle: { interval: 'month', frequency: 1 }, trialPeriod: null },
+          product: { status: 'active' }, formattedTotals: { total: '$9.00' }
+        })) } } }); },
+        Checkout: { open(options) { window.checkoutRequests.push(options); }, close() {} }
+      };
+    </script></head>`));
+  }
   res.setHeader("Content-Type", { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" }[extname(path) || ".html"] ?? "application/octet-stream");
   res.end(content);
 });
@@ -54,10 +69,14 @@ try {
   const url = `http://127.0.0.1:${server.address().port}`;
   const build = await exec(process.execPath, [join(frontend, "node_modules/vite/bin/vite.js"), "build", "--outDir", directory], {
     cwd: frontend, env: { ...process.env, VITE_SUPABASE_URL: url, VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_offline",
-      VITE_TURNSTILE_SITE_KEY: target === "auth" ? "offline-site-key" : "" },
+      VITE_TURNSTILE_SITE_KEY: target === "auth" ? "offline-site-key" : "",
+      VITE_PADDLE_CLIENT_TOKEN: "test_offline",
+      VITE_PADDLE_STARTER_PRICE_ID: "pri_01m4tvkjam9nptz0f1ngrbr9mj",
+      VITE_PADDLE_PRO_PRICE_ID: "pri_01m4tvmm85j15s4vjd9ykmsa0d",
+      VITE_PADDLE_ULTRA_PRICE_ID: "pri_01m4tvnr6xfnyk1nwtyt5vma9e" },
   });
   process.stdout.write(build.stdout);
-  for (const name of target === "all" ? ["auth", "chat", "audio-player", "songs", "operations"] : [target]) {
+  for (const name of target === "all" ? ["auth", "chat", "audio-player", "songs", "operations", "pricing"] : [target]) {
     const result = await exec(process.execPath, [join(frontend, `e2e/${name}.mjs`)], {
       cwd: frontend, env: { ...process.env, E2E_URL: url, E2E_AUTH_ORIGIN: url, E2E_DIST: directory,
         E2E_CAPTCHA: target === "auth" ? "1" : "" }, timeout: 240000, maxBuffer: 2 * 1024 * 1024,

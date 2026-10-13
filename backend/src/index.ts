@@ -11,7 +11,7 @@ import { requireAuth } from './auth.js';
 import { hasAcceptedTerms, recordTermsAcceptance, requireTerms, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
 import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError, validateSongTitle } from './songs.js';
-import { getUsage, QuotaError, reserveUsage } from './quotas.js';
+import { getUsage, QuotaError, quotaRpc, reserveUsage } from './quotas.js';
 import { cleanupLocalAudio, LocalAudioLimitError } from './local-audio.js';
 import { acknowledgeOperation, busySessions, getOperation, operationId, listOperations, recoverOperations, sessionBusy, startOperation } from './operations.js';
 import { createCheckout, getBilling, getPaddle, processPaddleEvent } from './billing.js';
@@ -25,6 +25,12 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,ht
   .split(',').map((origin) => origin.trim()).filter(Boolean);
 app.use(cors({ origin: allowedOrigins }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/api/plans', async (_req, res) => {
+  const plans = await quotaRpc('get_plan_limits', {}).catch(() => {
+    res.status(503).json({ error: 'could not load plan allowances. try again.' });
+  });
+  if (plans) res.set('Cache-Control', 'no-store').json(plans);
+});
 app.post('/api/paddle/webhook', express.raw({ type: 'application/json', limit: '1mb' }), async (req, res) => {
   const signature = req.get('paddle-signature');
   const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET;

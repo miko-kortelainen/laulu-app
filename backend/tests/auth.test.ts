@@ -23,11 +23,16 @@ test('verified users own their API session and local media', async (t) => {
   let authRequests = 0;
   const termsAcceptances = new Map<string, Set<string>>();
   let termsUnavailable = false;
+  let plansUnavailable = false;
   globalThis.fetch = async (input, options) => {
     const request = new Request(input, options);
     const database = await quotas.databaseResponse(request.clone());
     if (database) return database;
     const requestUrl = new URL(request.url);
+    if (requestUrl.origin === process.env.SUPABASE_URL && requestUrl.pathname === '/rest/v1/rpc/get_plan_limits') {
+      assert.equal(request.headers.get('apikey'), 'sb_secret_offline');
+      return plansUnavailable ? Response.json({ message: 'offline plans failure' }, { status: 503 }) : Response.json([]);
+    }
     if (requestUrl.origin === process.env.SUPABASE_URL && requestUrl.pathname === '/rest/v1/terms_acceptances') {
       if (termsUnavailable) return Response.json({ message: 'offline terms failure' }, { status: 503 });
       if (request.method === 'POST') {
@@ -83,6 +88,13 @@ test('verified users own their API session and local media', async (t) => {
 
   try {
     assert.deepEqual(await (await fetch(`${url}/api/health`)).json(), { status: 'ok' });
+    const plans = await fetch(`${url}/api/plans`);
+    assert.equal(plans.status, 200, 'pricing allowances are public');
+    assert.equal(plans.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await plans.json(), []);
+    plansUnavailable = true;
+    assert.equal((await fetch(`${url}/api/plans`)).status, 503, 'database failures never substitute fake allowances');
+    plansUnavailable = false;
     const allowed = await fetch(`${url}/api/health`, { headers: { Origin: 'http://localhost:5173' } });
     assert.equal(allowed.headers.get('access-control-allow-origin'), 'http://localhost:5173');
     const foreign = await fetch(`${url}/api/health`, { headers: { Origin: 'https://example.com' } });

@@ -7,9 +7,9 @@ import {
 import { database } from './database.js';
 
 const planSettings = {
-  starter: { variable: 'PADDLE_STARTER_PRICE_ID', songs: 30 },
-  pro: { variable: 'PADDLE_PRO_PRICE_ID', songs: 80 },
-  ultra: { variable: 'PADDLE_ULTRA_PRICE_ID', songs: 180 },
+  starter: { variable: 'PADDLE_STARTER_PRICE_ID' },
+  pro: { variable: 'PADDLE_PRO_PRICE_ID' },
+  ultra: { variable: 'PADDLE_ULTRA_PRICE_ID' },
 } as const;
 
 let paddle: Paddle | undefined;
@@ -24,7 +24,7 @@ function plans() {
   return Object.entries(planSettings).map(([name, settings]) => {
     const priceId = process.env[settings.variable];
     if (!priceId || !/^pri_[a-z0-9]{26}$/.test(priceId)) throw new Error('sandbox billing prices are not configured.');
-    return { name, priceId, songs: settings.songs };
+    return { name, priceId };
   });
 }
 
@@ -117,7 +117,7 @@ async function handleSubscription(data: SubscriptionNotification | SubscriptionC
   await sync('subscription', {
     id: data.id, customer_id: data.customerId, status: data.status,
     transaction_id: 'transactionId' in data ? data.transactionId : null,
-    price_id: item?.price?.id ?? null, plan: plan?.name ?? null, song_limit: plan?.songs ?? 0,
+    price_id: item?.price?.id ?? null, plan: plan?.name ?? null,
     period_start: data.currentBillingPeriod?.startsAt ?? null,
     period_end: data.currentBillingPeriod?.endsAt ?? null,
     scheduled_change: data.scheduledChange, updated_at: data.updatedAt,

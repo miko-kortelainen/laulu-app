@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { deleteSongObject, putSongObject, r2Storage, readSongObject } from './r2.js';
 import { userDirectory } from './user-files.js';
 import { database } from './database.js';
-import { checkAllowance, quotaDefaults, quotaRpc, settleGeneration, songOutputLimit } from './quotas.js';
+import { checkAllowance, quotaRpc, settleGeneration, songOutputLimit } from './quotas.js';
 
 export const musicDirectory = fileURLToPath(new URL('../generated-music/', import.meta.url));
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
@@ -157,7 +157,7 @@ async function persistSong(song: Song, audio: Buffer): Promise<SavedSong> {
   if (existing?.status === 'ready') return publicSong(existing);
   if (!existing) {
     if (audio.length > songOutputLimit()) throw new Error('generated song exceeds MAX_GENERATED_SONG_BYTES. increase the limit before retrying storage.');
-    const result = await quotaRpc('prepare_song_save', { p_song: song, p_defaults: quotaDefaults() });
+    const result = await quotaRpc('prepare_song_save', { p_song: song, p_defaults: {} });
     checkAllowance(result);
     if (!result || typeof result !== 'object' || !('allowed' in result) || result.allowed !== true ||
         !('song' in result) || !result.song || typeof result.song !== 'object' ||

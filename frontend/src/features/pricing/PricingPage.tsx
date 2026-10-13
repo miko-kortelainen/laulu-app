@@ -2,11 +2,23 @@ import type { User } from "@supabase/supabase-js";
 import { Link } from "react-router";
 import { LauluWordmark } from "@/components/ui/LauluWordmark";
 import { cn } from "@/lib/utils";
-import { paidPlans } from "./api";
+import { paidPlans, type PlanLimits } from "./api";
 import { usePricing } from "./usePricing";
 
 const buttonClass = "inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-white/15 px-4 py-2 text-sm font-medium hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50";
 const linkClass = "inline-flex min-h-11 items-center rounded-lg underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300";
+
+function Allowances({ limits }: { limits?: PlanLimits }) {
+  if (!limits) return <li>allowances unavailable</li>;
+  const storage = limits.storage_bytes / 1024 / 1024;
+  return <>
+    <li><strong className="font-semibold text-zinc-100">{limits.plan === "free" ? limits.songs_daily : limits.songs_monthly} songs</strong> {limits.plan === "free" ? "per UTC day" : "per billing month"}</li>
+    <li>{limits.chat_daily} chat messages per UTC day</li>
+    <li>{limits.analysis_daily} audio analyses per UTC day</li>
+    <li>{storage >= 1024 ? `${storage / 1024} GiB` : `${storage} MiB`} of saved-song storage</li>
+    <li>save and download your songs</li>
+  </>;
+}
 
 export function PricingPage({ user }: { user?: User }) {
   const pricing = usePricing(user);
@@ -38,9 +50,7 @@ export function PricingPage({ user }: { user?: User }) {
             <p className="mt-6 text-4xl font-semibold tabular-nums">$0</p>
             <p className="mt-2 text-xs text-zinc-400">no payment required</p>
             <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
-              <li>chat and refine your song brief</li>
-              <li><strong className="font-semibold text-zinc-100">5 songs</strong> per UTC day</li>
-              <li>save and download your songs</li>
+              <Allowances limits={pricing.limits?.find(plan => plan.plan === "free")} />
             </ul>
             <Link to={user ? "/" : "/create-account"} className={buttonClass}>{user ? "open studio" : "create free account"}</Link>
           </section>
@@ -59,11 +69,9 @@ export function PricingPage({ user }: { user?: User }) {
                 <p className="mt-6 break-words text-4xl font-semibold tabular-nums">{price ?? (pricing.loading ? "…" : "unavailable")}</p>
                 <p className="mt-2 text-xs text-zinc-400">per month · billed monthly</p>
                 <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
-                  <li><strong className="font-semibold text-zinc-100">{plan.songs} songs</strong> per billing month</li>
-                  <li>chat and refine your song brief</li>
-                  <li>save and download your songs</li>
+                  <Allowances limits={pricing.limits?.find(limits => limits.plan === plan.name)} />
                 </ul>
-                {user ? <button type="button" disabled={pricing.loading || pricing.billingLoading || !pricing.billing || !price || Boolean(pricing.selectedPlan) || pricing.syncing || Boolean(pricing.billing.status && pricing.billing.status !== "canceled")}
+                {user ? <button type="button" disabled={pricing.loading || !pricing.limitsReady || pricing.billingLoading || !pricing.billing || !price || Boolean(pricing.selectedPlan) || pricing.syncing || Boolean(pricing.billing.status && pricing.billing.status !== "canceled")}
                   onClick={() => void pricing.checkout(plan)} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
                   {pricing.selectedPlan === plan.name ? "opening checkout…" : pricing.billing?.plan === plan.name && pricing.billing.paidAccess ? "current plan" : `choose ${plan.name}`}
                 </button> : <Link to="/login" state={{ from: "/pricing" }} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
@@ -87,7 +95,7 @@ export function PricingPage({ user }: { user?: User }) {
               : <button type="button" onClick={pricing.retry} disabled={pricing.loading || pricing.billingLoading} className={linkClass}>retry</button>}
           </div>}
           <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">prices include applicable tax for your detected location. checkout confirms the total for your billing address. each generated version counts as one song.</p>
-          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">unused songs do not roll over. chat and audio analysis keep their daily beta allowances. shared daily limits and saved-song storage limits apply to all plans.</p>
+          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">unused songs do not roll over. chat and audio analysis reset at midnight UTC. shared daily limits apply to all plans.</p>
         </div>
 
         <footer className="flex flex-wrap gap-x-6 text-xs text-zinc-400">

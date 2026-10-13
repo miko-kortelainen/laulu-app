@@ -42,10 +42,37 @@ export async function createCheckout(plan: string, signal: AbortSignal): Promise
 }
 
 export const paidPlans = [
-  { name: "starter", songs: 30, description: "for occasional song ideas", priceId: import.meta.env.VITE_PADDLE_STARTER_PRICE_ID },
-  { name: "pro", songs: 80, description: "for a regular creative practice", priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID },
-  { name: "ultra", songs: 180, description: "for more versions and experiments", priceId: import.meta.env.VITE_PADDLE_ULTRA_PRICE_ID },
+  { name: "starter", description: "for occasional song ideas", priceId: import.meta.env.VITE_PADDLE_STARTER_PRICE_ID },
+  { name: "pro", description: "for a regular creative practice", priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID },
+  { name: "ultra", description: "for more versions and experiments", priceId: import.meta.env.VITE_PADDLE_ULTRA_PRICE_ID },
 ] as const;
+
+export interface PlanLimits {
+  plan: "free" | "starter" | "pro" | "ultra";
+  chat_daily: number;
+  analysis_daily: number;
+  songs_daily: number | null;
+  songs_monthly: number | null;
+  storage_bytes: number;
+}
+
+export async function getPlanLimits(signal: AbortSignal): Promise<PlanLimits[]> {
+  const response = await fetch("/api/plans", { signal });
+  if (!response.ok) throw new Error("could not load plan allowances. try again.");
+  const data: unknown = await response.json();
+  const names = ["free", "starter", "pro", "ultra"];
+  if (!Array.isArray(data) || data.length !== names.length || !data.every((value: unknown) => {
+    if (!value || typeof value !== "object") return false;
+    const row = value as Record<string, unknown>;
+    return names.includes(String(row.plan)) &&
+      ["chat_daily", "analysis_daily", "storage_bytes", row.plan === "free" ? "songs_daily" : "songs_monthly"].every(field =>
+        typeof row[field] === "number" && Number.isSafeInteger(row[field]) && row[field] >= 0) &&
+      row[row.plan === "free" ? "songs_monthly" : "songs_daily"] === null;
+  }) || !names.every(name => data.filter((row: PlanLimits) => row.plan === name).length === 1)) {
+    throw new Error("invalid plan allowances.");
+  }
+  return data as PlanLimits[];
+}
 
 export async function loadPricing(onEvent: (event: PaddleEventData) => void): Promise<{ paddle: Paddle; prices: Record<string, string> }> {
   const token = import.meta.env.VITE_PADDLE_CLIENT_TOKEN;

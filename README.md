@@ -84,16 +84,41 @@ It adds `songs.title`, sets existing song titles to `untitled`, and updates the 
 Set positive `GLOBAL_CHAT_DAILY`, `GLOBAL_ANALYSIS_DAILY`, and `GLOBAL_GENERATION_DAILY` limits in `backend/.env`.
 The example values are `200`, `30`, and `20`. Missing or zero values disable the corresponding paid operation.
 
-New users receive 20 chat messages, 10 analyses, 5 songs per UTC day, and 512 MiB of song storage by default.
-The `QUOTA_*` values configure new users. Existing user allowances live in `public.user_quotas`.
-Shared limits also apply. Daily usage resets at midnight UTC.
+Apply [the plan limits migration](supabase/migrations/20261013212037_plan_limits.sql) before deploying the updated backend and frontend.
+It preserves usage counts and gives existing subscribers their plan allowances.
+
+Edit **Supabase → Table Editor → plan_limits** to change allowances. Paddle controls prices and subscription status.
+The pricing page, usage display, generation reservations, and storage checks all use this table.
+
+| Plan | Chat/day | Analyses/day | Songs | Storage |
+| --- | ---: | ---: | --- | ---: |
+| free | 20 | 10 | 5/day | 512 MiB |
+| starter | 50 | 20 | 30/billing month | 2 GiB |
+| pro | 150 | 50 | 80/billing month | 5 GiB |
+| ultra | 300 | 100 | 180/billing month | 10 GiB |
+
+Use `chat_daily`, `analysis_daily`, `songs_daily`, `songs_monthly`, and `storage_bytes` to set these limits.
+The free row uses `songs_daily`. Paid rows use `songs_monthly`. Keep the unused song column null.
+One GiB is `1073741824` bytes. Limits must be nonnegative integers. Zero blocks the corresponding operation.
+
+Edits affect the next quota check and appear when users reload pricing or refresh their allowances. No redeploy is required.
+Edits do not reset usage. Reductions can block further use until usage resets or space becomes available.
+Daily allowances reset at midnight UTC. Paid songs reset with the Paddle billing period and do not roll over.
+
+Individual overrides remain in `public.user_quotas`. A null field follows the plan.
+The migration replaces old standard defaults with null and preserves other values, including zero blocks.
+`generation_daily` overrides free songs only. Zero also blocks paid generation, as before.
+The old `QUOTA_*` environment variables are no longer used. Remove them from deployment settings.
+
+Shared `GLOBAL_*` limits still apply to every plan. Increase these separately when paid demand requires more capacity.
+Saved storage counts generated songs and their pending reservations. Uploads do not consume this allowance.
 
 ### Configure sandbox pricing and checkout
 
 The public `/pricing` page shows free, starter, pro, and ultra plans.
 Paid prices come from Paddle's localized price preview. Checkout requires login and uses the Paddle sandbox only.
-Verified sandbox subscriptions activate starter (30), pro (80), or ultra (180) songs per billing month, with no rollover.
-Free accounts keep 5 songs per UTC day. Chat, audio analysis, storage, and shared daily limits remain in effect for every plan.
+Verified sandbox subscriptions select starter, pro, or ultra allowances from `public.plan_limits`.
+Paid plans increase chat, audio analysis, monthly songs, and saved-song storage. Shared daily limits still apply.
 
 Apply [the Paddle subscription migration](supabase/migrations/20261013152856_paddle_subscriptions.sql) in Supabase before deploying the backend.
 Run the whole file in the SQL Editor; it uses one transaction and preserves existing accounts and usage.
@@ -206,6 +231,7 @@ Run commands from the repository root:
 npm run build
 npm --prefix frontend run lint
 npm --prefix frontend run test:all
+node frontend/e2e/run.mjs pricing
 npm --prefix backend run test:auth
 npm --prefix backend run test:music
 npm --prefix backend run test:lyrics
@@ -216,6 +242,7 @@ npm --prefix backend run test:songs
 
 Frontend checks require the `agent-browser` CLI. These checks use mocked services and make no paid AI calls.
 Audio checks require FFmpeg. Additional backend checks are listed in [backend/package.json](backend/package.json).
+Plan database checks use `npm --prefix backend run test:quotas:db` with `QUOTA_TEST_DATABASE_URL` set to a disposable, migrated localhost database.
 
 ## Deployment
 

@@ -172,7 +172,7 @@ test('subscription dispatch maps actual purchased prices, including trialing ite
         await processPaddleEvent(await getPaddle().webhooks.unmarshal(body, secret, `ts=${timestamp};h1=${hmac}`));
         const write = writes.at(-1);
         assert.equal(write?.plan, name);
-        assert.equal(write?.song_limit, [30, 80, 180][index]);
+        assert.equal('song_limit' in (write ?? {}), false, 'allowances come from the plan table');
         assert.equal(write?.status, status);
         assert.equal('user_id' in (write ?? {}), false);
         assert.deepEqual(write?.scheduled_change, { action: 'cancel', effectiveAt: '2026-11-13T12:00:00Z', resumeAt: null });

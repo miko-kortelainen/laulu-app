@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Paddle } from "@paddle/paddle-js";
 import type { User } from "@supabase/supabase-js";
-import { createCheckout, getBilling, loadPricing, paidPlans, type Billing } from "./api";
+import { createCheckout, getBilling, getPlanLimits, loadPricing, paidPlans, type Billing, type PlanLimits } from "./api";
 
 export function usePricing(user?: User) {
   const [pricing, setPricing] = useState<{ paddle: Paddle; prices: Record<string, string> }>();
   const [billing, setBilling] = useState<Billing>();
+  const [limits, setLimits] = useState<PlanLimits[]>();
+  const [limitsReady, setLimitsReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [billingLoading, setBillingLoading] = useState(Boolean(user));
   const [error, setError] = useState<string>();
@@ -38,7 +40,7 @@ export function usePricing(user?: User) {
       for (let attempt = 0; attempt < 30; attempt++) {
         const result = await refreshBilling(signal);
         if (result.paidAccess && (!transactionId.current || result.transactionId === transactionId.current)) {
-          setNotice(`${result.plan} is active. your monthly song allowance is ready.`);
+          setNotice(`${result.plan} is active. your plan allowances are ready.`);
           window.dispatchEvent(new Event("billing-updated"));
           return;
         }
@@ -92,6 +94,14 @@ export function usePricing(user?: User) {
       setLoading(false);
     }
     void load();
+    void getPlanLimits(controller.signal).then(result => {
+      if (!controller.signal.aborted) {
+        setLimits(result);
+        setLimitsReady(true);
+      }
+    }).catch((cause: unknown) => {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "could not load plan allowances. try again.");
+    });
     if (user) void refreshBilling(controller.signal).catch(() => {
       if (!controller.signal.aborted) {
         setError("could not load your subscription. retry before starting checkout.");
@@ -109,7 +119,7 @@ export function usePricing(user?: User) {
 
   async function checkout(plan: typeof paidPlans[number]): Promise<void> {
     const controller = requests.current;
-    if (!user || !pricing || !billing || loading || syncing || !pricing.prices[plan.priceId] ||
+    if (!user || !pricing || !billing || !limitsReady || loading || syncing || !pricing.prices[plan.priceId] ||
         checkoutOpen.current || subscriptionCheck.current || !controller || controller.signal.aborted) return;
     setError(undefined);
     setNotice(undefined);
@@ -133,11 +143,12 @@ export function usePricing(user?: User) {
 
   function retry(): void {
     setLoading(true);
+    setLimitsReady(false);
     setBillingLoading(Boolean(user));
     setError(undefined);
     setAttempt(previous => previous + 1);
   }
 
-  return { prices: pricing?.prices, billing, loading, billingLoading, error, notice, selectedPlan, syncing,
+  return { prices: pricing?.prices, limits, limitsReady, billing, loading, billingLoading, error, notice, selectedPlan, syncing,
     checkout, retry, confirmSubscription, pendingTransaction: Boolean(transactionId.current) };
 }

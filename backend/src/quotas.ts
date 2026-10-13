@@ -22,15 +22,6 @@ function configuredLimit(name: string, fallback: number, maximum = Number.MAX_SA
   return value;
 }
 
-export function quotaDefaults(): { chat_daily: number; analysis_daily: number; generation_daily: number; storage_bytes: number } {
-  return {
-    chat_daily: configuredLimit('QUOTA_CHAT_DAILY', 20, 2_147_483_647),
-    analysis_daily: configuredLimit('QUOTA_ANALYSIS_DAILY', 10, 2_147_483_647),
-    generation_daily: configuredLimit('QUOTA_GENERATION_DAILY', 5, 2_147_483_647),
-    storage_bytes: configuredLimit('QUOTA_STORAGE_BYTES', 512 * 1024 * 1024),
-  };
-}
-
 export function songOutputLimit(): number {
   const limit = configuredLimit('MAX_GENERATED_SONG_BYTES', 25 * 1024 * 1024);
   if (!limit) throw new QuotaError('MAX_GENERATED_SONG_BYTES must be positive.', 503);
@@ -69,7 +60,7 @@ export function checkAllowance(data: unknown): void {
 export async function reserveUsage(userId: string, operation: PaidOperation, storageBytes = 0, id: string = randomUUID()): Promise<string> {
   const data = await quotaRpc('reserve_usage', {
     p_user_id: userId, p_operation: operation, p_id: id,
-    p_storage_bytes: storageBytes, p_defaults: quotaDefaults(),
+    p_storage_bytes: storageBytes, p_defaults: {},
     p_global_limits: {
       chat: configuredLimit('GLOBAL_CHAT_DAILY', 0, 2_147_483_647),
       analysis: configuredLimit('GLOBAL_ANALYSIS_DAILY', 0, 2_147_483_647),
@@ -100,7 +91,7 @@ export interface Usage {
 }
 
 export async function getUsage(userId: string): Promise<Usage> {
-  const data = await quotaRpc('get_usage', { p_user_id: userId, p_defaults: quotaDefaults() });
+  const data = await quotaRpc('get_usage', { p_user_id: userId, p_defaults: {} });
   if (!data || typeof data !== 'object' || !('resetAt' in data) || typeof data.resetAt !== 'string' ||
       !Number.isFinite(Date.parse(data.resetAt))) throw new QuotaError('invalid usage response.', 503);
   if (!('generationResetAt' in data) || typeof data.generationResetAt !== 'string' ||

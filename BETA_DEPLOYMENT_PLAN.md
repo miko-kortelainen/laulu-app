@@ -149,7 +149,7 @@ Upload validation, analysis conversion, private playback, and song recovery rema
 - [x] Display remaining allowances and the reset time.
 
 Apply `supabase/migrations/20261008141601_beta_allowances.sql` with the updated backend.
-Update an existing `QUOTA_CHAT_DAILY=50` environment setting to `20` before restart.
+Plan allowances now live in `public.plan_limits`. See [usage quota setup](README.md#configure-usage-quotas) for the current migration and configuration.
 Historical unknown outcomes stay charged. Item 3 adds restart reconciliation and expiration of abandoned storage capacity.
 
 If storage fails after a completed generation, the generation still counts once.
