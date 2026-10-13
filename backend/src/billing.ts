@@ -66,8 +66,8 @@ export async function createCheckout(userId: string, requestedPlan: unknown): Pr
     throw new Error('this monthly plan is unavailable.');
   }
   const pending = await database().from('paddle_transactions').select('id').eq('user_id', userId)
-    .order('id', { ascending: false }).limit(1).maybeSingle()
-    .abortSignal(AbortSignal.timeout(3500));
+    .order('id', { ascending: false }).limit(1)
+    .abortSignal(AbortSignal.timeout(3500)).maybeSingle();
   if (pending.error) throw new Error('could not check previous checkout. try again.');
   const row: unknown = pending.data;
   if (row && typeof row === 'object' && 'id' in row && typeof row.id === 'string') {
@@ -75,8 +75,8 @@ export async function createCheckout(userId: string, requestedPlan: unknown): Pr
     if (previous.subscriptionId) {
       // A completed payment can arrive before its subscription delivery.
       const subscription = await database().from('paddle_subscriptions').select('status')
-        .eq('id', previous.subscriptionId).eq('user_id', userId).maybeSingle()
-        .abortSignal(AbortSignal.timeout(3500));
+        .eq('id', previous.subscriptionId).eq('user_id', userId)
+        .abortSignal(AbortSignal.timeout(3500)).maybeSingle();
       if (subscription.error) throw new Error('could not check previous subscription. try again.');
       if (subscription.data?.status !== 'canceled') throw new Error('your previous payment is processing. check your subscription before paying again.');
     } else {
