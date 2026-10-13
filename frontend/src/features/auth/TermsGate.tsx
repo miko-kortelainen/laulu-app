@@ -14,7 +14,7 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
   useEffect(() => {
     const controller = new AbortController();
     async function check(): Promise<void> {
-      const accepted = await hasAcceptedTerms(userId, controller.signal).catch((cause: unknown) =>
+      const accepted = await hasAcceptedTerms(controller.signal).catch((cause: unknown) =>
         cause instanceof Error ? cause : new Error("could not check terms acceptance. try again."));
       if (controller.signal.aborted) return;
       if (accepted instanceof Error) {
@@ -32,7 +32,7 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
         return;
       }
       // Registration already collected acceptance; record it now that a session exists.
-      const recorded = await recordTermsAcceptance(userId).catch((cause: unknown) =>
+      const recorded = await recordTermsAcceptance(controller.signal).catch((cause: unknown) =>
         cause instanceof Error ? cause : new Error("could not record terms acceptance. try again."));
       if (controller.signal.aborted) return;
       if (recorded instanceof Error) {
@@ -50,7 +50,16 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
   if (pathname === "/terms" || pathname === "/privacy") return children;
   if (status === "accepted") return children;
   if (status === "checking") {
-    return <main className="flex min-h-dvh items-center justify-center"><p role="status">checking terms acceptance...</p></main>;
+    return (
+      <main className="min-h-dvh" aria-busy="true">
+        <p role="status">
+          <span className="sr-only">checking terms acceptance...</span>
+          <span aria-hidden="true" className="terms-loading-indicator fixed right-4 top-4">
+            <span className="block size-3 rounded-full border border-white/10 border-t-white/40 motion-safe:animate-spin" />
+          </span>
+        </p>
+      </main>
+    );
   }
   if (status === "failed") {
     return (
@@ -71,7 +80,7 @@ export function TermsGate({ userId, children }: { userId: string; children: Reac
     if (!checked || busy) return;
     setBusy(true);
     setError(undefined);
-    const recorded = await recordTermsAcceptance(userId).catch((cause: unknown) =>
+    const recorded = await recordTermsAcceptance().catch((cause: unknown) =>
       cause instanceof Error ? cause : new Error("could not record terms acceptance. try again."));
     setBusy(false);
     if (recorded instanceof Error) {

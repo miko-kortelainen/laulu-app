@@ -236,11 +236,14 @@ try {
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "0");
 
   // A signed-in user without a recorded acceptance must accept before reaching the app.
-  await run("network", "unroute", "**/rest/v1/terms_acceptances*");
-  await run("network", "route", "**/rest/v1/terms_acceptances*", "--body", "null");
+  await run("network", "unroute", "**/api/terms");
+  await run("network", "route", "**/api/terms", "--body", '{"accepted":false,"version":"2026-10-12"}');
   await run("eval", "location.reload()");
   await run("wait", "--text", "accept the terms of service to continue");
   assert.equal(await run("eval", "document.querySelector('#songs-title')"), "null");
+  await run("eval", `const beforeTerms = window.fetch;
+    window.fetch = (input, options) => input === '/api/terms' && options?.method === 'POST'
+      ? Promise.resolve(new Response(null, { status: 204 })) : beforeTerms(input, options);`);
   await run("check", "#terms-acceptance");
   await run("find", "role", "button", "click", "--name", "accept and continue", "--exact");
   await run("wait", "--text", "no saved songs yet.");

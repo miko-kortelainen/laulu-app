@@ -40,7 +40,7 @@ try {
       remove() { window.captchaOptions = undefined; }
     };`);
   await run("network", "route", `${authOrigin}/auth/v1/user`, "--body", JSON.stringify(first.user));
-  await run("network", "route", "**/rest/v1/terms_acceptances*", "--body", '{"version":"2026-10-12"}');
+  await run("network", "route", "**/api/terms", "--body", '{"accepted":true,"version":"2026-10-12"}');
   await run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
   await run("open", `${url}/profile`);
   await run("wait", "--text", "log in");

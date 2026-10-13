@@ -8,6 +8,7 @@ import { getModelConfig } from './model.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
+import { hasAcceptedTerms, recordTermsAcceptance, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
 import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError } from './songs.js';
 import { getUsage, QuotaError, reserveUsage } from './quotas.js';
@@ -25,6 +26,26 @@ app.use(cors({ origin: allowedOrigins }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api', requireAuth);
 app.use(express.json());
+
+app.get('/api/terms', async (_req, res) => {
+  const accepted = await hasAcceptedTerms(res.locals.userId).catch(() => {
+    res.status(503).json({ error: 'could not check terms acceptance. try again.' });
+  });
+  if (accepted !== undefined) res.set('Cache-Control', 'private, no-store').json({ accepted, version: TERMS_VERSION });
+});
+
+app.post('/api/terms', async (req, res) => {
+  const version: unknown = req.body?.version;
+  if (version !== TERMS_VERSION) {
+    res.status(400).json({ error: 'terms version changed. reload the page and accept the current terms.' });
+    return;
+  }
+  await recordTermsAcceptance(res.locals.userId).catch(() => {
+    res.status(503).json({ error: 'could not record terms acceptance. try again.' });
+  });
+  if (!res.headersSent) res.status(204).end();
+});
+
 function locked(handler: (req: Request, res: Response) => Promise<unknown>) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const userId: string = res.locals.userId;

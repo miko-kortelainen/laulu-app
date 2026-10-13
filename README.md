@@ -60,6 +60,10 @@ For public deployment, configure the production origin for email redirects.
 Enable Supabase Turnstile enforcement and set `VITE_TURNSTILE_SITE_KEY` to the matching public site key.
 Local development can leave the site key empty.
 
+The frontend checks terms acceptance with `GET /api/terms` and records it with `POST /api/terms`.
+The backend uses the authenticated user ID and stores the terms version and acceptance time in Supabase.
+Keep `TERMS_VERSION` in `backend/src/terms.ts` and `frontend/src/lib/terms.ts` in sync when the terms change.
+
 ### Configure generated-song storage
 
 1. Create a private Cloudflare R2 bucket with public access disabled.

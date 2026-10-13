@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { authenticatedFetch } from "./api";
 
 export const TERMS_VERSION = "2026-10-12";
 
@@ -16,20 +16,23 @@ export function clearTermsAcceptancePending(): void {
   try { sessionStorage.removeItem(pendingKey); } catch { /* nothing to clear */ }
 }
 
-export async function hasAcceptedTerms(userId: string, signal?: AbortSignal): Promise<boolean> {
-  if (!supabase) throw new Error("authentication is not configured.");
-  let query = supabase.from("terms_acceptances").select("version")
-    .eq("user_id", userId).eq("version", TERMS_VERSION);
-  if (signal) query = query.abortSignal(signal);
-  const { data, error } = await query.maybeSingle();
-  if (error) throw new Error("could not check terms acceptance. try again.");
-  return data !== null;
+export async function hasAcceptedTerms(signal?: AbortSignal): Promise<boolean> {
+  const response = await authenticatedFetch("/api/terms", { signal });
+  if (!response.ok) throw new Error("could not check terms acceptance. try again.");
+  const data: unknown = await response.json();
+  if (!data || typeof data !== "object" || !("accepted" in data) || typeof data.accepted !== "boolean" ||
+      !("version" in data) || typeof data.version !== "string") {
+    throw new Error("invalid terms acceptance response. try again.");
+  }
+  if (data.version !== TERMS_VERSION) throw new Error("terms version changed. reload the page and accept the current terms.");
+  return data.accepted;
 }
 
-export async function recordTermsAcceptance(userId: string): Promise<void> {
-  if (!supabase) throw new Error("authentication is not configured.");
-  const { error } = await supabase.from("terms_acceptances")
-    .insert({ user_id: userId, version: TERMS_VERSION });
-  // A duplicate means another tab already recorded this version.
-  if (error && error.code !== "23505") throw new Error("could not record terms acceptance. try again.");
+export async function recordTermsAcceptance(signal?: AbortSignal): Promise<void> {
+  const response = await authenticatedFetch("/api/terms", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version: TERMS_VERSION }), signal,
+  });
+  if (response.status === 400) throw new Error("terms version changed. reload the page and accept the current terms.");
+  if (response.status !== 204) throw new Error("could not record terms acceptance. try again.");
 }
