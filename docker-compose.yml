@@ -3,10 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        VITE_SUPABASE_URL: ${SUPABASE_URL:?}
-        VITE_SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?}
-        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:?}
     expose:
       - "3001"
     volumes:

@@ -24,7 +24,6 @@ These steps follow the [Coolify Compose guide](https://coolify.io/docs/applicati
 | --- | --- |
 | `SUPABASE_URL` | Existing project's HTTPS URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Existing project's public key |
-| `VITE_TURNSTILE_SITE_KEY` | Public site key configured for `studio.lau.lu` |
 | `SUPABASE_SECRET_KEY` | Server-only database key |
 | `CF_AI_GATEWAY_ACCOUNT_ID` | Existing Cloudflare account ID |
 | `CF_AI_GATEWAY_ID` | Existing BYOK gateway ID |
@@ -42,10 +41,20 @@ Zero or a missing shared cap disables the corresponding paid operation. Missing 
 The backend supplies the existing defaults for optional model IDs, provider slugs, personal allowances, and audio limits.
 Set `CF_AI_GATEWAY_NEBIUS_SLUG=nebius-token-factory` to use the provider from the working local setup.
 
-Make `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `VITE_TURNSTILE_SITE_KEY` available during both build and runtime.
-Compose maps the first two to the frontend's `VITE_` variables, so the frontend and backend use one Supabase project.
+Store the public Turnstile site key in Doppler as `VITE_TURNSTILE_SITE_KEY`.
+In Coolify, add these frontend variables:
+
+```dotenv
+VITE_SUPABASE_URL={{vault.SUPABASE_URL}}
+VITE_SUPABASE_PUBLISHABLE_KEY={{vault.SUPABASE_PUBLISHABLE_KEY}}
+VITE_TURNSTILE_SITE_KEY={{vault.VITE_TURNSTILE_SITE_KEY}}
+```
+
+Make these three variables available during build only. Coolify passes them to the Dockerfile's declared build arguments.
+The Supabase aliases use the same Doppler values as the backend; duplicate Doppler keys are not needed.
 These public values become part of the frontend bundle. A change requires a new build.
-Make server keys and tokens available at runtime only. Do not put them in build arguments or `VITE_` variables.
+Make all backend variables, including `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`, available at runtime only.
+Do not put server keys or tokens in build arguments or `VITE_` variables.
 See [Coolify environment scopes](https://coolify.io/docs/applications/configuration/environment-variables).
 
 Keep these values in Coolify as runtime variables:
@@ -71,12 +80,15 @@ The site URL must be `https://studio.lau.lu`. Confirmation and recovery redirect
 3. In Coolify, open **Keys & Tokens > Integration Tokens** and add the Doppler token.
 4. Open this application's **Environment Variables > Secret manager** and select the integration token.
 5. Select **Browse keys > Import all keys**. Do not remove existing variables until their replacements are imported.
-6. Set the three public build values to build and runtime. Set all other imported values to runtime only.
+6. Add the frontend aliases above and set them to build only. Set all other imported values to runtime only.
 7. Deploy the application.
 
 Coolify resolves the Doppler references and generates the deployment's `.env` file.
 Coolify adds `env_file: .env` to the deployed Compose definition. Keep the Compose deployment managed by Coolify; raw mode skips this step.
-The repository Compose file needs no `env_file` or `environment` blocks.
+The repository Compose file needs no `env_file`, `environment`, or `build.args` blocks.
+Coolify 4.4.6 can insert raw Doppler references from Compose build arguments into the runtime environment.
+These entries override resolved `.env` values. Supply build arguments through Coolify to avoid this parser behavior.
+See [Coolify 4.4.6's Compose parser](https://github.com/coollabsio/coolify/blob/v4.4.6/bootstrap/helpers/parsers.php#L1716).
 See [Coolify's Compose deployment implementation](https://github.com/coollabsio/coolify/blob/main/app/Jobs/ApplicationDeploymentJob.php).
 Import new Doppler keys into Coolify before deploying a feature that needs them.
 After changing runtime values in Doppler, restart or redeploy the application. Changes to public build values require a new deployment.
@@ -125,7 +137,7 @@ npm --prefix backend run test:deployment
 npm --prefix backend run test:auth
 ```
 
-With the three public build values in an ignored root `.env`, check Compose configuration on a Docker host:
+Check Compose configuration on a Docker host:
 
 ```bash
 docker compose config --quiet
