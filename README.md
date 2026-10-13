@@ -88,6 +88,30 @@ New users receive 20 chat messages, 10 analyses, 5 songs per UTC day, and 512 Mi
 The `QUOTA_*` values configure new users. Existing user allowances live in `public.user_quotas`.
 Shared limits also apply. Daily usage resets at midnight UTC.
 
+### Configure sandbox pricing and checkout
+
+The public `/pricing` page shows free, starter, pro, and ultra plans.
+Paid prices come from Paddle's localized price preview. Checkout requires login and uses the Paddle sandbox only.
+The monthly plan allowances shown are 30, 80, and 180 songs. Sandbox purchases do not activate these allowances;
+the existing free beta limits remain in effect. Subscription webhooks and paid-plan enforcement are not implemented.
+
+Set these public values in `frontend/.env.local`:
+
+```dotenv
+VITE_PADDLE_CLIENT_TOKEN=test_your_public_client_token
+VITE_PADDLE_STARTER_PRICE_ID=pri_01m4tvkjam9nptz0f1ngrbr9mj
+VITE_PADDLE_PRO_PRICE_ID=pri_01m4tvmm85j15s4vjd9ykmsa0d
+VITE_PADDLE_ULTRA_PRICE_ID=pri_01m4tvnr6xfnyk1nwtyt5vma9e
+```
+
+These existing sandbox prices are $9, $19, and $39 USD per month, with no trial.
+The ultra price belongs to the Paddle product named `Advanced`.
+The page includes applicable tax for the detected location; checkout confirms the total for the billing address.
+Use a `test_` client token from Paddle's sandbox authentication settings. Never put a Paddle API key in a `VITE_` variable.
+Set the default payment link in the sandbox checkout settings to a URL that serves this app, such as `http://localhost:5173/pricing`.
+Sandbox checkout uses [Paddle test cards](https://developer.paddle.com/concepts/payment-methods/credit-debit-card#test-cards).
+Restart the frontend after changing its environment values.
+
 ### Configure Cloudflare AI Gateway
 
 1. Enable authentication on the gateway.
@@ -124,7 +148,7 @@ Unknown provider outcomes retain their allowance charge and never trigger automa
 
 | Path | Contents |
 | --- | --- |
-| `frontend/src/features/` | Chat, authentication, saved songs, and profile |
+| `frontend/src/features/` | Chat, authentication, saved songs, profile, and pricing |
 | `frontend/src/components/ui/` | Shared UI components |
 | `backend/src/` | HTTP API, agents, audio, storage, and quotas |
 | `backend/prompts/` | Chat, song brief, lyrics, and analysis instructions |

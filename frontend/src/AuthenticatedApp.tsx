@@ -8,6 +8,7 @@ import { ProfilePage } from "@/features/profile/ProfilePage";
 import { SongsPage } from "@/features/songs/SongsPage";
 import { PrivacyPage } from "@/features/auth/PrivacyPage";
 import { TermsPage } from "@/features/auth/TermsPage";
+import { PricingPage } from "@/features/pricing/PricingPage";
 import { cn } from "@/lib/utils";
 
 interface AuthenticatedAppProps {
@@ -62,7 +63,13 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
         </svg>
         my songs
       </NavLink>
-      <NavLink to="/profile" className={cn(linkClass, "mt-auto")} onClick={closeNavigation}>
+      <NavLink to="/pricing" className={cn(linkClass, "mt-auto")} onClick={closeNavigation}>
+        <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 7h16v14H4zM8 7V3h8v4M4 12h16" />
+        </svg>
+        pricing
+      </NavLink>
+      <NavLink to="/profile" className={linkClass} onClick={closeNavigation}>
         <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <circle cx="12" cy="8" r="4" />
           <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
@@ -111,6 +118,7 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
           <Routes>
             <Route path="/" element={<ChatPage chat={chat} />} />
             <Route path="/songs" element={<SongsPage />} />
+            <Route path="/pricing" element={<PricingPage user={user} />} />
             <Route path="/profile" element={
               <ProfilePage user={user} onLogout={onLogout} signingOut={signingOut} authError={authError}
                 usage={chat.usage} usageError={chat.usageError} loading={chat.loading} refreshUsage={chat.refreshUsage} />

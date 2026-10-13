@@ -57,6 +57,19 @@ Make all backend variables, including `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_K
 Do not put server keys or tokens in build arguments or `VITE_` variables.
 See [Coolify environment scopes](https://coolify.io/docs/applications/configuration/environment-variables).
 
+To enable the sandbox pricing page and checkout, also add these public values as build-only variables:
+
+```dotenv
+VITE_PADDLE_CLIENT_TOKEN={{vault.VITE_PADDLE_CLIENT_TOKEN}}
+VITE_PADDLE_STARTER_PRICE_ID={{vault.VITE_PADDLE_STARTER_PRICE_ID}}
+VITE_PADDLE_PRO_PRICE_ID={{vault.VITE_PADDLE_PRO_PRICE_ID}}
+VITE_PADDLE_ULTRA_PRICE_ID={{vault.VITE_PADDLE_ULTRA_PRICE_ID}}
+```
+
+Store the sandbox `test_` client token and the three sandbox price IDs in Doppler under these names.
+The Dockerfile declares the matching build arguments. See [sandbox pricing setup](README.md#configure-sandbox-pricing-and-checkout)
+for the existing price IDs. Checkout remains in sandbox and does not activate paid allowances.
+
 Keep these values in Coolify as runtime variables:
 
 ```dotenv

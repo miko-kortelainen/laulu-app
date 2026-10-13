@@ -72,6 +72,7 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
             {view === "update" && session && <button type="button" className={buttonClass} disabled={busy} onClick={() => void logout()}>log out</button>}
           </div>
           <p className="mt-3 flex flex-wrap items-center justify-center gap-x-4 text-center text-xs text-zinc-400">
+            <Link to="/pricing" className="inline-flex min-h-11 items-center justify-center rounded-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">pricing</Link>
             <Link to="/privacy" className="inline-flex min-h-11 items-center justify-center rounded-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">privacy and beta limits</Link>
             <Link to="/terms" className="inline-flex min-h-11 items-center justify-center rounded-sm underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">terms of service</Link>
           </p>
