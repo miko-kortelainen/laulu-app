@@ -59,6 +59,9 @@ Restart the development servers after environment changes. Keep secrets out of G
 
 For public deployment, configure the production origin for email redirects.
 Enable Supabase Turnstile enforcement and set `VITE_TURNSTILE_SITE_KEY` to the matching public site key.
+The auth forms keep unused CAPTCHA verification when you switch between login and registration. Verification refreshes after each auth attempt or token expiry.
+Registration requires matching password and confirm-password fields.
+After successful registration, the form shows a centered message to check email for account confirmation.
 Local development can leave the site key empty.
 
 Users must confirm they are 18 or older and accept the current terms before using the studio.

@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { LauluWordmark } from "@/components/ui/LauluWordmark";
+import { cn } from "@/lib/utils";
 import type { useAuth } from "./useAuth";
 import { Turnstile } from "./Turnstile";
 
@@ -9,15 +10,20 @@ const fieldClass = "block px-3 py-2 text-sm text-zinc-300 focus-within:bg-white/
 const buttonClass = "inline-flex min-h-11 items-center justify-center rounded-sm border border-white/15 px-3 py-2 text-center text-sm font-medium hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300 disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
 const labels = { login: "log in", register: "create account", reset: "reset password", update: "save new password" };
 
-export function AuthPage({ view, email, password, error, notice, busy, configured, setEmail, setPassword, changeView, submit, resend, logout, session,
+export function AuthPage({ view, email, password, confirmPassword, error, notice, busy, configured, setEmail, setPassword, setConfirmPassword, changeView, submit, logout, session,
   captchaRequired, captchaToken, captchaReset, setCaptchaToken, termsAccepted, setTermsAccepted }: AuthPageProps) {
   const verificationPending = captchaRequired && !captchaToken;
+  const registrationComplete = view === "register" && Boolean(notice);
   return (
     <main className="relative flex min-h-dvh w-full flex-col items-center justify-center gap-8 overflow-hidden px-5 py-10">
       <LauluWordmark className="relative w-full max-w-md" />
 
       <section className="relative w-full max-w-md overflow-hidden rounded-md border border-white/10 bg-zinc-950/85 shadow-xl shadow-black/30" aria-label={labels[view]}>
-        <form className="px-6 pt-8 sm:px-8" onSubmit={(event) => { event.preventDefault(); void submit(); }} aria-busy={busy}>
+        {view === "register" && <p role="status" className={cn("text-sm text-zinc-300", registrationComplete
+          ? "flex min-h-64 items-center justify-center px-6 py-8 text-center sm:px-8"
+          : "sr-only")}>{notice}</p>}
+        {!registrationComplete && <form className="px-6 pt-8 sm:px-8" onSubmit={(event) => { event.preventDefault(); void submit(); }} aria-busy={busy}>
+          {(view === "login" || view === "register") && <h1 className="mb-6 text-xl font-medium text-zinc-100">{labels[view]}</h1>}
           {!configured && <p role="alert" className="mb-6 text-sm text-red-300">authentication is not configured. add the Supabase URL and publishable key to the frontend environment.</p>}
           <div className="divide-y divide-white/10 overflow-hidden rounded-sm border border-white/12 bg-zinc-900/80 focus-within:border-white/25">
             {view !== "update" && (
@@ -39,13 +45,24 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
                 {view === "update" && <p id="password-requirements" className="border-t border-white/10 px-4 py-2 text-xs text-zinc-400">use at least 8 characters.</p>}
               </div>
             )}
+            {view === "register" && (
+              <label className={fieldClass} htmlFor="auth-confirm-password">
+                confirm password
+                <input id="auth-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" required minLength={8}
+                  value={confirmPassword} aria-invalid={Boolean(error) && password !== confirmPassword} aria-describedby={error ? "auth-error" : undefined}
+                  disabled={busy || !configured} onChange={(event) => setConfirmPassword(event.currentTarget.value)} className={inputClass} />
+              </label>
+            )}
           </div>
 
+          {(view === "login" || view === "register") && <p id={view === "login" ? "auth-login-error" : "auth-error"}
+            role="alert" className="mt-2 min-h-5 text-xs text-red-300">{error}</p>}
+
           {view === "register" && (
-            <div className="mt-2 flex min-h-8 items-center gap-3 text-sm text-zinc-300">
+            <div className="mt-2 flex min-h-10 items-center gap-3 text-xs text-zinc-300">
               <input id="auth-terms" name="termsAccepted" type="checkbox" required checked={termsAccepted}
                 disabled={busy || !configured} onChange={(event) => setTermsAccepted(event.currentTarget.checked)}
-                className="size-5 shrink-0 accent-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300" />
+                className="size-4 shrink-0 accent-zinc-700 [color-scheme:dark] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300" />
               <label htmlFor="auth-terms" className="py-1">
                 i am 18 or older and accept the <Link to="/terms" target="_blank" rel="noopener noreferrer"
                   className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">terms of service<span className="sr-only"> (opens in a new tab)</span></Link>
@@ -54,21 +71,20 @@ export function AuthPage({ view, email, password, error, notice, busy, configure
           )}
 
           {view === "login" && <button type="button" disabled={busy} onClick={() => changeView("reset")}
-            className="flex min-h-8 w-fit items-center text-xs text-zinc-400 underline underline-offset-4 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">forgot password?</button>}
+            className="mt-2 flex min-h-10 w-fit items-center text-xs text-zinc-400 underline underline-offset-4 hover:text-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300 disabled:cursor-not-allowed disabled:opacity-50">forgot password?</button>}
 
-          {error && <p role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
-          <p role="status" className="mt-4 text-sm text-zinc-300 empty:mt-0">{notice}</p>
-          {captchaRequired && <div className="mt-2"><Turnstile key={`${view}-${captchaReset}`} onToken={setCaptchaToken} /></div>}
+          {view !== "login" && view !== "register" && error && <p id="auth-error" role="alert" className="mt-4 text-sm text-red-300">{error}</p>}
+          {view !== "register" && <p role="status" className="mt-4 text-sm text-zinc-300 empty:mt-0">{notice}</p>}
+          {captchaRequired && <div className="mt-2 pb-2"><Turnstile key={captchaReset} onToken={setCaptchaToken} /></div>}
           <button type="submit" disabled={busy || !configured || verificationPending} className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-sm bg-white px-4 py-2.5 text-center text-sm font-semibold text-black hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-50">
             {busy ? "please wait..." : labels[view]}
           </button>
-        </form>
+        </form>}
 
         <div className="mt-6 border-t border-white/10 bg-white/[0.03] px-6 py-6 sm:px-8">
           <div className="grid gap-3 sm:auto-cols-fr sm:grid-flow-col">
             {view === "login" && <Link to="/create-account" className={buttonClass} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); else changeView("login"); }}>create account</Link>}
             {view !== "login" && view !== "update" && <Link to="/login" className={buttonClass} aria-disabled={busy} onClick={(event) => { if (busy) event.preventDefault(); else changeView("login"); }}>back to login</Link>}
-            {view === "register" && notice && <button type="button" className={buttonClass} disabled={busy || !configured || !email.trim() || verificationPending} onClick={() => void resend()}>resend confirmation</button>}
             {view === "update" && session && <button type="button" className={buttonClass} disabled={busy} onClick={() => void logout()}>log out</button>}
           </div>
           <p className="mt-3 flex flex-wrap items-center justify-center gap-x-4 text-center text-xs text-zinc-400">

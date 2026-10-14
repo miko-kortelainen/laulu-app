@@ -56,6 +56,7 @@ export function Turnstile({ onToken }: { onToken: (token: string | undefined) =>
     const timeout = window.setTimeout(() => { if (widgetId === undefined) fail(); }, 15_000);
     return () => {
       active = false;
+      onToken(undefined);
       window.clearTimeout(timeout);
       script?.removeEventListener("load", render);
       script?.removeEventListener("error", fail);
@@ -65,7 +66,7 @@ export function Turnstile({ onToken }: { onToken: (token: string | undefined) =>
 
   return (
     <div className="space-y-2">
-      <div ref={container} className="w-full" aria-label="human verification" />
+      <div ref={container} className="min-h-[69px] w-full pb-1" aria-label="human verification" />
       {error && <>
         <p role="alert" className="text-sm text-red-300">{error}</p>
         <button type="button" onClick={() => { setError(undefined); setAttempt((previous) => previous + 1); }}

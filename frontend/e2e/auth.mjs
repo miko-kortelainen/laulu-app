@@ -25,9 +25,12 @@ async function clickSubmit() {
   await run("click", 'button[type="submit"]');
 }
 
-async function submit(email = first.user.email, password = "offline-password") {
+async function submit(email = first.user.email, password = "offline-password", confirmPassword = password) {
   await run("fill", "#auth-email", email);
   await run("fill", "#auth-password", password);
+  if (await run("eval", "Boolean(document.querySelector('#auth-confirm-password'))") === "true") {
+    await run("fill", "#auth-confirm-password", confirmPassword);
+  }
   await clickSubmit();
 }
 
@@ -77,23 +80,34 @@ try {
   assert.equal(await run("eval", "document.querySelector('#auth-terms').checked"), "false");
   await run("wait", "--text", "i am 18 or older and accept the");
   assert.equal(await run("eval", "location.pathname"), '"/create-account"');
+  await verify();
+  const retainedCaptchaRenders = captcha ? await run("eval", "window.captchaRenders") : undefined;
   await run("find", "role", "link", "click", "--name", "back to login", "--exact");
   await run("wait", "--text", "log in");
   assert.equal(await run("eval", "location.pathname"), '"/login"');
   await run("find", "role", "link", "click", "--name", "create account", "--exact");
   await run("wait", 'section[aria-label="create account"]');
   assert.equal(await run("eval", "location.pathname"), '"/create-account"');
+  if (captcha) {
+    assert.equal(await run("eval", "window.captchaRenders"), retainedCaptchaRenders, "form links retain the existing widget");
+    assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "false", "form links retain unused verification");
+  }
   for (const direction of ["back", "forward"]) {
     await run("fill", "#auth-password", "history-password");
+    if (direction === "back") await run("fill", "#auth-confirm-password", "history-password");
     await verify();
     await run(direction);
     await run("wait", `section[aria-label="${direction === "back" ? "log in" : "create account"}"]`);
     assert.equal(await run("eval", 'document.querySelector("#auth-password").value'), '""', "history navigation clears the previous password");
-    if (captcha) assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true", "history navigation requires new verification");
+    assert.equal(await run("eval", "document.querySelector('#auth-confirm-password')?.value ?? null"), direction === "back" ? "null" : '""', "confirmation is registration-only and clears on navigation");
+    if (captcha) {
+      assert.equal(await run("eval", "window.captchaRenders"), retainedCaptchaRenders, "history navigation retains the existing widget");
+      assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "false", "history navigation retains unused verification");
+    }
   }
   if (captcha) {
     await run("wait", "--fn", "Boolean(window.captchaOptions)");
-    assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true");
+    assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "false");
     await verify();
     await run("eval", "window.captchaOptions['expired-callback']()");
     assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true");
@@ -102,7 +116,7 @@ try {
     await run("find", "role", "button", "click", "--name", "retry verification", "--exact");
     await run("eval", `window.captchaRequests = []; const beforeCaptcha = window.fetch;
       window.fetch = (input, options) => {
-        if (['signup', 'resend', 'recover'].some(path => String(input).includes('/auth/v1/' + path))) window.captchaRequests.push(JSON.parse(options.body));
+        if (['signup', 'recover'].some(path => String(input).includes('/auth/v1/' + path))) window.captchaRequests.push(JSON.parse(options.body));
         return beforeCaptcha(input, options);
       };`);
   }
@@ -121,26 +135,28 @@ try {
   assert.equal(await run("eval", "document.querySelector('label[for=auth-terms] a').getAttribute('href')"), JSON.stringify("/terms"));
   await run("focus", "#auth-terms");
   await run("press", "Space");
+  await submit(first.user.email, "offline-password", "different-password");
+  await run("wait", "--text", "passwords don't match");
+  assert.equal(await run("eval", "window.signupRequests"), "0", "mismatched passwords do not submit signup");
+  assert.equal(await run("eval", "document.querySelector('#auth-confirm-password').getAttribute('aria-invalid')"), '"true"');
+  assert.equal(await run("eval", "document.querySelector('#auth-password').value"), '"offline-password"', "a mismatch preserves the password for correction");
   await submit();
-  await run("wait", "--text", "check your email to confirm your account");
+  await run("wait", "--text", "check your email to confirm your account.");
   assert.equal(await run("eval", "window.signupRequests"), "1");
-  assert.equal(await run("eval", "document.querySelector('#auth-terms').checked"), "false", "successful registration clears acceptance");
+  assert.equal(await run("eval", "document.querySelector('form')"), "null", "successful registration replaces the form with confirmation guidance");
+  assert.equal(await run("eval", "getComputedStyle(document.querySelector('[role=status]')).textAlign"), '"center"');
   assert.equal(await run("eval", 'document.querySelector("section[aria-label=chat]")'), "null");
-  await run("network", "route", `${authOrigin}/auth/v1/resend*`, "--body", "{}");
   if (captcha) {
-    assert.equal(await run("eval", "document.querySelector('button[type=submit]').disabled"), "true", "a consumed token must be replaced");
+    assert.equal(await run("eval", "Boolean(window.captchaOptions)"), "false", "successful registration removes the CAPTCHA");
     assert.equal(await run("eval", "window.captchaRequests[0].gotrue_meta_security.captcha_token"), '"offline-captcha-token"');
   }
-  await verify();
-  await run("find", "role", "button", "click", "--name", "resend confirmation", "--exact");
-  await run("wait", "--text", "check your email for a confirmation link.");
-  if (captcha) assert.equal(await run("eval", "window.captchaRequests[1].gotrue_meta_security.captcha_token"), '"offline-captcha-token"');
   await run("back");
   await run("wait", "--text", "log in");
   assert.equal(await run("eval", "document.querySelector('[role=status]').textContent"), '""', "history navigation clears the registration notice");
   await run("forward");
   await run("wait", 'section[aria-label="create account"]');
   assert.equal(await run("eval", "document.querySelector('#auth-terms').checked"), "false", "history navigation requires fresh acceptance");
+  assert.equal(await run("eval", "document.querySelector('#auth-confirm-password').value"), '""', "returning to registration clears password confirmation");
   assert.equal(await run("eval", "document.querySelector('[role=status]').textContent"), '""');
 
   // The actual Supabase SDK processes the confirmation callback and removes its tokens.
@@ -178,8 +194,11 @@ try {
     window.fetch = (input, options) => String(input).includes('/auth/v1/token') && window.failLogin
       ? Promise.resolve(Response.json({ code: 'invalid_credentials', msg: 'invalid login credentials' }, { status: 400 }))
       : window.authFetch(input, options);`);
+  const loginFormHeight = await run("eval", "document.querySelector('form').getBoundingClientRect().height");
   await submit();
   await run("wait", "--text", "invalid login credentials");
+  assert.equal(await run("eval", "document.querySelector('#auth-login-error').textContent"), '"invalid login credentials"');
+  assert.equal(await run("eval", "document.querySelector('form').getBoundingClientRect().height"), loginFormHeight, "login errors use reserved space");
   assert.equal(await run("eval", 'document.querySelector("#auth-email").value'), JSON.stringify(first.user.email));
   assert.equal(await run("eval", 'document.querySelector("#auth-password").value'), '"offline-password"');
   await run("eval", "window.failLogin = false");
@@ -296,7 +315,7 @@ try {
   await run("wait", "--text", "link expired");
   assert.equal(await run("eval", "location.hash"), '""');
   assert.equal(await run("eval", "document.querySelector('button[type=submit]').textContent.trim()"), '"log in"');
-  console.log(`Auth E2E passed: ${captcha ? "CAPTCHA expiry, failure recovery and token reset, " : ""}public privacy notice and reload, registration, confirmation, resend, login recovery, profile navigation and reload, retained song form across privacy navigation, logout cancellation, account isolation, password recovery, and expired links.`);
+  console.log(`Auth E2E passed: ${captcha ? "CAPTCHA expiry, failure recovery and token reset, " : ""}public privacy notice and reload, registration, confirmation guidance, login recovery, profile navigation and reload, retained song form across privacy navigation, logout cancellation, account isolation, password recovery, and expired links.`);
 } catch (error) {
   process.stderr.write(`${await run("snapshot")}\n`);
   throw error;

@@ -4,7 +4,7 @@ import { useMatch } from "react-router";
 import { authCallback, supabase } from "@/lib/supabase";
 import { setApiUser } from "@/lib/api";
 import { markTermsAcceptancePending } from "@/lib/terms";
-import { resendConfirmation, signOut, submitAuth, type AuthView } from "./api";
+import { signOut, submitAuth, type AuthView } from "./api";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "authentication failed. try again.";
@@ -19,6 +19,7 @@ export function useAuth() {
   const view: AuthView = passwordView === "update" ? "update" : createAccountRoute ? "register" : passwordView;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState<string | undefined>(authCallback.error);
   const [notice, setNotice] = useState<string>();
@@ -52,6 +53,7 @@ export function useAuth() {
       if (event === "SIGNED_OUT") {
         setView("login");
         setPassword("");
+        setConfirmPassword("");
         setNotice(undefined);
       }
     });
@@ -86,10 +88,10 @@ export function useAuth() {
 
   function clearForm(): void {
     setPassword("");
+    setConfirmPassword("");
     setTermsAccepted(false);
     setError(undefined);
     setNotice(undefined);
-    setCaptchaToken(undefined);
   }
 
   async function perform(action: () => Promise<void>, success?: () => void): Promise<void> {
@@ -112,14 +114,19 @@ export function useAuth() {
       setError("confirm you are 18 or older and accept the terms of service to create an account.");
       return;
     }
+    if (view === "register" && password !== confirmPassword) {
+      setError("passwords don't match");
+      return;
+    }
     await perform(() => submitAuth(view, email.trim(), password, captchaToken), () => {
       setPassword("");
+      setConfirmPassword("");
       if (view === "register") {
         markTermsAcceptancePending();
         setTermsAccepted(false);
-        setNotice("check your email to confirm your account before logging in.");
+        setNotice("check your email to confirm your account.");
       }
-      if (view === "reset") setNotice("if an account exists, you will receive a password reset email.");
+      if (view === "reset") setNotice("if an account exists with this email address, you will receive an email with a link to reset your password.");
       if (view === "update") {
         setView("login");
         setNotice("your password is updated.");
@@ -128,9 +135,8 @@ export function useAuth() {
   }
 
   return {
-    session, loading, view, email, password, error, notice, busy, captchaRequired, captchaToken, captchaReset, setCaptchaToken,
-    configured: Boolean(supabase), termsAccepted, setTermsAccepted, setEmail, setPassword, changeView, submit,
-    resend: () => perform(() => resendConfirmation(email.trim(), captchaToken), () => setNotice("check your email for a confirmation link.")),
+    session, loading, view, email, password, confirmPassword, error, notice, busy, captchaRequired, captchaToken, captchaReset, setCaptchaToken,
+    configured: Boolean(supabase), termsAccepted, setTermsAccepted, setEmail, setPassword, setConfirmPassword, changeView, submit,
     logout: () => perform(signOut),
   };
 }

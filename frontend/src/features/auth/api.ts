@@ -19,15 +19,6 @@ export async function submitAuth(view: AuthView, email: string, password: string
   if (result.error) throw result.error;
 }
 
-export async function resendConfirmation(email: string, captchaToken?: string): Promise<void> {
-  if (!supabase) throw new Error("authentication is not configured.");
-  if (import.meta.env.VITE_TURNSTILE_SITE_KEY && !captchaToken) throw new Error("complete human verification to continue.");
-  const { error } = await supabase.auth.resend({
-    type: "signup", email, options: { emailRedirectTo: `${window.location.origin}/`, captchaToken },
-  });
-  if (error) throw error;
-}
-
 export async function signOut(): Promise<void> {
   if (!supabase) throw new Error("authentication is not configured.");
   const response = await authenticatedFetch("/api/session/end", { method: "POST" });
