@@ -59,6 +59,8 @@ export function PricingPage({ user }: { user?: User }) {
           {paidPlans.map(plan => {
             const featured = plan.name === "pro";
             const price = pricing.prices?.[plan.priceId];
+            const hasSubscription = Boolean(pricing.billing?.status && pricing.billing.status !== "canceled");
+            const currentPlan = pricing.billing?.plan === plan.name && pricing.billing.paidAccess;
             return (
               <section key={plan.name} aria-labelledby={`plan-${plan.name}`} className={cn(
                 "flex flex-col rounded-xl border bg-zinc-900/60 p-6",
@@ -72,9 +74,11 @@ export function PricingPage({ user }: { user?: User }) {
                 <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
                   <Allowances limits={pricing.limits?.find(limits => limits.plan === plan.name)} />
                 </ul>
-                {user ? <button type="button" disabled={pricing.loading || !pricing.limitsReady || pricing.billingLoading || !pricing.billing || !price || Boolean(pricing.selectedPlan) || pricing.syncing || Boolean(pricing.billing.status && pricing.billing.status !== "canceled")}
-                  onClick={() => void pricing.checkout(plan)} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
-                  {pricing.selectedPlan === plan.name ? "opening checkout…" : pricing.billing?.plan === plan.name && pricing.billing.paidAccess ? "current plan" : `choose ${plan.name}`}
+                {user ? <button type="button" disabled={pricing.loading || !pricing.limitsReady || pricing.billingLoading || !pricing.billing || !price || Boolean(pricing.selectedPlan) || pricing.syncing || pricing.managing || Boolean(pricing.pendingAction) || pricing.updatePending || currentPlan ||
+                    (hasSubscription && (pricing.billing?.status !== "active" || Boolean(pricing.billing.scheduledChange)))}
+                  onClick={() => void pricing.choosePlan(plan)} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
+                  {pricing.selectedPlan === plan.name ? hasSubscription ? "loading preview…" : "opening checkout…"
+                    : currentPlan ? "current plan" : hasSubscription ? `change to ${plan.name}` : `choose ${plan.name}`}
                 </button> : <Link to="/login" state={{ from: "/pricing" }} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
                   {`log in to choose ${plan.name}`}
                 </Link>}
@@ -83,17 +87,43 @@ export function PricingPage({ user }: { user?: User }) {
           })}
         </div>
 
+        {pricing.pendingAction && <section aria-labelledby="subscription-confirm-title" className="max-w-xl space-y-4 rounded-xl border border-white/15 bg-zinc-900/60 p-6">
+          <h2 id="subscription-confirm-title" className="text-lg font-semibold">
+            {pricing.pendingAction === "cancel" ? "cancel your subscription?" : `change to ${pricing.pendingAction.preview.plan}?`}
+          </h2>
+          {pricing.pendingAction === "cancel" ? <p className="text-sm text-zinc-300">
+            {pricing.billing?.status === "paused" ? "your paused subscription will end immediately."
+              : `your subscription will end ${pricing.billing?.periodEnd ? `on ${new Date(pricing.billing.periodEnd).toLocaleDateString()}` : "at the next renewal"}. you keep access until then, and it will not renew.`}
+          </p> : <div className="space-y-2 text-sm text-zinc-300">
+            <p>{pricing.pendingAction.preview.effectiveAt
+              ? `${pricing.pendingAction.preview.plan} starts on ${new Date(pricing.pendingAction.preview.effectiveAt).toLocaleDateString()}. you keep your current allowances until then. no charge or credit today.`
+              : `your new plan starts after payment is confirmed. estimated charge today: ${pricing.pendingAction.preview.chargeNow}.`}</p>
+            <p>next payment: {pricing.pendingAction.preview.nextTotal} on {new Date(pricing.pendingAction.preview.nextBilledAt).toLocaleDateString()}. then {pricing.pendingAction.preview.monthlyTotal} per month.</p>
+          </div>}
+          <div className="flex flex-wrap gap-3">
+            <button type="button" autoFocus aria-describedby="subscription-confirm-title" className={cn(buttonClass, "w-auto")} disabled={pricing.managing || pricing.syncing} onClick={() => void pricing.confirmAction()}>
+              {pricing.managing ? "updating subscription…" : pricing.pendingAction === "cancel" ? "confirm cancellation" : "confirm plan change"}
+            </button>
+            <button type="button" className={cn(buttonClass, "w-auto")} disabled={pricing.managing || pricing.syncing} onClick={pricing.dismissAction}>keep current plan</button>
+          </div>
+        </section>}
+
         <div className="space-y-3 text-sm">
           <p role="status" className="text-zinc-300">{pricing.loading ? "loading local prices…" : pricing.notice}</p>
           {pricing.billing?.status && <p className="text-zinc-300">
             {pricing.billing.plan ?? "subscription"} · {pricing.billing.status}
             {!pricing.billing.paidAccess && " · free allowance applies"}
-            {pricing.billing.scheduledChange && ` · ${pricing.billing.scheduledChange.action} scheduled for ${new Date(pricing.billing.scheduledChange.effectiveAt).toLocaleString()}`}
+            {pricing.billing.scheduledChange && ` · ${pricing.billing.scheduledChange.action === "downgrade" ? `change to ${pricing.billing.scheduledChange.plan}` : pricing.billing.scheduledChange.action} scheduled for ${new Date(pricing.billing.scheduledChange.effectiveAt).toLocaleString()}`}
           </p>}
+          {user && pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.scheduledChange?.action !== "cancel" &&
+            <button type="button" className={linkClass} onClick={pricing.requestCancellation}
+              disabled={pricing.billingLoading || pricing.managing || pricing.syncing || Boolean(pricing.selectedPlan) || Boolean(pricing.pendingAction) || pricing.updatePending}>
+              cancel subscription
+            </button>}
           {pricing.error && <div className="space-y-2">
             <p role="alert" className="text-red-300">{pricing.error}</p>
-            {pricing.pendingTransaction ? <button type="button" onClick={() => void pricing.confirmSubscription()} disabled={pricing.syncing} className={linkClass}>check subscription</button>
-              : <button type="button" onClick={pricing.retry} disabled={pricing.loading || pricing.billingLoading} className={linkClass}>retry</button>}
+            {pricing.pendingTransaction ? <button type="button" onClick={() => void pricing.confirmSubscription()} disabled={pricing.syncing || pricing.managing} className={linkClass}>check subscription</button>
+              : <button type="button" onClick={pricing.retry} disabled={pricing.loading || pricing.billingLoading || pricing.managing} className={linkClass}>retry</button>}
           </div>}
           <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">prices include applicable tax for your detected location. checkout confirms the total for your billing address. each generated version counts as one song.</p>
           <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">unused songs and lyric requests do not roll over. chat and audio analysis reset at midnight UTC. shared daily limits apply to all plans.</p>

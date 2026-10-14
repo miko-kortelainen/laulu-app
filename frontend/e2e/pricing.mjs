@@ -64,9 +64,41 @@ try {
   await run('find', 'role', 'button', 'click', '--name', 'retry', '--exact');
   await run('wait', '--fn', `${card('starter')}.querySelector('button').disabled === false`);
   assert.equal(await run('eval', "document.querySelector('[role=alert]')"), 'null');
+
+  const paidBilling = { ...billing, plan: 'pro', status: 'active', paidAccess: true, periodEnd: '2026-11-13T12:00:00Z' };
+  const preview = { plan: 'starter', subscriptionUpdatedAt: '2026-10-14T12:00:00Z', effectiveAt: paidBilling.periodEnd,
+    chargeNow: '$0.00', monthlyTotal: '$9.00', nextTotal: '$9.00', nextBilledAt: paidBilling.periodEnd };
+  await run('network', 'unroute', '**/api/billing');
+  await run('network', 'route', '**/api/billing', '--body', JSON.stringify(paidBilling));
+  await run('network', 'route', '**/api/billing/preview', '--body', JSON.stringify(preview));
+  await run('network', 'route', '**/api/billing/change', '--body', '{}');
+  await run('network', 'route', '**/api/billing/cancel', '--body', '{}');
+  await run('eval', 'location.reload()');
+  await run('wait', '--fn', `${card('starter')}.querySelector('button')?.disabled === false`);
+  assert.equal(await run('eval', `${card('pro')}.querySelector('button').disabled`), 'true');
+  await run('find', 'role', 'button', 'click', '--name', 'change to starter', '--exact');
+  await run('wait', '--text', 'no charge or credit today.');
+  await run('find', 'role', 'button', 'click', '--name', 'keep current plan', '--exact');
+  assert.equal(await run('eval', "document.querySelector('#subscription-confirm-title')"), 'null');
+  await run('find', 'role', 'button', 'click', '--name', 'change to starter', '--exact');
+  await run('wait', '--text', 'no charge or credit today.');
+  await run('network', 'unroute', '**/api/billing');
+  await run('network', 'route', '**/api/billing', '--body', JSON.stringify({ ...paidBilling,
+    scheduledChange: { action: 'downgrade', effectiveAt: paidBilling.periodEnd, plan: 'starter' } }));
+  await run('find', 'role', 'button', 'click', '--name', 'confirm plan change', '--exact');
+  await run('wait', '--text', 'starter starts at your next renewal.');
+  assert.equal(await run('eval', `${card('ultra')}.querySelector('button').disabled`), 'true');
+  await run('find', 'role', 'button', 'click', '--name', 'cancel subscription', '--exact');
+  await run('wait', '--text', 'it will not renew.');
+  await run('network', 'unroute', '**/api/billing');
+  await run('network', 'route', '**/api/billing', '--body', JSON.stringify({ ...paidBilling,
+    scheduledChange: { action: 'cancel', effectiveAt: paidBilling.periodEnd } }));
+  await run('find', 'role', 'button', 'click', '--name', 'confirm cancellation', '--exact');
+  await run('wait', '--text', 'cancellation is scheduled.');
+  assert.equal(await run('eval', `${card('pro')}.querySelector('button').textContent.trim()`), JSON.stringify('current plan'));
   await run('set', 'viewport', '390', '844');
   assert.equal(await run('eval', 'document.documentElement.scrollWidth <= innerWidth'), 'true');
-  console.log('Pricing E2E passed: public and signed-in plan allowances, checkout gating, edited values after reload, request failure, malformed data, retry recovery, and mobile width. All billing calls were mocked.');
+  console.log('Pricing E2E passed: plan allowances, checkout, recovery, downgrade preview and confirmation, cancellation, and mobile width. All billing calls were mocked.');
 } catch (error) {
   process.stderr.write(`${await run('snapshot')}\n`);
   throw error;

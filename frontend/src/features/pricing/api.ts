@@ -7,7 +7,7 @@ export interface Billing {
   paidAccess: boolean;
   periodEnd: string | null;
   transactionId: string | null;
-  scheduledChange: { action: string; effectiveAt: string } | null;
+  scheduledChange: { action: string; effectiveAt: string; plan?: string } | null;
 }
 
 export async function getBilling(signal?: AbortSignal): Promise<Billing> {
@@ -23,10 +23,55 @@ export async function getBilling(signal?: AbortSignal): Promise<Billing> {
   }
   const change = "scheduledChange" in data ? data.scheduledChange : undefined;
   if (change !== null && (!change || typeof change !== "object" || !("action" in change) || typeof change.action !== "string" ||
-      !("effectiveAt" in change) || typeof change.effectiveAt !== "string" || !Number.isFinite(Date.parse(change.effectiveAt)))) {
+      !("effectiveAt" in change) || typeof change.effectiveAt !== "string" || !Number.isFinite(Date.parse(change.effectiveAt)) ||
+      ("plan" in change && (typeof change.plan !== "string" || !["starter", "pro", "ultra"].includes(change.plan))))) {
     throw new Error("invalid subscription response.");
   }
   return data as Billing;
+}
+
+export interface PlanChangePreview {
+  plan: string;
+  subscriptionUpdatedAt: string;
+  effectiveAt: string | null;
+  chargeNow: string;
+  monthlyTotal: string;
+  nextTotal: string;
+  nextBilledAt: string;
+}
+
+async function subscriptionRequest(action: "preview" | "change" | "cancel", body: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
+  const response = await authenticatedFetch(`/api/billing/${action}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal,
+  });
+  if (!response.ok) {
+    const data: unknown = await response.json().catch(() => null);
+    throw new Error(data && typeof data === "object" && "error" in data && typeof data.error === "string"
+      ? data.error : "could not update your subscription. check its status before retrying.");
+  }
+  return response;
+}
+
+export async function previewPlanChange(plan: string, signal: AbortSignal): Promise<PlanChangePreview> {
+  const response = await subscriptionRequest("preview", { plan }, signal);
+  const data: unknown = await response.json();
+  if (!data || typeof data !== "object") throw new Error("invalid plan change preview.");
+  const preview = data as Record<string, unknown>;
+  if (preview.plan !== plan ||
+      !["chargeNow", "monthlyTotal", "nextTotal"].every(field => typeof preview[field] === "string" && preview[field].trim()) ||
+      !["subscriptionUpdatedAt", "nextBilledAt"].every(field => typeof preview[field] === "string" && Number.isFinite(Date.parse(preview[field]))) ||
+      (preview.effectiveAt !== null && (typeof preview.effectiveAt !== "string" || !Number.isFinite(Date.parse(preview.effectiveAt))))) {
+    throw new Error("invalid plan change preview.");
+  }
+  return data as PlanChangePreview;
+}
+
+export async function changeSubscription(preview: PlanChangePreview, signal: AbortSignal): Promise<void> {
+  await subscriptionRequest("change", { plan: preview.plan, subscriptionUpdatedAt: preview.subscriptionUpdatedAt }, signal);
+}
+
+export async function cancelSubscription(signal: AbortSignal): Promise<void> {
+  await subscriptionRequest("cancel", {}, signal);
 }
 
 export async function createCheckout(plan: string, signal: AbortSignal): Promise<string> {

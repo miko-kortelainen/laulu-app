@@ -1,9 +1,71 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import test from 'node:test';
-import { createCheckout, getPaddle, processPaddleEvent } from '../src/billing.js';
+import { cancelSubscription, changeSubscription, createCheckout, getPaddle, processPaddleEvent } from '../src/billing.js';
 
 // Offline payloads and a mocked database transport; no Paddle or database entities are created.
+test('plan changes enforce ownership, replace the tier, preserve declined payments, and defer downgrades', async () => {
+  process.env.PADDLE_SANDBOX_API_KEY = 'pdl_sdbx_offline_billing';
+  process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET = 'offline_notification_signing_secret';
+  process.env.SUPABASE_URL = 'https://offline-billing.supabase.co';
+  process.env.SUPABASE_SECRET_KEY = 'sb_secret_offline';
+  const prices = ['pri_01m4tvkjam9nptz0f1ngrbr9mj', 'pri_01m4tvmm85j15s4vjd9ykmsa0d', 'pri_01m4tvnr6xfnyk1nwtyt5vma9e'];
+  [process.env.PADDLE_STARTER_PRICE_ID, process.env.PADDLE_PRO_PRICE_ID, process.env.PADDLE_ULTRA_PRICE_ID] = prices;
+  const userId = '9f218508-49ca-4d85-9f7b-08dc3383fd82';
+  const subscriptionId = 'sub_01m4tvkjam9nptz0f1ngrbr9mj';
+  const customerId = 'ctm_01m4tvkjam9nptz0f1ngrbr9mj';
+  const updatedAt = '2026-10-14T12:00:00Z';
+  const price = { id: prices[1], status: 'active', billing_cycle: { interval: 'month', frequency: 1 },
+    trial_period: null, unit_price: { amount: '1900', currency_code: 'USD' }, quantity: { minimum: 1, maximum: 1 } };
+  const subscription = { id: subscriptionId, customer_id: customerId, status: 'active', updated_at: updatedAt,
+    collection_mode: 'automatic', billing_cycle: price.billing_cycle,
+    current_billing_period: { starts_at: '2026-10-13T12:00:00Z', ends_at: '2026-11-13T12:00:00Z' },
+    items: [{ price, quantity: 1, product: { id: 'pro_01m4tvkjam9nptz0f1ngrbr9mj' } }] };
+  const originalFetch = globalThis.fetch;
+  let ownerFound = true;
+  let customerMatches = true;
+  let pendingChange = false;
+  const writes: unknown[] = [];
+  globalThis.fetch = async (input, options) => {
+    const request = new Request(input, options);
+    const url = new URL(request.url);
+    if (url.hostname === 'offline-billing.supabase.co') {
+      assert.equal(url.pathname, '/rest/v1/paddle_subscriptions');
+      assert.equal(url.searchParams.get('user_id'), `eq.${userId}`);
+      return Response.json(ownerFound ? { id: subscriptionId, updated_at: updatedAt, customer_id: customerMatches ? customerId : 'another-customer',
+        scheduled_change: pendingChange ? { action: 'downgrade' } : null } : null);
+    }
+    if (url.pathname.startsWith('/prices/')) return Response.json({ data: { ...price, id: url.pathname.split('/').at(-1) } });
+    if (request.method === 'GET') return Response.json({ data: subscription });
+    writes.push(await request.json());
+    return Response.json({ data: subscription });
+  };
+  try {
+    await assert.rejects(changeSubscription(userId, 'unknown', updatedAt), /valid monthly plan/);
+    await assert.rejects(changeSubscription(userId, 'ultra', 'old-preview'), /subscription changed/);
+    ownerFound = false;
+    await assert.rejects(cancelSubscription(userId), /no subscription/);
+    ownerFound = true;
+    customerMatches = false;
+    await assert.rejects(changeSubscription(userId, 'ultra', updatedAt), /ownership/);
+    customerMatches = true;
+    pendingChange = true;
+    await assert.rejects(changeSubscription(userId, 'ultra', updatedAt), /scheduled change/);
+    pendingChange = false;
+    assert.equal(writes.length, 0, 'rejected requests must not mutate Paddle');
+    await changeSubscription(userId, 'ultra', updatedAt);
+    await changeSubscription(userId, 'starter', updatedAt);
+    await cancelSubscription(userId);
+    assert.deepEqual(writes, [
+      { items: [{ price_id: prices[2], quantity: 1 }], proration_billing_mode: 'prorated_immediately', on_payment_failure: 'prevent_change' },
+      { items: [{ price_id: prices[0], quantity: 1 }], proration_billing_mode: 'do_not_bill', on_payment_failure: 'prevent_change' },
+      { effective_from: 'next_billing_period' },
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('raw webhook verification rejects tampering and dispatches only supported verified events', async () => {
   process.env.PADDLE_SANDBOX_API_KEY = 'pdl_sdbx_offline_billing';
   process.env.SUPABASE_URL = 'https://offline-billing.supabase.co';

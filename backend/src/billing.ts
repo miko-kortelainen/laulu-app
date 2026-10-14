@@ -2,7 +2,7 @@ import {
   Environment, EventName, Paddle, type EventEntity,
   type CustomerCreatedEvent, type CustomerUpdatedEvent,
   type SubscriptionNotification, type SubscriptionCreatedNotification,
-  type TransactionCompletedEvent,
+  type TransactionCompletedEvent, type Subscription, type UpdateSubscriptionRequestBody,
 } from '@paddle/paddle-node-sdk';
 import { database } from './database.js';
 
@@ -95,6 +95,103 @@ export async function createCheckout(userId: string, requestedPlan: unknown): Pr
   // Ownership comes from the authenticated server request, never checkout customData or email.
   await billingRpc('register_paddle_checkout', { p_transaction_id: transaction.id, p_user_id: userId });
   return transaction.id;
+}
+
+async function ownedSubscription(userId: string): Promise<{ subscription: Subscription; pendingChange: boolean; synced: boolean }> {
+  const result = await database().from('paddle_subscriptions').select('id, customer_id, scheduled_change, updated_at')
+    .eq('user_id', userId).neq('status', 'canceled').order('updated_at', { ascending: false }).limit(1)
+    .abortSignal(AbortSignal.timeout(3500)).maybeSingle();
+  if (result.error) throw new Error('could not load your subscription. try again.');
+  const row: unknown = result.data;
+  if (!row || typeof row !== 'object' || !('id' in row) || typeof row.id !== 'string' ||
+      !/^sub_[a-z0-9]{26}$/.test(row.id) || !('customer_id' in row) || typeof row.customer_id !== 'string') {
+    throw new Error('no subscription to manage.');
+  }
+  const subscription = await getPaddle().subscriptions.get(row.id);
+  if (subscription.customerId !== row.customer_id) throw new Error('subscription ownership could not be verified.');
+  return {
+    subscription, pendingChange: 'scheduled_change' in row && row.scheduled_change !== null,
+    synced: 'updated_at' in row && typeof row.updated_at === 'string' && Date.parse(row.updated_at) === Date.parse(subscription.updatedAt),
+  };
+}
+
+async function planChange(userId: string, requestedPlan: unknown) {
+  if (!process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET) throw new Error('subscription fulfillment is not configured yet.');
+  const catalogue = plans();
+  const plan = catalogue.find(item => item.name === requestedPlan);
+  if (!plan) throw new Error('choose a valid monthly plan.');
+  const { subscription, pendingChange, synced } = await ownedSubscription(userId);
+  if (!synced) throw new Error('your subscription update is processing. check its status before changing plans.');
+  if (subscription.status !== 'active' || subscription.collectionMode !== 'automatic') {
+    throw new Error('only active monthly subscriptions can change plans.');
+  }
+  if (pendingChange || subscription.scheduledChange) throw new Error('your subscription already has a scheduled change.');
+  const item = subscription.items.length === 1 ? subscription.items[0] : undefined;
+  const current = catalogue.find(candidate => candidate.priceId === item?.price.id);
+  if (!current || item?.quantity !== 1 || subscription.billingCycle.interval !== 'month' || subscription.billingCycle.frequency !== 1) {
+    throw new Error('this subscription cannot change plans here.');
+  }
+  if (current.name === plan.name) throw new Error('you already have this plan.');
+  const price = await getPaddle().prices.get(plan.priceId);
+  if (price.status !== 'active' || price.billingCycle?.interval !== 'month' || price.billingCycle.frequency !== 1 || price.trialPeriod) {
+    throw new Error('this monthly plan is unavailable.');
+  }
+  const downgrade = catalogue.indexOf(plan) < catalogue.indexOf(current);
+  const effectiveAt = downgrade ? subscription.currentBillingPeriod?.endsAt : null;
+  if (effectiveAt === undefined) throw new Error('your renewal date is unavailable. try again.');
+  const body: UpdateSubscriptionRequestBody = {
+    items: [{ priceId: plan.priceId, quantity: 1 }],
+    prorationBillingMode: downgrade ? 'do_not_bill' : 'prorated_immediately',
+    onPaymentFailure: 'prevent_change',
+  };
+  return { subscription, plan, effectiveAt, body };
+}
+
+export interface PlanChangePreview {
+  plan: string;
+  subscriptionUpdatedAt: string;
+  effectiveAt: string | null;
+  chargeNow: string;
+  monthlyTotal: string;
+  nextTotal: string;
+  nextBilledAt: string;
+}
+
+export async function previewPlanChange(userId: string, requestedPlan: unknown): Promise<PlanChangePreview> {
+  const { subscription, plan, effectiveAt, body } = await planChange(userId, requestedPlan);
+  const preview = await getPaddle().subscriptions.previewUpdate(subscription.id, body);
+  const recurring = preview.recurringTransactionDetails?.totals;
+  const next = preview.nextTransaction?.details.totals;
+  if (!recurring || !next || !preview.nextBilledAt) throw new Error('subscription prices are unavailable. try again.');
+  function money(amount: string, currency: string): string {
+    if (!/^\d+$/.test(amount) || !Number.isSafeInteger(Number(amount))) throw new Error('invalid subscription price.');
+    const format = new Intl.NumberFormat('en', { style: 'currency', currency });
+    const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+    return format.format(Number(amount) / 10 ** digits);
+  }
+  return {
+    plan: plan.name, subscriptionUpdatedAt: subscription.updatedAt,
+    effectiveAt,
+    chargeNow: money(preview.immediateTransaction?.details.totals.grandTotal ?? '0', subscription.currencyCode),
+    monthlyTotal: money(recurring.total, recurring.currencyCode),
+    nextTotal: money(next.grandTotal, next.currencyCode), nextBilledAt: preview.nextBilledAt,
+  };
+}
+
+export async function changeSubscription(userId: string, requestedPlan: unknown, updatedAt: unknown): Promise<void> {
+  const { subscription, body } = await planChange(userId, requestedPlan);
+  if (typeof updatedAt !== 'string' || subscription.updatedAt !== updatedAt) {
+    throw new Error('your subscription changed. review the new price before confirming.');
+  }
+  await getPaddle().subscriptions.update(subscription.id, body);
+}
+
+export async function cancelSubscription(userId: string): Promise<void> {
+  const { subscription } = await ownedSubscription(userId);
+  if (subscription.status === 'canceled' || subscription.scheduledChange?.action === 'cancel') return;
+  await getPaddle().subscriptions.cancel(subscription.id, {
+    effectiveFrom: subscription.status === 'paused' ? 'immediately' : 'next_billing_period',
+  });
 }
 
 async function sync(entity: 'customer' | 'subscription' | 'transaction', data: Record<string, unknown>, occurredAt: string): Promise<void> {

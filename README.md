@@ -133,9 +133,8 @@ Paid prices come from Paddle's localized price preview. Checkout requires login 
 Verified sandbox subscriptions select starter, pro, or ultra allowances from `public.plan_limits`.
 Paid plans increase chat, audio analysis, monthly songs, and saved-song storage. Shared daily limits still apply.
 
-Apply [the Paddle subscription migration](supabase/migrations/20261013152856_paddle_subscriptions.sql) in Supabase before deploying the backend.
-Run the whole file in the SQL Editor; it uses one transaction and preserves existing accounts and usage.
-It creates server-only customer, subscription, and transaction mirrors and extends atomic song reservations to billing periods.
+The [Paddle subscription migration](supabase/migrations/20261013152856_paddle_subscriptions.sql) creates server-only customer,
+subscription, and transaction mirrors and extends atomic song reservations to billing periods.
 The migration replaces quota functions, so deploy the matching backend and frontend together.
 
 Set these public values in `frontend/.env.local`:
@@ -166,7 +165,7 @@ PADDLE_PRO_PRICE_ID=pri_01m4tvmm85j15s4vjd9ykmsa0d
 PADDLE_ULTRA_PRICE_ID=pri_01m4tvnr6xfnyk1nwtyt5vma9e
 ```
 
-The API key needs price read and transaction read/write permissions. The signing secret belongs to the webhook destination;
+The API key needs price read, transaction read/write, and subscription read/write permissions. The signing secret belongs to the webhook destination;
 it is not the API key. The public frontend price IDs must match the server price IDs.
 Keep these five server-side Paddle values runtime-only in Coolify; disable their build-time availability.
 The permanent sandbox destination is `https://studio.lau.lu/api/paddle/webhook`.
@@ -186,6 +185,24 @@ Scheduled cancellation or pause retains access while the status remains active; 
 The last verified billing period remains in use until Paddle reports renewal. A new period starts a new allowance.
 Confirmed failures refund the original period, once; unknown outcomes stay charged.
 Operation cleanup retains monthly reservations and never touches billing mirrors.
+
+Signed-in subscribers can change or cancel their subscription from `/pricing`.
+Plan changes show Paddle's price preview before confirmation. Upgrades charge the prorated difference immediately.
+Downgrades bill the full lower price at the next renewal and keep the current allowances until that period starts.
+Further plan changes are blocked while a downgrade or cancellation is scheduled. Cancellation remains available during a pending downgrade.
+Cancellation takes effect at the end of the paid period. Paused subscriptions end immediately, as required by Paddle.
+Allowances change only after a verified subscription webhook updates the mirror.
+
+Before deploying these controls, apply `20261014104231_subscription_plan_changes.sql` with the linked Supabase CLI:
+
+```bash
+supabase migration list
+supabase db push --dry-run
+supabase db push
+```
+
+This migration keeps the previous tier in the subscription mirror for all mid-period downgrades, including dashboard changes.
+The renewal webhook applies the lower tier. Do not deploy the downgrade controls before this migration.
 
 Keep the notification destination and its signing secret, all catalog products/prices, and all billing customers,
 subscriptions, and transactions permanently. Do not delete them as testing cleanup.

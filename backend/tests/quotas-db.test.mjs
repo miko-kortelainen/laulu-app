@@ -20,6 +20,53 @@ function query(sql) {
   });
 }
 
+test('downgrades retain the paid tier through cancellation scheduling and switch at renewal', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  const owner = randomUUID();
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 26);
+  assert.equal(await query(`begin;
+    set local plpgsql.check_asserts = on;
+    insert into auth.users(id) values ('${owner}');
+    set local role service_role;
+    do $$
+    declare
+      event_time timestamptz := clock_timestamp();
+      payload jsonb;
+      billing jsonb;
+    begin
+      perform public.register_paddle_checkout('txn_${suffix}', '${owner}');
+      payload := jsonb_build_object('id', 'sub_${suffix}', 'customer_id', 'ctm_${suffix}',
+        'transaction_id', 'txn_${suffix}', 'status', 'active', 'plan', 'pro',
+        'period_start', event_time, 'period_end', event_time + interval '1 month', 'updated_at', event_time);
+      perform public.sync_paddle_event('subscription', payload, event_time);
+      payload := payload || jsonb_build_object('plan', 'starter', 'updated_at', event_time + interval '1 minute');
+      perform public.sync_paddle_event('subscription', payload, event_time + interval '1 minute');
+      billing := public.get_billing('${owner}');
+      assert billing->>'plan' = 'pro', 'a downgrade keeps the paid allowances';
+      assert billing->'scheduledChange'->>'plan' = 'starter', 'the next tier stays visible';
+      payload := payload || jsonb_build_object('updated_at', event_time + interval '2 minutes',
+        'scheduled_change', jsonb_build_object('action', 'cancel', 'effectiveAt', event_time + interval '1 month'));
+      perform public.sync_paddle_event('subscription', payload, event_time + interval '2 minutes');
+      billing := public.get_billing('${owner}');
+      assert billing->>'plan' = 'pro' and billing->'scheduledChange'->>'action' = 'cancel',
+        'cancellation keeps paid access and takes precedence over the pending downgrade';
+      payload := payload || jsonb_build_object('scheduled_change', null, 'updated_at', event_time + interval '3 minutes');
+      perform public.sync_paddle_event('subscription', payload, event_time + interval '3 minutes');
+      payload := payload || jsonb_build_object('period_start', event_time + interval '1 month',
+        'period_end', event_time + interval '2 months', 'scheduled_change', null,
+        'updated_at', event_time + interval '1 month');
+      perform public.sync_paddle_event('subscription', payload, event_time + interval '1 month');
+      billing := public.get_billing('${owner}');
+      assert billing->>'plan' = 'starter' and billing->'scheduledChange' = 'null'::jsonb, 'renewal applies the lower tier';
+    end;
+    $$;
+    rollback;`), '');
+});
+
 test('billing preserves newer state, resets monthly allowances, and refunds the original period once', {
   skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
 }, async () => {
@@ -418,7 +465,8 @@ test('plan edits update every allowance without resetting usage or granting cust
       insert into public.paddle_subscriptions(id, user_id, customer_id, status, plan, period_start, period_end, updated_at, occurred_at)
         values ('${subscription}', '${owner}', '${customer}', 'active', 'starter', now(), now() + interval '1 month', now(), now());
       for limits in select * from public.plan_limits where plan <> 'free' loop
-        update public.paddle_subscriptions set plan = limits.plan where id = '${subscription}';
+        update public.paddle_subscriptions set plan = limits.plan,
+          period_start = period_start + interval '1 month', period_end = period_end + interval '1 month' where id = '${subscription}';
         usage := public.get_usage('${owner}', '{}');
         assert usage->>'plan' = limits.plan;
         assert (usage->'chat'->>'limit')::integer = limits.chat_daily;
@@ -426,7 +474,8 @@ test('plan edits update every allowance without resetting usage or granting cust
         assert (usage->'generation'->>'limit')::integer = limits.songs_monthly;
         assert (usage->'storage'->>'limit')::bigint = limits.storage_bytes;
       end loop;
-      update public.paddle_subscriptions set plan = 'starter' where id = '${subscription}';
+      update public.paddle_subscriptions set plan = 'starter',
+        period_start = period_start + interval '1 month', period_end = period_end + interval '1 month' where id = '${subscription}';
       update public.global_usage set usage_date = current_date, used = 0;
       perform public.reserve_usage('${owner}', 'chat', gen_random_uuid(), 0, '{}', '${globalLimits}');
       perform public.reserve_usage('${owner}', 'analysis', gen_random_uuid(), 0, '{}', '${globalLimits}');
