@@ -29,6 +29,7 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
         <dl className="space-y-5 text-sm">
           {[
             ["email", user.email ?? "not available"],
+            ["tier", usage?.plan ?? (usageError ? "not available" : "loading...")],
             ["email status", user.email_confirmed_at ? "confirmed" : "not confirmed"],
             ["member since", formatDate(user.created_at)],
             ["last sign-in", formatDate(user.last_sign_in_at)],
@@ -40,7 +41,7 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
           ))}
         </dl>
         <section aria-labelledby="allowances-heading" className="space-y-2 border-t border-white/10 pt-4 text-xs text-zinc-400">
-          <h2 id="allowances-heading" className="font-medium text-zinc-300">allowances{usage && ` · ${usage.plan}`}</h2>
+          <h2 id="allowances-heading" className="font-medium text-zinc-300">allowances</h2>
           {usage ? <>
             <dl className="space-y-1 tabular-nums">
               {([

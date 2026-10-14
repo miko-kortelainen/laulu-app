@@ -89,7 +89,7 @@ export async function createCheckout(plan: string, signal: AbortSignal): Promise
 export const paidPlans = [
   { name: "starter", description: "for occasional song ideas", priceId: import.meta.env.VITE_PADDLE_STARTER_PRICE_ID },
   { name: "pro", description: "for a regular creative practice", priceId: import.meta.env.VITE_PADDLE_PRO_PRICE_ID },
-  { name: "ultra", description: "for more versions and experiments", priceId: import.meta.env.VITE_PADDLE_ULTRA_PRICE_ID },
+  { name: "ultra", description: "for the most usage", priceId: import.meta.env.VITE_PADDLE_ULTRA_PRICE_ID },
 ] as const;
 
 export interface PlanLimits {

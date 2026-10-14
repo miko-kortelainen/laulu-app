@@ -12,12 +12,11 @@ function Allowances({ limits }: { limits?: PlanLimits }) {
   if (!limits) return <li>allowances unavailable</li>;
   const storage = limits.storage_bytes / 1024 / 1024;
   return <>
-    <li><strong className="font-semibold text-zinc-100">{limits.plan === "free" ? limits.songs_daily : limits.songs_monthly} songs</strong> {limits.plan === "free" ? "per UTC day" : "per billing month"}</li>
-    <li>{limits.chat_daily} chat messages per UTC day</li>
-    <li>{limits.plan === "free" ? limits.lyrics_daily : limits.lyrics_monthly} lyric requests {limits.plan === "free" ? "per UTC day" : "per billing month"}</li>
-    <li>{limits.analysis_daily} audio analyses per UTC day</li>
-    <li>{storage >= 1024 ? `${storage / 1024} GiB` : `${storage} MiB`} of saved-song storage</li>
-    <li>save and download your songs</li>
+    <li><strong className="font-semibold text-zinc-100">{limits.plan === "free" ? limits.songs_daily : limits.songs_monthly} songs</strong> {limits.plan === "free" ? "per day" : "per month"}</li>
+    <li>{limits.chat_daily} chat messages per day</li>
+    <li>{limits.plan === "free" ? limits.lyrics_daily : limits.lyrics_monthly} lyric requests {limits.plan === "free" ? "per day" : "per month"}</li>
+    <li>{limits.analysis_daily} audio analyses per day</li>
+    <li>{storage >= 1024 ? `${storage / 1024} GiB` : `${storage} MiB`} for your song library</li>
   </>;
 }
 
@@ -64,7 +63,7 @@ export function PricingPage({ user }: { user?: User }) {
             return (
               <section key={plan.name} aria-labelledby={`plan-${plan.name}`} className={cn(
                 "flex flex-col rounded-xl border bg-zinc-900/60 p-6",
-                featured ? "border-amber-200/50 bg-amber-200/[0.04]" : "border-white/10",
+                featured ? "pricing-gradient-border border-transparent" : "border-white/10",
               )}>
                 <p className={cn("mb-4 text-xs", featured ? "text-amber-200" : "text-zinc-400")}>{featured ? "recommended" : "monthly plan"}</p>
                 <h2 id={`plan-${plan.name}`} className="text-lg font-semibold">{plan.name}</h2>
@@ -76,10 +75,10 @@ export function PricingPage({ user }: { user?: User }) {
                 </ul>
                 {user ? <button type="button" disabled={pricing.loading || !pricing.limitsReady || pricing.billingLoading || !pricing.billing || !price || Boolean(pricing.selectedPlan) || pricing.syncing || pricing.managing || Boolean(pricing.pendingAction) || pricing.updatePending || currentPlan ||
                     (hasSubscription && (pricing.billing?.status !== "active" || Boolean(pricing.billing.scheduledChange)))}
-                  onClick={() => void pricing.choosePlan(plan)} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
+                  onClick={() => void pricing.choosePlan(plan)} className={buttonClass}>
                   {pricing.selectedPlan === plan.name ? hasSubscription ? "loading preview…" : "opening checkout…"
                     : currentPlan ? "current plan" : hasSubscription ? `change to ${plan.name}` : `choose ${plan.name}`}
-                </button> : <Link to="/login" state={{ from: "/pricing" }} className={cn(buttonClass, featured && "border-transparent bg-amber-200 text-zinc-950 hover:bg-amber-100")}>
+                </button> : <Link to="/login" state={{ from: "/pricing" }} className={buttonClass}>
                   {`log in to choose ${plan.name}`}
                 </Link>}
               </section>
