@@ -125,7 +125,8 @@ Saved storage counts generated songs and their pending reservations. Uploads do 
 The chat agent keeps 16 recent messages and allows three model calls per request.
 Its budgets are 20,000 total tokens and 4,096 output tokens, with at most 4,096 output tokens per model call.
 Before each call, it checks the estimated input size and the reported usage, then reduces the remaining output allowance.
-Oversized requests stop before the next model call. Start a new chat if retained context exhausts the budget.
+It trims older history when needed to leave room for the reply, preserving the latest request and complete tool pairs.
+Requests stop if they still cannot fit after history trimming, or if the output or model-call budget is exhausted.
 Nebius input sizing uses the SDK estimate. This check reduces overshoot but does not guarantee an exact billed-token ceiling.
 The separate Qwen lyrics agent keeps its 8,192-token completion budget, including reasoning, to preserve complete lyrics.
 
@@ -281,4 +282,5 @@ Plan database checks use `npm --prefix backend run test:quotas:db` with `QUOTA_T
 
 See [COOLIFY.md](COOLIFY.md) for deployment at `studio.lau.lu`, environment configuration, persistent storage, and backups.
 The Docker image includes FFmpeg and serves both the frontend and API.
-Production tracing is disabled. Development tracing is optional through `LANGSMITH_*` values in the backend environment example.
+Tracing is controlled by `LANGSMITH_TRACING` in every environment and defaults to `false` in the Docker image.
+Set it to `true` to enable tracing, with `LANGSMITH_API_KEY` configured. Set `LANGSMITH_PROJECT` to select the project.

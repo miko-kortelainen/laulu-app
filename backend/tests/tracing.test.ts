@@ -7,19 +7,22 @@ import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { generateMusic } from '../src/music.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 
-test('production beta disables tracing even when deployment settings enable it', async () => {
-  await promisify(execFile)(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `
+test('production tracing follows the runtime environment setting', async () => {
+  for (const enabled of ['true', 'false']) {
+    await promisify(execFile)(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import { Client } from 'langsmith';
     import { traceable } from 'langsmith/traceable';
     await import(${JSON.stringify(new URL('../src/model.js', import.meta.url).href)});
-    assert.equal(process.env.LANGSMITH_TRACING, 'false');
+    assert.equal(process.env.LANGSMITH_TRACING, ${JSON.stringify(enabled)});
     let runs = 0;
     Client.prototype.createRun = async () => { runs++; };
     Client.prototype.updateRun = async () => { runs++; };
-    assert.equal(await traceable(async () => 'private beta reply')(), 'private beta reply');
-    assert.equal(runs, 0);
-  `], { env: { ...process.env, NODE_ENV: 'production', LANGSMITH_TRACING: 'true', LANGCHAIN_TRACING: 'true' } });
+    assert.equal(await traceable(async () => 'offline reply')(), 'offline reply');
+    assert.equal(runs > 0, ${enabled === 'true'});
+  `], { env: { ...process.env, NODE_ENV: 'production', LANGSMITH_TRACING: enabled,
+    LANGSMITH_API_KEY: 'offline-tracing-key', LANGCHAIN_TRACING: 'true' } });
+  }
 });
 
 test('agent traces contain model and tool runs, errors, and conversation metadata', async () => {

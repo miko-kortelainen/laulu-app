@@ -75,11 +75,13 @@ Keep these values in Coolify as runtime variables:
 ```dotenv
 NODE_ENV=production
 PORT=3001
-LANGSMITH_TRACING=false
+LANGSMITH_TRACING={{vault.LANGSMITH_TRACING}}
 ALLOWED_ORIGINS=https://studio.lau.lu
 ```
 
 The Dockerfile supplies the first three defaults. Runtime variables override image defaults.
+Set `LANGSMITH_TRACING` to `true` or `false` in Doppler, then redeploy to refresh the runtime variables.
+Tracing also requires `LANGSMITH_API_KEY`. Set `LANGSMITH_PROJECT` to select the project.
 Provider API keys remain in Cloudflare AI Gateway's BYOK provider settings.
 The image contains no development `.env` files, uploads, recovery audio, or model weights.
 

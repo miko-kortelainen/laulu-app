@@ -167,6 +167,30 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     assert.equal(requests.slice(extendedStart).filter(({ model }) => model === getModelId()).length, 3);
     assert.equal(requests.slice(extendedStart).filter(({ model }) => model === 'Qwen/Qwen3.8-27B').length, 1);
 
+    // Full history is trimmed so a successful lyric edit can still receive its final reply.
+    await resetAgentSession(sessionId);
+    agent = getOrCreateAgent(sessionId);
+    for (let index = 0; index < 8; index++) {
+      agent.messages.push(new Message({ role: 'user', content: [new TextBlock('a'.repeat(3_000))] }),
+        new Message({ role: 'assistant', content: [new TextBlock('a'.repeat(3_000))] }));
+    }
+    mainCalls = 0;
+    mainTurnCycle = 2;
+    mainInputTokens = 7875;
+    mainOutputTokens = 376;
+    lyricRequest = 'change the lyrics to be more ironic and funny';
+    const fullHistoryStart = requests.length;
+    const fullHistory = await agent.invoke('make the lyrics more ironic and funny');
+    assert.equal(fullHistory.toString(), 'the form is updated.');
+    assert.deepEqual(fullHistory.invocationState.musicPrompt, { ...currentBrief, lyrics: revisedLyrics });
+    const fullHistoryRequests = requests.slice(fullHistoryStart).filter(({ model }) => model === getModelId());
+    assert.equal(fullHistoryRequests.length, 2);
+    const finalMessages = JSON.stringify(fullHistoryRequests[1].messages);
+    assert.ok(finalMessages.includes('make the lyrics more ironic and funny'), 'keep the current user request');
+    assert.ok(finalMessages.includes('i move the chair away.'), 'keep the revised lyrics in the tool result');
+    assert.ok(agent.messages.length < 16, 'remove older history to leave room for the reply');
+    mainOutputTokens = 5;
+
     // Token spend stops another main turn, and the next user message has a fresh budget.
     mainInputTokens = 20_000;
     mainTurnCycle = 2;

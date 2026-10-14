@@ -61,22 +61,28 @@ export function getOrCreateAgent(sessionId: string): Agent {
   }
 
   const model = createNebiusModel();
+  const conversationManager = new SlidingWindowConversationManager({ windowSize: contextWindowSize });
   const agent = new Agent({
     model: model,
     tools: [updateMusicFormTool, analyzeAudioTool],
     systemPrompt: readFileSync(new URL('../prompts/system.md', import.meta.url), 'utf8').trim(),
     printer: false,
     retryStrategy: null,
-    conversationManager: new SlidingWindowConversationManager({ windowSize: contextWindowSize }),
+    conversationManager,
   });
   agent.addHook(BeforeModelCallEvent, async event => {
     const calls = typeof event.invocationState.chatModelCalls === 'number' ? event.invocationState.chatModelCalls : 0;
     const usage = event.agent.metrics.latestAgentInvocation?.usage;
     const outputRemaining = chatOutputTokens - (usage?.outputTokens ?? 0);
-    const input = await model.countTokens(agent.messages, {
-      systemPrompt: agent.systemPrompt, toolSpecs: agent.tools.map(tool => tool.toolSpec),
-    }).catch(() => undefined);
-    const totalRemaining = chatTotalTokens - (usage?.totalTokens ?? 0) - (input ?? chatTotalTokens);
+    let input: number | undefined;
+    let totalRemaining: number;
+    do {
+      input = await model.countTokens(agent.messages, {
+        systemPrompt: agent.systemPrompt, toolSpecs: agent.tools.map(tool => tool.toolSpec),
+      }).catch(() => undefined);
+      totalRemaining = chatTotalTokens - (usage?.totalTokens ?? 0) - (input ?? chatTotalTokens);
+    } while (calls < 3 && outputRemaining > 0 && input !== undefined && Number.isFinite(input) && input >= 0 &&
+      totalRemaining < outputRemaining && conversationManager.reduce({ agent, model }));
     if (calls >= 3 || input === undefined || !Number.isFinite(input) || input < 0 || outputRemaining < 1 || totalRemaining < 1) {
       event.cancel = 'this request reached its token budget. shorten your message or start a new chat to continue.';
       return;

@@ -6,7 +6,7 @@ export function PrivacyPage() {
       <article className="space-y-7 text-sm leading-relaxed text-zinc-300" aria-labelledby="privacy-title">
         <header>
           <h1 id="privacy-title" className="text-2xl font-semibold text-zinc-100">privacy and beta limits</h1>
-          <p className="mt-2 text-xs text-zinc-400">lau.lu beta · updated 13 October 2026</p>
+          <p className="mt-2 text-xs text-zinc-400">lau.lu beta · updated 14 October 2026</p>
         </header>
         <section className="space-y-2" aria-labelledby="privacy-storage">
           <h2 id="privacy-storage" className="text-base font-semibold text-zinc-100">what is stored</h2>
@@ -16,7 +16,7 @@ export function PrivacyPage() {
         <section className="space-y-2" aria-labelledby="privacy-processing">
           <h2 id="privacy-processing" className="text-base font-semibold text-zinc-100">AI processing</h2>
           <p>Chat messages, conversation context, song briefs, and lyric requests are sent to Nebius. Approved song prompts and lyrics are sent to Google for music generation. Selected audio and your question are sent to QwenCloud when you request audio analysis. These requests pass through Cloudflare AI Gateway.</p>
-          <p>These services process the data under their own policies. Avoid uploading or entering sensitive information. LangSmith tracing is disabled in the production beta.</p>
+          <p>When tracing is enabled, conversation text, song briefs, lyrics, and request results are also sent to LangSmith to help diagnose problems. These services process the data under their own policies. Avoid uploading or entering sensitive information.</p>
         </section>
         <section className="space-y-2" aria-labelledby="privacy-checkout">
           <h2 id="privacy-checkout" className="text-base font-semibold text-zinc-100">sandbox checkout</h2>
