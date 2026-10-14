@@ -123,7 +123,7 @@ Shared `GLOBAL_*` limits still apply to every plan. Increase these separately wh
 Saved storage counts generated songs and their pending reservations. Uploads do not consume this allowance.
 
 The chat agent keeps 16 recent messages and allows three model calls per request.
-Its budgets are 12,000 total tokens and 4,096 output tokens, with at most 4,096 output tokens per model call.
+Its budgets are 16,000 total tokens and 4,096 output tokens, with at most 4,096 output tokens per model call.
 Before each call, it checks the estimated input size and the reported usage, then reduces the remaining output allowance.
 Oversized requests stop before the next model call. Start a new chat if retained context exhausts the budget.
 Nebius input sizing uses the SDK estimate. This check reduces overshoot but does not guarantee an exact billed-token ceiling.

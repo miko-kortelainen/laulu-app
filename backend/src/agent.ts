@@ -18,7 +18,7 @@ interface AgentSession {
 
 const agents = new Map<string, AgentSession>();
 const contextWindowSize = 16;
-const chatTotalTokens = 12_000;
+const chatTotalTokens = 16_000;
 const chatOutputTokens = 4_096;
 const idleTimeoutMs = 30 * 60 * 1000;
 
