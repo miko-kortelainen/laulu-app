@@ -18,6 +18,8 @@ interface AgentSession {
 
 const agents = new Map<string, AgentSession>();
 const contextWindowSize = 16;
+const chatTotalTokens = 12_000;
+const chatOutputTokens = 4_096;
 const idleTimeoutMs = 30 * 60 * 1000;
 
 function scheduleExpiration(sessionId: string, session: AgentSession): void {
@@ -70,18 +72,18 @@ export function getOrCreateAgent(sessionId: string): Agent {
   agent.addHook(BeforeModelCallEvent, async event => {
     const calls = typeof event.invocationState.chatModelCalls === 'number' ? event.invocationState.chatModelCalls : 0;
     const usage = event.agent.metrics.latestAgentInvocation?.usage;
-    const outputRemaining = 2048 - (usage?.outputTokens ?? 0);
+    const outputRemaining = chatOutputTokens - (usage?.outputTokens ?? 0);
     const input = await model.countTokens(agent.messages, {
       systemPrompt: agent.systemPrompt, toolSpecs: agent.tools.map(tool => tool.toolSpec),
     }).catch(() => undefined);
-    const totalRemaining = 8000 - (usage?.totalTokens ?? 0) - (input ?? 8000);
+    const totalRemaining = chatTotalTokens - (usage?.totalTokens ?? 0) - (input ?? chatTotalTokens);
     if (calls >= 3 || input === undefined || !Number.isFinite(input) || input < 0 || outputRemaining < 1 || totalRemaining < 1) {
       event.cancel = 'this request reached its token budget. shorten your message or start a new chat to continue.';
       return;
     }
     event.invocationState.chatModelCalls = calls + 1;
     // shortcut: input sizing is estimated; use native token counting when Nebius supports it.
-    model.updateConfig({ maxTokens: Math.min(2048, outputRemaining, Math.floor(totalRemaining)) });
+    model.updateConfig({ maxTokens: Math.min(chatOutputTokens, outputRemaining, Math.floor(totalRemaining)) });
   });
 
   const session: AgentSession = existing ?? { activeInvocations: 0 };
@@ -94,7 +96,7 @@ export function getOrCreateAgent(sessionId: string): Agent {
       return await invoke(args[0], {
         ...args[1],
         invocationState: { ...args[1]?.invocationState, userId: sessionId },
-        limits: { turns: 3, outputTokens: 2048, totalTokens: 8000 },
+        limits: { turns: 3, outputTokens: chatOutputTokens, totalTokens: chatTotalTokens },
       });
     } finally {
       session.activeInvocations--;
