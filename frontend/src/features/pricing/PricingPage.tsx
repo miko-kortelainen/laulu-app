@@ -14,6 +14,7 @@ function Allowances({ limits }: { limits?: PlanLimits }) {
   return <>
     <li><strong className="font-semibold text-zinc-100">{limits.plan === "free" ? limits.songs_daily : limits.songs_monthly} songs</strong> {limits.plan === "free" ? "per UTC day" : "per billing month"}</li>
     <li>{limits.chat_daily} chat messages per UTC day</li>
+    <li>{limits.plan === "free" ? limits.lyrics_daily : limits.lyrics_monthly} lyric requests {limits.plan === "free" ? "per UTC day" : "per billing month"}</li>
     <li>{limits.analysis_daily} audio analyses per UTC day</li>
     <li>{storage >= 1024 ? `${storage / 1024} GiB` : `${storage} MiB`} of saved-song storage</li>
     <li>save and download your songs</li>
@@ -95,7 +96,7 @@ export function PricingPage({ user }: { user?: User }) {
               : <button type="button" onClick={pricing.retry} disabled={pricing.loading || pricing.billingLoading} className={linkClass}>retry</button>}
           </div>}
           <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">prices include applicable tax for your detected location. checkout confirms the total for your billing address. each generated version counts as one song.</p>
-          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">unused songs do not roll over. chat and audio analysis reset at midnight UTC. shared daily limits apply to all plans.</p>
+          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">unused songs and lyric requests do not roll over. chat and audio analysis reset at midnight UTC. shared daily limits apply to all plans.</p>
         </div>
 
         <footer className="flex flex-wrap gap-x-6 text-xs text-zinc-400">

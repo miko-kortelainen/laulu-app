@@ -86,24 +86,30 @@ The example values are `200`, `30`, and `20`. Missing or zero values disable the
 
 Apply [the plan limits migration](supabase/migrations/20261013212037_plan_limits.sql) before deploying the updated backend and frontend.
 It preserves usage counts and gives existing subscribers their plan allowances.
+Then apply [the lyrics allowances migration](supabase/migrations/20261013223633_lyrics_allowances.sql) before deploying this version.
+It adds separate lyrics usage and sets the paid daily chat limits to 40, 80, and 150.
 
 Edit **Supabase → Table Editor → plan_limits** to change allowances. Paddle controls prices and subscription status.
 The pricing page, usage display, generation reservations, and storage checks all use this table.
 
-| Plan | Chat/day | Analyses/day | Songs | Storage |
-| --- | ---: | ---: | --- | ---: |
-| free | 20 | 10 | 5/day | 512 MiB |
-| starter | 50 | 20 | 30/billing month | 2 GiB |
-| pro | 150 | 50 | 80/billing month | 5 GiB |
-| ultra | 300 | 100 | 180/billing month | 10 GiB |
+| Plan | Chat/day | Analyses/day | Songs | Lyric requests | Storage |
+| --- | ---: | ---: | --- | --- | ---: |
+| free | 20 | 10 | 5/day | 1/day | 512 MiB |
+| starter | 40 | 20 | 30/billing month | 10/billing month | 2 GiB |
+| pro | 80 | 50 | 80/billing month | 30/billing month | 5 GiB |
+| ultra | 150 | 100 | 180/billing month | 60/billing month | 10 GiB |
 
 Use `chat_daily`, `analysis_daily`, `songs_daily`, `songs_monthly`, and `storage_bytes` to set these limits.
+Use `lyrics_daily` for free accounts and `lyrics_monthly` for paid plans. Keep the other lyrics column null.
 The free row uses `songs_daily`. Paid rows use `songs_monthly`. Keep the unused song column null.
 One GiB is `1073741824` bytes. Limits must be nonnegative integers. Zero blocks the corresponding operation.
 
 Edits affect the next quota check and appear when users reload pricing or refresh their allowances. No redeploy is required.
 Edits do not reset usage. Reductions can block further use until usage resets or space becomes available.
 Daily allowances reset at midnight UTC. Paid songs reset with the Paddle billing period and do not roll over.
+Paid lyrics requests use the same billing period. A request reserves one attempt before the Qwen call.
+Failed and uncertain lyrics calls remain charged. Ordinary chat and field edits remain available after lyrics are exhausted.
+The shared chat cap bounds lyrics calls too, because each admitted chat can make at most one lyrics attempt.
 
 Individual overrides remain in `public.user_quotas`. A null field follows the plan.
 The migration replaces old standard defaults with null and preserves other values, including zero blocks.
@@ -112,6 +118,13 @@ The old `QUOTA_*` environment variables are no longer used. Remove them from dep
 
 Shared `GLOBAL_*` limits still apply to every plan. Increase these separately when paid demand requires more capacity.
 Saved storage counts generated songs and their pending reservations. Uploads do not consume this allowance.
+
+The chat agent keeps 16 recent messages and allows three model calls per request.
+Its budgets are 8,000 total tokens and 2,048 output tokens, with at most 2,048 output tokens per model call.
+Before each call, it checks the estimated input size and the reported usage, then reduces the remaining output allowance.
+Oversized requests stop before the next model call. Start a new chat if retained context exhausts the budget.
+Nebius input sizing uses the SDK estimate. This check reduces overshoot but does not guarantee an exact billed-token ceiling.
+The separate Qwen lyrics agent keeps its 8,192-token completion budget, including reasoning, to preserve complete lyrics.
 
 ### Configure sandbox pricing and checkout
 

@@ -12,7 +12,7 @@ const run = (...args) => execFileSync("agent-browser", ["--session", session, ..
 const input = 'textarea[aria-label="Prompt message"]';
 const send = 'button[aria-label="Send prompt"]';
 const uploadPath = `/tmp/musical-chat-upload-${process.pid}.wav`;
-const usage = { resetAt: '2099-01-01T00:00:00Z', generationResetAt: '2099-01-01T00:00:00Z', plan: 'free',
+const usage = { resetAt: '2099-01-01T00:00:00Z', generationResetAt: '2099-01-01T00:00:00Z', plan: 'free', lyrics: { limit: 1, used: 1, remaining: 0 },
   chat: { limit: 20, used: 0, remaining: 20 }, analysis: { limit: 10, used: 0, remaining: 10 },
   generation: { limit: 5, used: 0, remaining: 5 }, storage: { limit: 536870912, used: 0, reserved: 0, remaining: 536870912 } };
 
@@ -24,20 +24,22 @@ function openInput() {
 try {
   await seedAuth(run, url);
   run("open", "about:blank");
-  run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":40}');
+  run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":16}');
   run("network", "route", "**/api/usage", "--body", JSON.stringify(usage));
   run("open", url);
-  run("wait", "--text", "0 / 40 messages");
+  run("wait", "--text", "0 / 16 messages");
   run("set", "viewport", "1280", "900");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   assert.equal(run("eval", 'document.querySelector("#allowances-heading")'), "null");
   run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "20 / 20 remaining");
+  run("wait", "--text", "lyric requests per day");
+  run("wait", "--text", "0 / 1 remaining");
   run("wait", "--text", "5 / 5 remaining");
   assert.equal(run("eval", 'document.querySelector("time").dateTime'), JSON.stringify(usage.resetAt));
   assert.equal(run("eval", 'document.querySelector("time").textContent === new Date(document.querySelector("time").dateTime).toLocaleString()'), "true");
   run("find", "role", "link", "click", "--name", "studio", "--exact");
-  run("wait", "--text", "0 / 40 messages");
+  run("wait", "--text", "0 / 16 messages");
   assert.equal(run("eval", 'document.querySelector("#app-desktop-navigation nav").getBoundingClientRect().right <= document.querySelector("#app-content").getBoundingClientRect().left'), "true");
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("aside fieldset") !== null && document.querySelector("main fieldset") === null'), "true");
@@ -55,7 +57,7 @@ try {
   run("eval", `window.usage = ${JSON.stringify(usage)}; window.usageFailure = false;
     window.chatRequests = []; window.musicRequests = []; window.mediaRequests = []; window.contextMessages = 6; const originalFetch = window.fetch;
     window.fetch = (input, options) => {
-      if (input === "/api/context") return Promise.resolve(Response.json({ messages: window.contextMessages, limit: 40 }));
+      if (input === "/api/context") return Promise.resolve(Response.json({ messages: window.contextMessages, limit: 16 }));
       if (input === "/api/usage") return Promise.resolve(window.usageFailure
         ? Response.json({ error: 'offline' }, { status: 503 }) : Response.json(window.usage));
       if (input === "/api/chat") window.chatRequests.push(JSON.parse(options.body));
@@ -91,7 +93,7 @@ try {
   run("eval", 'window.usage.chat = { limit: 20, used: 1, remaining: 19 }');
   run("click", send);
   run("wait", "--text", "e2e reply");
-  run("wait", "--text", "6 / 40 messages");
+  run("wait", "--text", "6 / 16 messages");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "6");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
@@ -101,7 +103,7 @@ try {
   run("wait", "--text", "19 / 20 remaining");
   run("wait", "--text", "256 MiB remaining");
   run("find", "role", "link", "click", "--name", "studio", "--exact");
-  run("wait", "--text", "6 / 40 messages");
+  run("wait", "--text", "6 / 16 messages");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("e2e reply")'), "true");
 
@@ -128,13 +130,13 @@ try {
 
   run("network", "unroute", "**/api/**");
   run("network", "route", "**/api/**", "--body", '{"reply":"recovered reply"}');
-  run("eval", 'window.contextMessages = 40');
+  run("eval", 'window.contextMessages = 16');
   openInput();
   run("fill", "textarea:not([name])", "retry message");
   run("click", send);
   run("wait", "--text", "recovered reply");
-  run("wait", "--text", "40 / 40 messages");
-  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
+  run("wait", "--text", "16 / 16 messages");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "16");
 
   // Progress and errors follow durable operation polling.
   run("eval", `window.fetchBeforeProgress = window.fetch;
@@ -434,13 +436,13 @@ try {
   run("network", "route", "**/api/reset", "--body", '{"status":"failed"}');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("wait", "--text", "Error: Conversation reset failed.");
-  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "16");
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "4");
   run("network", "unroute", "**/api/reset");
   run("network", "route", "**/api/reset", "--abort");
   run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("wait", "--fn", 'document.querySelector("main").innerText.split("Error: Failed to fetch").length === 4');
-  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "40");
+  assert.equal(run("eval", 'document.querySelector("aside meter").value'), "16");
   assert.equal(run("eval", 'document.querySelector("input[name=genre]").value'), '"indie pop"');
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3-clip-preview"');
   assert.equal(run("eval", 'document.querySelectorAll("audio").length'), "4");
@@ -448,7 +450,7 @@ try {
   run("network", "route", "**/api/reset", "--body", '{"status":"ok"}');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("wait", "--text", "fresh start. what kind of song are we making now?");
-  run("wait", "--text", "0 / 40 messages");
+  run("wait", "--text", "0 / 16 messages");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.value === "")'), "true");
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');

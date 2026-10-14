@@ -542,3 +542,56 @@ test('a subscription change during a reservation keeps the selected billing peri
       delete from public.paddle_customers where id = '${customer}';`);
   }
 });
+
+test('lyrics reserve daily or monthly attempts independently from chat and preserve billing periods', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  const owner = randomUUID();
+  const customer = `ctm_${owner.replaceAll('-', '').slice(0, 26)}`;
+  const subscription = `sub_${owner.replaceAll('-', '').slice(0, 26)}`;
+  const reserve = (id = randomUUID()) => query(`set role service_role; select public.reserve_lyrics('${owner}', '${id}');`).then(JSON.parse);
+  const usage = () => query(`set role service_role; select public.get_usage('${owner}', '{}');`).then(JSON.parse);
+  const original = await query("select lyrics_monthly from public.plan_limits where plan = 'starter';");
+  await query(`insert into auth.users(id) values ('${owner}');`);
+  try {
+    const free = await Promise.all(Array.from({ length: 8 }, () => reserve()));
+    assert.equal(free.filter(result => result.allowed).length, 1);
+    assert.equal((await usage()).lyrics.remaining, 0);
+    assert.equal((await reserve()).resource, 'lyrics');
+    assert.equal((await usage()).chat.used, 0);
+    await query(`insert into public.paddle_customers(id) values ('${customer}');
+      insert into public.paddle_subscriptions(id, user_id, customer_id, status, plan, period_start, period_end, updated_at, occurred_at)
+        values ('${subscription}', '${owner}', '${customer}', 'active', 'starter', now(), now() + interval '1 month', now(), now());
+      update public.global_usage set usage_date = (clock_timestamp() at time zone 'UTC')::date, used = 0 where operation = 'chat';`);
+    const paid = await Promise.all(Array.from({ length: 15 }, () => reserve()));
+    assert.equal(paid.filter(result => result.allowed).length, 10, 'concurrent calls cannot exceed the billing allowance');
+    const accepted = paid.find(result => result.allowed);
+    assert.equal((await reserve(accepted.id)).created, false, 'replay does not charge twice');
+    assert.deepEqual((await usage()).lyrics, { limit: 10, used: 10, remaining: 0 });
+    const chat = JSON.parse(await query(`set role service_role; select public.reserve_usage('${owner}', 'chat', '${randomUUID()}', 0, '{}', '${globalLimits}');`));
+    assert.equal(chat.allowed, true, 'exhausted lyrics do not block ordinary chat');
+    await query("update public.plan_limits set lyrics_monthly = 11 where plan = 'starter';");
+    assert.equal((await usage()).lyrics.remaining, 1, 'plan edits apply without resetting attempts');
+    assert.equal((await reserve()).allowed, true);
+    await query(`update public.usage_reservations set created_at = now() - interval '31 days' where user_id = '${owner}' and operation = 'lyrics';
+      set role service_role; select public.cleanup_operations();`);
+    assert.equal((await usage()).lyrics.used, 11, 'cleanup retains monthly paid attempts');
+    await query(`update public.paddle_subscriptions set period_start = period_start + interval '1 month', period_end = period_end + interval '1 month' where id = '${subscription}';`);
+    assert.equal((await usage()).lyrics.used, 0, 'renewal gets a new period without rollover');
+    assert.equal((await reserve()).allowed, true);
+    assert.equal((await usage()).lyrics.used, 1);
+    for (const role of ['anon', 'authenticated']) {
+      await assert.rejects(query(`set role ${role}; select public.reserve_lyrics('${owner}', '${randomUUID()}');`), /permission denied/);
+    }
+    await query(`update public.paddle_subscriptions set status = 'canceled' where id = '${subscription}';`);
+    assert.equal((await usage()).lyrics.limit, 1, 'cancellation restores the free policy');
+    assert.equal((await usage()).chat.used, 1, 'paid chat usage remains on its UTC day');
+  } finally {
+    await query(`update public.plan_limits set lyrics_monthly = ${Number(original)} where plan = 'starter';
+      delete from auth.users where id = '${owner}'; delete from public.paddle_subscriptions where id = '${subscription}';
+      delete from public.paddle_customers where id = '${customer}';`);
+  }
+});

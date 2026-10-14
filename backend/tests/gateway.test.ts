@@ -95,7 +95,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     assert.throws(() => getAiGateway('nebius'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     await assert.rejects(generateMusic('instrumental folk', undefined, session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
-    await assert.rejects(generateLyrics({ genre: 'folk' }, 'write a verse'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    await assert.rejects(generateLyrics({ genre: 'folk' }, 'write a verse', session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     assert.throws(() => getOrCreateAgent(session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     assert.equal(calls.length, 0);
     process.env.CF_AI_GATEWAY_ACCOUNT_ID = 'offline-account';
@@ -111,7 +111,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     assert.equal(JSON.stringify(config).includes('offline-gateway-token'), false);
     assert.equal((await getOrCreateAgent(session).invoke('hello')).toString(), 'offline answer');
     process.env.LYRICS_MODEL = 'Qwen/Qwen3.8-27B';
-    assert.equal(await generateLyrics({ genre: 'folk' }, 'write a verse'), 'offline answer');
+    assert.equal(await generateLyrics({ genre: 'folk' }, 'write a verse', session), 'offline answer');
 
     const track = await generateMusic('instrumental folk', undefined, session);
     musicPath = `${musicDirectory}${session}/${track.url.split('/').at(-1)}`;

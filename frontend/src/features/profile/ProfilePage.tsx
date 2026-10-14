@@ -45,6 +45,7 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
             <dl className="space-y-1 tabular-nums">
               {([
                 ["chat messages per day", usage.chat], [usage.plan === "free" ? "songs per day" : "songs per billing month", usage.generation], ["audio analyses per day", usage.analysis],
+                [usage.plan === "free" ? "lyric requests per day" : "lyric requests per billing month", usage.lyrics],
               ] as const).map(([label, allowance]) => (
                 <div key={label} className="flex justify-between gap-3">
                   <dt>{label}</dt><dd>{allowance.remaining} / {allowance.limit} remaining</dd>
@@ -53,7 +54,7 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
               <div className="flex justify-between gap-3"><dt>saved-song space</dt><dd>{Math.floor(usage.storage.remaining / 1024 / 1024)} MiB remaining</dd></div>
             </dl>
             <p>daily allowances reset <time dateTime={usage.resetAt}>{new Date(usage.resetAt).toLocaleString()}</time></p>
-            {usage.plan !== "free" && <p>songs reset <time dateTime={usage.generationResetAt}>{new Date(usage.generationResetAt).toLocaleString()}</time> · no rollover</p>}
+            {usage.plan !== "free" && <p>songs and lyric requests reset <time dateTime={usage.generationResetAt}>{new Date(usage.generationResetAt).toLocaleString()}</time> · no rollover</p>}
             <p>pending songs reserve allowance. shared daily limits also apply.</p>
           </> : !usageError && <p>loading allowances...</p>}
           {usageError && <div className="space-y-1">

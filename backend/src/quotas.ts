@@ -42,7 +42,7 @@ export async function quotaRpc(name: string, parameters: Record<string, unknown>
 export function checkAllowance(data: unknown): void {
   if (data && typeof data === 'object' && 'allowed' in data && data.allowed === false) {
     if (!('resource' in data) || typeof data.resource !== 'string' ||
-        !['chat', 'analysis', 'generation', 'storage'].includes(data.resource)) {
+        !['chat', 'analysis', 'generation', 'lyrics', 'storage'].includes(data.resource)) {
       throw new QuotaError('invalid quota response. operation was not started.', 503);
     }
     const resetAt = 'resetAt' in data && typeof data.resetAt === 'string' ? data.resetAt : undefined;
@@ -79,6 +79,16 @@ export async function settleGeneration(userId: string, id: string, status: 'comp
   await quotaRpc('settle_generation', { p_user_id: userId, p_id: id, p_status: status });
 }
 
+export async function reserveLyrics(userId: string): Promise<void> {
+  const id = randomUUID();
+  const data = await quotaRpc('reserve_lyrics', { p_user_id: userId, p_id: id });
+  checkAllowance(data);
+  if (!data || typeof data !== 'object' || !('allowed' in data) || data.allowed !== true ||
+      !('id' in data) || data.id !== id || !('created' in data) || data.created !== true) {
+    throw new QuotaError('could not reserve lyrics usage. operation was not started.', 503);
+  }
+}
+
 interface Allowance { limit: number; used: number; remaining: number }
 export interface Usage {
   resetAt: string;
@@ -87,6 +97,7 @@ export interface Usage {
   chat: Allowance;
   analysis: Allowance;
   generation: Allowance;
+  lyrics: Allowance;
   storage: Allowance & { reserved: number };
 }
 
@@ -97,7 +108,7 @@ export async function getUsage(userId: string): Promise<Usage> {
   if (!('generationResetAt' in data) || typeof data.generationResetAt !== 'string' ||
       !Number.isFinite(Date.parse(data.generationResetAt)) || !('plan' in data) ||
       !['free', 'starter', 'pro', 'ultra'].includes(String(data.plan))) throw new QuotaError('invalid usage response.', 503);
-  for (const name of ['chat', 'analysis', 'generation', 'storage'] as const) {
+  for (const name of ['chat', 'analysis', 'generation', 'lyrics', 'storage'] as const) {
     const value = name in data ? (data as Record<string, unknown>)[name] : undefined;
     if (!value || typeof value !== 'object') throw new QuotaError('invalid usage response.', 503);
     for (const field of name === 'storage' ? ['limit', 'used', 'remaining', 'reserved'] : ['limit', 'used', 'remaining']) {

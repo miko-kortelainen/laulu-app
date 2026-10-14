@@ -13,23 +13,24 @@ export function configureTestQuotas() {
     const url = new URL(request.url);
     if (url.origin !== process.env.SUPABASE_URL || !url.pathname.startsWith('/rest/v1/rpc/')) return undefined;
     const name = url.pathname.split('/').at(-1);
-    if (!['reserve_usage', 'settle_generation', 'get_usage'].includes(name ?? '')) return undefined;
+    if (!['reserve_usage', 'reserve_lyrics', 'settle_generation', 'get_usage'].includes(name ?? '')) return undefined;
     assert.equal(request.headers.get('apikey'), 'sb_secret_offline');
     const input: Record<string, unknown> = await request.json();
     assert.equal(typeof input.p_user_id, 'string');
     if (failures.unavailable) return Response.json({ message: 'offline quota database failure' }, { status: 503 });
     if (failures.invalid) return Response.json({});
-    if (name === 'reserve_usage') {
+    if (name === 'reserve_usage' || name === 'reserve_lyrics') {
       const limits = input.p_global_limits as Record<string, unknown>;
-      assert.ok(limits && ['chat', 'analysis', 'generation'].every((operation) =>
+      assert.ok(name === 'reserve_lyrics' || limits && ['chat', 'analysis', 'generation'].every((operation) =>
         Number.isSafeInteger(limits[operation]) && Number(limits[operation]) >= 0));
       if (failures.resource) return Response.json({ allowed: false, resource: failures.resource, scope: failures.scope,
         resetAt: failures.resource === 'storage' ? undefined : '2099-01-01T00:00:00Z' });
       assert.equal(typeof input.p_id, 'string');
-      assert.ok(['chat', 'analysis', 'generation'].includes(input.p_operation as string));
-      assert.ok(Number.isSafeInteger(input.p_storage_bytes));
+      assert.ok(name === 'reserve_lyrics' || ['chat', 'analysis', 'generation'].includes(input.p_operation as string));
+      assert.ok(name === 'reserve_lyrics' || Number.isSafeInteger(input.p_storage_bytes));
       reservations.set(input.p_id as string, { userId: input.p_user_id as string,
-        operation: input.p_operation as string, storageBytes: input.p_storage_bytes as number, status: 'reserved' });
+        operation: name === 'reserve_lyrics' ? 'lyrics' : input.p_operation as string,
+        storageBytes: name === 'reserve_lyrics' ? 0 : input.p_storage_bytes as number, status: 'reserved' });
       return Response.json({ allowed: true, id: input.p_id, created: true });
     }
     if (name === 'settle_generation') {
@@ -44,11 +45,11 @@ export function configureTestQuotas() {
     const owned = [...reservations.values()].filter((entry) => entry.userId === input.p_user_id);
     const allowance = (operation: string) => {
       const used = owned.filter((entry) => entry.operation === operation && entry.status !== 'failed').length;
-      const limit = operation === 'chat' ? 20 : operation === 'analysis' ? 10 : 5;
+      const limit = operation === 'chat' ? 20 : operation === 'analysis' ? 10 : operation === 'lyrics' ? 1 : 5;
       return { limit, used, remaining: Math.max(0, limit - used) };
     };
     return Response.json({ resetAt: '2099-01-01T00:00:00Z', generationResetAt: '2099-01-01T00:00:00Z', plan: 'free', chat: allowance('chat'), analysis: allowance('analysis'),
-      generation: allowance('generation'), storage: { limit: 536870912, used: 0,
+      generation: allowance('generation'), lyrics: allowance('lyrics'), storage: { limit: 536870912, used: 0,
         reserved: owned.reduce((sum, entry) => sum + entry.storageBytes, 0), remaining: 536870912 } });
   }
 

@@ -8,10 +8,10 @@ const session = `musical-pricing-e2e-${process.pid}`;
 const run = async (...args) => (await exec('agent-browser', ['--session', session, ...args], { timeout: 30000 })).stdout.trim();
 const url = process.env.E2E_URL;
 const plans = [
-  { plan: 'free', chat_daily: 20, analysis_daily: 10, songs_daily: 5, songs_monthly: null, storage_bytes: 536870912 },
-  { plan: 'starter', chat_daily: 50, analysis_daily: 20, songs_daily: null, songs_monthly: 30, storage_bytes: 2147483648 },
-  { plan: 'pro', chat_daily: 150, analysis_daily: 50, songs_daily: null, songs_monthly: 80, storage_bytes: 5368709120 },
-  { plan: 'ultra', chat_daily: 300, analysis_daily: 100, songs_daily: null, songs_monthly: 180, storage_bytes: 10737418240 },
+  { plan: 'free', lyrics_daily: 1, lyrics_monthly: null, chat_daily: 20, analysis_daily: 10, songs_daily: 5, songs_monthly: null, storage_bytes: 536870912 },
+  { plan: 'starter', lyrics_daily: null, lyrics_monthly: 10, chat_daily: 40, analysis_daily: 20, songs_daily: null, songs_monthly: 30, storage_bytes: 2147483648 },
+  { plan: 'pro', lyrics_daily: null, lyrics_monthly: 30, chat_daily: 80, analysis_daily: 50, songs_daily: null, songs_monthly: 80, storage_bytes: 5368709120 },
+  { plan: 'ultra', lyrics_daily: null, lyrics_monthly: 60, chat_daily: 150, analysis_daily: 100, songs_daily: null, songs_monthly: 180, storage_bytes: 10737418240 },
 ];
 const billing = { plan: null, status: null, paidAccess: false, periodEnd: null, scheduledChange: null, transactionId: null };
 const transactionId = 'txn_01m4tvkjam9nptz0f1ngrbr9mj';
@@ -30,6 +30,7 @@ try {
     assert.ok(text.includes(`${plan.chat_daily} chat messages per UTC day`));
     assert.ok(text.includes(`${plan.analysis_daily} audio analyses per UTC day`));
     assert.ok(text.includes(`${plan.songs_daily ?? plan.songs_monthly} songs`));
+    assert.ok(text.includes(`${plan.lyrics_daily ?? plan.lyrics_monthly} lyric requests`));
   }
   assert.equal(await run('eval', 'window.checkoutRequests.length'), '0');
   await run('network', 'route', '**/api/billing', '--body', JSON.stringify(billing));

@@ -158,8 +158,8 @@ test('verified users own their API session and local media', async (t) => {
     const agentB = getOrCreateAgent(userB);
     assert.notEqual(agentA, agentB);
     agentA.messages.push({ role: 'user', content: [{ type: 'textBlock', text: 'private message' }] });
-    assert.deepEqual(await (await fetch(`${url}/api/context`, { headers: headersA })).json(), { messages: 1, limit: 40 });
-    assert.deepEqual(await (await fetch(`${url}/api/context`, { headers: headersB })).json(), { messages: 0, limit: 40 });
+    assert.deepEqual(await (await fetch(`${url}/api/context`, { headers: headersA })).json(), { messages: 1, limit: 16 });
+    assert.deepEqual(await (await fetch(`${url}/api/context`, { headers: headersB })).json(), { messages: 0, limit: 16 });
     const ownFile = await fetch(`${url}/api/audio/${filename}`, { headers: headersA });
     assert.equal(ownFile.status, 200);
     assert.equal(await ownFile.text(), 'private fixture');

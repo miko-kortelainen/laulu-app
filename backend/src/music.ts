@@ -6,7 +6,7 @@ import { generateLyrics } from './lyrics.js';
 import { getAiGateway } from './gateway.js';
 import { userDirectory } from './user-files.js';
 import { checkSongStorage, musicDirectory, saveSong, validateSongTitle, type SavedSong } from './songs.js';
-import { reserveUsage, settleGeneration, songOutputLimit } from './quotas.js';
+import { QuotaError, reserveUsage, settleGeneration, songOutputLimit } from './quotas.js';
 
 export { musicDirectory };
 
@@ -75,7 +75,13 @@ export const updateMusicFormTool = tool({
         throw new Error('only one lyric generation attempt is allowed per message. send a new message to try again.');
       }
       context.invocationState.lyricGenerationAttempted = true;
-      prompt.lyrics = validateMusicPrompt((await generateLyrics(prompt, request)).slice(0, 3_000));
+      const userId = context.invocationState.userId;
+      if (typeof userId !== 'string') throw new Error('a verified user is required for lyrics.');
+      const lyrics = await generateLyrics(prompt, request, userId).catch((error: unknown) => {
+        if (error instanceof QuotaError) context.invocationState.quotaError = error;
+        throw error;
+      });
+      prompt.lyrics = validateMusicPrompt(lyrics.slice(0, 3_000));
       validateMusicPrompt(Object.values(prompt).join('\n\n'));
     }
     context.invocationState.musicPrompt = prompt;

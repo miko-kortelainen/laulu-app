@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import type { ToolContext } from '@strands-agents/sdk';
+import { Message, TextBlock, type ToolContext } from '@strands-agents/sdk';
 import { Client } from 'langsmith';
 import { getChatContext, getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { getModelId } from '../src/model.js';
 import { updateMusicFormTool } from '../src/music.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
+import { configureTestQuotas } from './quota-fixture.js';
 
-test('only lyric requests use GLM, preserve form values, and commit completed lyrics', { timeout: 15_000 }, async () => {
+test('only lyric requests use the Qwen fallback, preserve form values, and commit completed lyrics', { timeout: 15_000 }, async () => {
   const originalFetch = globalThis.fetch;
+  const originalDatabaseURL = process.env.SUPABASE_URL;
+  process.env.SUPABASE_URL = 'https://offline-lyrics.supabase.co';
+  const quotas = configureTestQuotas();
   const restoreGateway = configureTestGateway();
   const originalCreateRun = Client.prototype.createRun;
   const originalUpdateRun = Client.prototype.updateRun;
@@ -25,7 +29,7 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
   const lyrics = '[verse]\n' + Array(8).fill('you left your coat beside the door.').join('\n') +
     '\n[chorus]\n' + Array(4).fill('i keep a seat for you.').join('\n');
   let revisedLyrics = lyrics;
-  const requests: { model: string; messages: { role: string; content: string }[] }[] = [];
+  const requests: { model: string; max_completion_tokens: number; messages: { role: string; content: string }[] }[] = [];
   let lyricRequest: string | undefined = 'write lyrics about waiting for someone';
   let failure: 'http' | 'empty' | 'truncated' | 'truncatedEmpty' | 'long' | undefined;
   let currentBrief = brief;
@@ -33,19 +37,24 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
   let mainTurnCycle = 2;
   let looping = false;
   let mainInputTokens = 10;
+  let mainOutputTokens = 5;
   let mainFailure = false;
+  let contextOverflow = false;
 
   Client.prototype.createRun = async (run) => { runs.push(run); };
   Client.prototype.updateRun = async () => {};
   process.env.LANGSMITH_TRACING = 'true';
-  process.env.LYRICS_MODEL = 'zai-org/GLM-5.3-Flash';
+  delete process.env.LYRICS_MODEL;
   globalThis.fetch = async (url, options) => {
     const httpRequest = new Request(url, options);
+    const database = await quotas.databaseResponse(httpRequest.clone());
+    if (database) return database;
     assert.equal(httpRequest.url, `${testGatewayURL}/custom-nebius/v1/chat/completions`);
     const request = await httpRequest.json();
     requests.push(request);
-    const isLyrics = request.model === 'zai-org/GLM-5.3-Flash';
-    assert.equal(request.max_completion_tokens, isLyrics ? 8192 : 4096);
+    const isLyrics = request.model === 'Qwen/Qwen3.8-27B';
+    if (isLyrics) assert.equal(request.max_completion_tokens, 8192);
+    else assert.ok(request.max_completion_tokens > 0 && request.max_completion_tokens <= 2048);
     const toolCall = !isLyrics && (looping || ++mainCalls % mainTurnCycle !== 0);
     if (isLyrics) {
       assert.equal(request.reasoning_effort, 'low');
@@ -56,6 +65,7 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
     } else {
       assert.equal(request.model, getModelId());
       if (mainFailure) return Response.json({ error: { message: 'offline throttling' } }, { status: 429 });
+      if (contextOverflow) return Response.json({ error: { message: 'context length exceeded', code: 'context_length_exceeded' } }, { status: 400 });
     }
     const delta = toolCall
       ? { role: 'assistant', tool_calls: Array.from({ length: looping ? 3 : 1 }, (_, index) => ({
@@ -72,7 +82,8 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
       { ...base, choices: [{ index: 0, delta, finish_reason: null }] },
       { ...base, choices: [{ index: 0, delta: {}, finish_reason: toolCall ? 'tool_calls' : failure?.startsWith('truncated') ? 'length' : 'stop' }] },
       { ...base, choices: [], usage: { prompt_tokens: isLyrics ? 10 : mainInputTokens,
-          completion_tokens: isLyrics ? 5000 : 5, total_tokens: isLyrics ? 5010 : mainInputTokens + 5 } },
+          completion_tokens: isLyrics ? 5000 : Math.min(mainOutputTokens, request.max_completion_tokens),
+          total_tokens: isLyrics ? 5010 : mainInputTokens + Math.min(mainOutputTokens, request.max_completion_tokens) } },
     ];
     return new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('') + 'data: [DONE]\n\n', {
       headers: { 'content-type': 'text/event-stream' },
@@ -80,10 +91,10 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
   };
 
   try {
-    const agent = getOrCreateAgent(sessionId);
+    let agent = getOrCreateAgent(sessionId);
     const draft = await agent.invoke(lyricRequest!);
     assert.deepEqual(draft.invocationState.musicPrompt, { ...brief, lyrics });
-    assert.deepEqual(requests.map(({ model }) => model), [getModelId(), 'zai-org/GLM-5.3-Flash', getModelId()]);
+    assert.deepEqual(requests.map(({ model }) => model), [getModelId(), 'Qwen/Qwen3.8-27B', getModelId()]);
     const formRun = runs.find((run) => run.name === 'update_music_form');
     const lyricRun = runs.find((run) => run.name === 'generate_lyrics');
     assert.ok(formRun?.id && lyricRun?.id);
@@ -107,7 +118,7 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
 
     // Usable text is accepted once, even when it exceeds the character or token limit.
     for (const mode of ['long', 'truncated'] as const) {
-      const invocationState = { musicPrompt: currentBrief };
+      const invocationState = { musicPrompt: currentBrief, userId: sessionId };
       failure = mode;
       const requestCount = requests.length;
       await updateMusicFormTool.invoke({ ...currentBrief, lyricRequest }, { invocationState } as ToolContext);
@@ -118,7 +129,7 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
 
     // Provider errors and reasoning-only responses cannot overwrite valid state.
     for (const mode of ['http', 'empty', 'truncatedEmpty'] as const) {
-      const invocationState = { musicPrompt: currentBrief };
+      const invocationState = { musicPrompt: currentBrief, userId: sessionId };
       failure = mode;
       await assert.rejects(updateMusicFormTool.invoke({ ...currentBrief, lyricRequest }, { invocationState } as ToolContext),
         mode === 'http' ? /offline lyric failure/ : mode === 'empty' ? /music prompt/ : /maximum token limit/);
@@ -132,30 +143,36 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
     // Repeated and batched tool calls stop without making another paid lyric call.
     looping = true;
     failure = 'long';
+    await resetAgentSession(sessionId);
+    agent = getOrCreateAgent(sessionId);
     const loopStart = requests.length;
     const loop = await agent.invoke('generate lyrics');
-    assert.equal(loop.stopReason, 'limitTurns');
+    assert.ok(loop.stopReason === 'limitTurns' || loop.toString().includes('token budget'));
     assert.deepEqual(loop.invocationState.musicPrompt, { ...currentBrief, lyrics: 'a'.repeat(3_000) });
-    assert.equal(requests.slice(loopStart).filter(({ model }) => model === getModelId()).length, 6);
-    assert.equal(requests.slice(loopStart).filter(({ model }) => model === 'zai-org/GLM-5.3-Flash').length, 1);
+    assert.ok(requests.slice(loopStart).filter(({ model }) => model === getModelId()).length <= 3);
+    assert.equal(requests.slice(loopStart).filter(({ model }) => model === 'Qwen/Qwen3.8-27B').length, 1);
 
-    // A longer request completes within the increased turn and total-token budgets.
+    // A three-turn edit still completes with the smaller budgets.
     looping = false;
     failure = undefined;
     mainCalls = 0;
-    mainTurnCycle = 6;
-    mainInputTokens = 4_000;
+    mainTurnCycle = 3;
+    mainInputTokens = 100;
+    await resetAgentSession(sessionId);
+    agent = getOrCreateAgent(sessionId);
     const extendedStart = requests.length;
     const extended = await agent.invoke('revise the song and finish the response');
     assert.equal(extended.stopReason, 'endTurn');
     assert.deepEqual(extended.invocationState.musicPrompt, { ...currentBrief, lyrics: revisedLyrics });
-    assert.equal(requests.slice(extendedStart).filter(({ model }) => model === getModelId()).length, 6);
-    assert.equal(requests.slice(extendedStart).filter(({ model }) => model === 'zai-org/GLM-5.3-Flash').length, 1);
+    assert.equal(requests.slice(extendedStart).filter(({ model }) => model === getModelId()).length, 3);
+    assert.equal(requests.slice(extendedStart).filter(({ model }) => model === 'Qwen/Qwen3.8-27B').length, 1);
 
     // Token spend stops another main turn, and the next user message has a fresh budget.
-    mainInputTokens = 30_000;
+    mainInputTokens = 8_000;
     mainTurnCycle = 2;
     looping = true;
+    await resetAgentSession(sessionId);
+    agent = getOrCreateAgent(sessionId);
     const budgetStart = requests.length;
     const budget = await agent.invoke('try again');
     assert.equal(budget.stopReason, 'limitTotalTokens');
@@ -164,9 +181,65 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
     looping = false;
     mainInputTokens = 10;
     mainCalls = 0;
+    await resetAgentSession(sessionId);
+    agent = getOrCreateAgent(sessionId);
     const recovery = await agent.invoke('write the chorus again');
     assert.equal(recovery.stopReason, 'endTurn');
     assert.deepEqual(recovery.invocationState.musicPrompt, { ...currentBrief, lyrics: revisedLyrics });
+
+    // An oversized request is rejected before inference, and a reset permits recovery.
+    const oversizedStart = requests.length;
+    const oversized = await agent.invoke('a'.repeat(40_000));
+    assert.match(oversized.toString(), /token budget/);
+    assert.equal(requests.length, oversizedStart);
+    await resetAgentSession(sessionId);
+    agent = getOrCreateAgent(sessionId);
+
+    // Trimmed history must not inherit the previous prompt's obsolete token baseline.
+    agent.messages.push(new Message({ role: 'user', content: [new TextBlock('hello')] }),
+      new Message({ role: 'assistant', content: [new TextBlock('hello')],
+        metadata: { usage: { inputTokens: 7900, outputTokens: 100, totalTokens: 8000 } } }));
+    mainCalls = 0;
+    lyricRequest = undefined;
+    const trimmedStart = requests.length;
+    await agent.invoke('change the tempo');
+    assert.ok(requests.length > trimmedStart, 'fresh sizing allows short retained history');
+
+    // Reported output usage shrinks the next provider request instead of overshooting the loop budget.
+    mainOutputTokens = 1900;
+    mainCalls = 0;
+    lyricRequest = 'change the chorus';
+    const outputStart = requests.length;
+    await agent.invoke('change the tempo');
+    assert.equal(requests[outputStart + 2].max_completion_tokens, 148);
+    mainOutputTokens = 5;
+
+    // Exhausted lyrics stop before Qwen, preserve the draft, and do not stop later field-only edits.
+    quotas.failures.resource = 'lyrics';
+    const deniedState = { musicPrompt: currentBrief, userId: sessionId };
+    const deniedStart = requests.length;
+    await assert.rejects(updateMusicFormTool.invoke({ ...currentBrief, lyricRequest }, { invocationState: deniedState } as ToolContext), /lyrics allowance exhausted/);
+    assert.equal(requests.length, deniedStart);
+    assert.deepEqual(deniedState.musicPrompt, currentBrief);
+    lyricRequest = undefined;
+    mainCalls = 0;
+    const fieldsOnly = await agent.invoke('change only the BPM');
+    assert.deepEqual(fieldsOnly.invocationState.musicPrompt, currentBrief);
+    quotas.failures.resource = undefined;
+
+    // Context-overflow recovery retries within one SDK turn, but never exceeds three HTTP calls.
+    await resetAgentSession(sessionId);
+    agent = getOrCreateAgent(sessionId);
+    for (let index = 0; index < 8; index++) {
+      agent.messages.push(new Message({ role: 'user', content: [new TextBlock('hello')] }),
+        new Message({ role: 'assistant', content: [new TextBlock('hello')] }));
+    }
+    contextOverflow = true;
+    const overflowStart = requests.length;
+    const overflow = await agent.invoke('hello');
+    assert.equal(requests.length - overflowStart, 3);
+    assert.match(overflow.toString(), /token budget/);
+    contextOverflow = false;
 
     // Neither the OpenAI client nor the agent retries a throttled model request.
     mainFailure = true;
@@ -178,13 +251,16 @@ test('only lyric requests use GLM, preserve form values, and commit completed ly
     assert.ok(agent.messages.length > 0);
     assert.equal(getChatContext(sessionId).messages, agent.messages.length);
     resetAgentSession(sessionId);
-    assert.deepEqual(getChatContext(sessionId), { messages: 0, limit: 40 });
+    assert.deepEqual(getChatContext(sessionId), { messages: 0, limit: 16 });
     const freshAgent = getOrCreateAgent(sessionId);
     assert.notEqual(freshAgent, agent);
     assert.equal(freshAgent.messages.length, 0);
   } finally {
     resetAgentSession(sessionId);
     globalThis.fetch = originalFetch;
+    quotas.restore();
+    if (originalDatabaseURL === undefined) delete process.env.SUPABASE_URL;
+    else process.env.SUPABASE_URL = originalDatabaseURL;
     restoreGateway();
     Client.prototype.createRun = originalCreateRun;
     Client.prototype.updateRun = originalUpdateRun;

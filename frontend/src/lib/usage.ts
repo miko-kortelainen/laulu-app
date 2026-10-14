@@ -8,6 +8,7 @@ export interface Usage {
   chat: Allowance;
   analysis: Allowance;
   generation: Allowance;
+  lyrics: Allowance;
   storage: Allowance & { reserved: number };
 }
 
@@ -20,7 +21,7 @@ export async function getUsage(signal?: AbortSignal): Promise<Usage> {
   if (!("generationResetAt" in data) || typeof data.generationResetAt !== "string" ||
       !Number.isFinite(Date.parse(data.generationResetAt)) || !("plan" in data) ||
       !["free", "starter", "pro", "ultra"].includes(String(data.plan))) throw new Error("invalid usage response.");
-  for (const name of ["chat", "analysis", "generation", "storage"] as const) {
+  for (const name of ["chat", "analysis", "generation", "lyrics", "storage"] as const) {
     const value = (data as Record<string, unknown>)[name];
     if (!value || typeof value !== "object") throw new Error("invalid usage response.");
     for (const field of name === "storage" ? ["limit", "used", "remaining", "reserved"] : ["limit", "used", "remaining"]) {
