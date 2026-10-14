@@ -20,6 +20,120 @@ function query(sql) {
   });
 }
 
+test('individual usage resets preserve allowances, owners, songs, and late generation settlement', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  const owner = randomUUID();
+  const other = randomUUID();
+  const suffix = randomUUID().replaceAll('-', '').slice(0, 26);
+  assert.equal(await query(`begin;
+    set local plpgsql.check_asserts = on;
+    insert into auth.users(id) values ('${owner}'), ('${other}');
+    set local role service_role;
+    do $$
+    declare
+      pending_id uuid := gen_random_uuid();
+      saved_id uuid := gen_random_uuid();
+      lyric_id uuid := gen_random_uuid();
+      old_period_id uuid := gen_random_uuid();
+      event_time timestamptz := clock_timestamp();
+      period_start timestamptz := event_time - interval '1 hour';
+      before_reset jsonb;
+      usage jsonb;
+      result jsonb;
+      global_used integer;
+      i integer;
+    begin
+      assert not has_function_privilege('anon', 'public.reset_user_usage(uuid,text)', 'execute');
+      assert not has_function_privilege('authenticated', 'public.reset_user_usage(uuid,text)', 'execute');
+      update public.global_usage set usage_date = (clock_timestamp() at time zone 'UTC')::date, used = 0;
+      perform public.reserve_usage('${owner}', 'chat', gen_random_uuid(), 0, '{}', '${globalLimits}');
+      perform public.reserve_usage('${owner}', 'analysis', gen_random_uuid(), 0, '{}', '${globalLimits}');
+      perform public.reserve_usage('${owner}', 'generation', pending_id, 100, '{}', '${globalLimits}');
+      perform public.reserve_usage('${owner}', 'generation', saved_id, 0, '{}', '${globalLimits}');
+      insert into public.songs(id, owner_id, object_key, prompt, model, size_bytes, status)
+        values (saved_id, '${owner}', 'users/${owner}/' || saved_id || '.mp3', 'offline folk', 'lyria-3.5', 100, 'ready');
+      perform public.settle_generation('${owner}', saved_id, 'completed');
+      perform public.reserve_lyrics('${owner}', lyric_id);
+      perform public.reserve_lyrics('${other}', gen_random_uuid());
+      before_reset := public.get_usage('${owner}', '{}');
+      result := public.reset_user_usage('${owner}', 'lyrics');
+      assert (result->>'used')::integer = 0 and result->'limit' = before_reset->'lyrics'->'limit';
+      usage := public.get_usage('${owner}', '{}');
+      assert usage->'chat' = before_reset->'chat' and usage->'analysis' = before_reset->'analysis';
+      assert usage->'generation' = before_reset->'generation' and usage->'storage' = before_reset->'storage';
+      assert (public.get_usage('${other}', '{}')->'lyrics'->>'used')::integer = 1, 'another user is unchanged';
+      assert (public.reserve_lyrics('${owner}', lyric_id)->>'created')::boolean = false, 'old requests stay idempotent';
+      result := public.reserve_lyrics('${owner}', gen_random_uuid());
+      assert (result->>'allowed')::boolean, 'reset permits the next lyric request';
+      assert (public.get_usage('${owner}', '{}')->'lyrics'->>'used')::integer = 1;
+      perform public.reset_user_usage('${owner}', 'chat');
+      perform public.reset_user_usage('${owner}', 'analysis');
+      usage := public.get_usage('${owner}', '{}');
+      assert (usage->'chat'->>'used')::integer = 0 and (usage->'analysis'->>'used')::integer = 0;
+      assert (usage->'lyrics'->>'used')::integer = 1, 'each reset affects only its selected operation';
+      select sum(used) into global_used from public.global_usage;
+      result := public.reset_user_usage('${owner}', 'generation');
+      assert (result->>'used')::integer = 0 and result->'limit' = before_reset->'generation'->'limit';
+      assert (public.get_usage('${owner}', '{}')->'storage') = before_reset->'storage', 'saved and reserved bytes stay intact';
+      assert (select sum(used) = global_used from public.global_usage), 'global attempts are not reset';
+      assert (select generation_status = 'reserved' and storage_bytes = 100 from public.usage_reservations where id = pending_id);
+      assert exists (select 1 from public.songs where id = saved_id), 'saved songs survive';
+      perform public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}', '${globalLimits}');
+      perform public.settle_generation('${owner}', pending_id, 'failed');
+      assert (public.get_usage('${owner}', '{}')->'generation'->>'used')::integer = 1,
+        'late refunds from reset reservations cannot erase new daily usage';
+      assert (select storage_bytes = 0 from public.usage_reservations where id = pending_id), 'late failures still release storage';
+
+      perform public.register_paddle_checkout('txn_${suffix}', '${owner}');
+      perform public.sync_paddle_event('subscription', jsonb_build_object('id', 'sub_${suffix}',
+        'customer_id', 'ctm_${suffix}', 'transaction_id', 'txn_${suffix}', 'status', 'active', 'plan', 'starter',
+        'period_start', period_start, 'period_end', period_start + interval '1 month', 'updated_at', event_time), event_time);
+      insert into public.usage_reservations(id, user_id, usage_date, operation, billing_subscription_id, billing_period_start)
+        values (old_period_id, '${owner}', (event_time at time zone 'UTC')::date, 'lyrics', 'sub_${suffix}', period_start - interval '1 month');
+      for i in 1..10 loop
+        lyric_id := gen_random_uuid();
+        result := public.reserve_lyrics('${owner}', lyric_id);
+        assert (result->>'allowed')::boolean;
+      end loop;
+      assert not (public.reserve_lyrics('${owner}', gen_random_uuid())->>'allowed')::boolean, 'monthly lyrics are exhausted';
+      result := public.reset_user_usage('${owner}', 'lyrics');
+      assert result = jsonb_build_object('used', 0, 'limit', 10, 'remaining', 10), '10/10 becomes 0/10';
+      assert (select count(*) = 10 from public.usage_reservations where user_id = '${owner}' and operation = 'lyrics'
+        and billing_subscription_id = 'sub_${suffix}' and billing_period_start = period_start and quota_reset),
+        'monthly usage is forgiven without deleting reservations';
+      assert (select not quota_reset from public.usage_reservations where id = old_period_id), 'previous billing periods stay intact';
+      assert public.reset_user_usage('${owner}', 'lyrics') = result, 'repeating a reset is harmless';
+      assert not (public.reserve_lyrics('${owner}', lyric_id)->>'created')::boolean;
+      assert (public.get_usage('${owner}', '{}')->'lyrics'->>'used')::integer = 0;
+      assert (public.reserve_lyrics('${owner}', gen_random_uuid())->>'allowed')::boolean;
+      assert (public.get_usage('${owner}', '{}')->'lyrics'->>'used')::integer = 1;
+
+      pending_id := gen_random_uuid();
+      perform public.reserve_usage('${owner}', 'generation', pending_id, 100, '{}', '${globalLimits}');
+      before_reset := public.get_usage('${owner}', '{}');
+      result := public.reset_user_usage('${owner}', 'generation');
+      assert (result->>'used')::integer = 0 and result->'limit' = before_reset->'generation'->'limit';
+      assert (public.get_usage('${owner}', '{}')->'storage') = before_reset->'storage';
+      perform public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}', '${globalLimits}');
+      perform public.settle_generation('${owner}', pending_id, 'failed');
+      usage := public.get_usage('${owner}', '{}');
+      assert (usage->'generation'->>'used')::integer = 1 and (usage->'lyrics'->>'used')::integer = 1;
+      assert usage->>'plan' = 'starter', 'resets do not change subscriptions';
+      begin
+        perform public.reset_user_usage('${owner}', 'storage');
+        raise exception 'storage reset must be rejected';
+      exception when others then
+        assert sqlerrm = 'invalid usage reset';
+      end;
+    end;
+    $$;
+    rollback;`), '');
+});
+
 test('downgrades retain the paid tier through cancellation scheduling and switch at renewal', {
   skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
 }, async () => {

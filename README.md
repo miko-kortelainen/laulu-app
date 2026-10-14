@@ -119,6 +119,30 @@ The migration replaces old standard defaults with null and preserves other value
 `generation_daily` overrides free songs only. Zero also blocks paid generation, as before.
 The old `QUOTA_*` environment variables are no longer used. Remove them from deployment settings.
 
+To reset one user's usage without changing their allowance, apply
+[`20261014145113_reset_user_usage.sql`](supabase/migrations/20261014145113_reset_user_usage.sql) through the linked Supabase CLI workflow.
+From the repository root, review and apply pending migrations:
+
+```bash
+supabase migration list
+supabase db push --dry-run
+supabase db push
+```
+
+Then run this function in the Supabase SQL Editor as an admin:
+
+```sql
+select public.reset_user_usage('USER_UUID', 'lyrics');
+```
+
+Replace `USER_UUID` with the user's UUID from Supabase Authentication.
+Choose `lyrics`, `chat`, `analysis`, or `generation` to reset that operation only.
+For example, 10/10 lyric requests becomes 0/10. The function returns the new `used`, `limit`, and `remaining` values.
+It resets the current UTC day or current paid billing period, matching the operation's allowance.
+It preserves plan limits, account overrides, saved songs, pending reservations, other users, and global usage.
+The function is restricted to admins and the server's service role; signed-in users cannot reset their own usage.
+Refresh the user's allowances in the app to see the result.
+
 Shared `GLOBAL_*` limits still apply to every plan. Increase these separately when paid demand requires more capacity.
 Saved storage counts generated songs and their pending reservations. Uploads do not consume this allowance.
 
