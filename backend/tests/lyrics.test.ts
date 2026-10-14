@@ -168,7 +168,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     assert.equal(requests.slice(extendedStart).filter(({ model }) => model === 'Qwen/Qwen3.8-27B').length, 1);
 
     // Token spend stops another main turn, and the next user message has a fresh budget.
-    mainInputTokens = 16_000;
+    mainInputTokens = 20_000;
     mainTurnCycle = 2;
     looping = true;
     await resetAgentSession(sessionId);
@@ -189,7 +189,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
 
     // An oversized request is rejected before inference, and a reset permits recovery.
     const oversizedStart = requests.length;
-    const oversized = await agent.invoke('a'.repeat(80_000));
+    const oversized = await agent.invoke('a'.repeat(100_000));
     assert.match(oversized.toString(), /token budget/);
     assert.equal(requests.length, oversizedStart);
     await resetAgentSession(sessionId);
@@ -198,7 +198,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     // Trimmed history must not inherit the previous prompt's obsolete token baseline.
     agent.messages.push(new Message({ role: 'user', content: [new TextBlock('hello')] }),
       new Message({ role: 'assistant', content: [new TextBlock('hello')],
-        metadata: { usage: { inputTokens: 15900, outputTokens: 100, totalTokens: 16000 } } }));
+        metadata: { usage: { inputTokens: 19900, outputTokens: 100, totalTokens: 20000 } } }));
     mainCalls = 0;
     lyricRequest = undefined;
     const trimmedStart = requests.length;
