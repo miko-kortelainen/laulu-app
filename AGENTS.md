@@ -72,6 +72,15 @@ These instructions apply to the entire monorepo.
 - Do not add tests for trivial changes or duplicate existing coverage.
 - State which checks ran and which checks remain unrun.
 
+## Supabase migrations
+
+- On 2026-10-14, the user confirmed that all migrations through `20261013223633_lyrics_allowances.sql` ran remotely. The CLI migration history matches these files.
+- The user uses the Supabase CLI with a linked remote project. There is no local Supabase Docker instance.
+- Keep schema changes in `supabase/migrations/`. Create new files with `supabase migration new <name>`.
+- Before each push, run `supabase migration list`. Preview pending migrations with `supabase db push --dry-run`.
+- Apply pending migrations with `supabase db push`. Do not apply schema changes manually in SQL Editor or rerun recorded migrations.
+- Do not run `supabase start` or `supabase db reset` for this workflow. Do not assume local Supabase tests are available.
+
 ## Commands
 
 Run these commands from the repository root:
