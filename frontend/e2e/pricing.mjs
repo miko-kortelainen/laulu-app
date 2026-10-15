@@ -8,7 +8,7 @@ const session = `musical-pricing-e2e-${process.pid}`;
 const run = async (...args) => (await exec('agent-browser', ['--session', session, ...args], { timeout: 30000 })).stdout.trim();
 const url = process.env.E2E_URL;
 const plans = [
-  { plan: 'free', lyrics_daily: 1, lyrics_monthly: null, chat_daily: 20, analysis_daily: 10, songs_daily: 5, songs_monthly: null, storage_bytes: 536870912 },
+  { plan: 'free', lyrics_daily: null, lyrics_monthly: 20, chat_daily: 20, analysis_daily: 10, songs_daily: null, songs_monthly: 10, storage_bytes: 536870912 },
   { plan: 'starter', lyrics_daily: null, lyrics_monthly: 10, chat_daily: 40, analysis_daily: 20, songs_daily: null, songs_monthly: 30, storage_bytes: 2147483648 },
   { plan: 'pro', lyrics_daily: null, lyrics_monthly: 30, chat_daily: 80, analysis_daily: 50, songs_daily: null, songs_monthly: 80, storage_bytes: 5368709120 },
   { plan: 'ultra', lyrics_daily: null, lyrics_monthly: 60, chat_daily: 150, analysis_daily: 100, songs_daily: null, songs_monthly: 180, storage_bytes: 10737418240 },
@@ -31,8 +31,8 @@ try {
     const text = JSON.parse(await run('eval', `${card(plan.plan)}.textContent`));
     assert.ok(text.includes(`${plan.chat_daily} chat messages per day`));
     assert.ok(text.includes(`${plan.analysis_daily} audio analyses per day`));
-    assert.ok(text.includes(`${plan.songs_daily ?? plan.songs_monthly} songs`));
-    assert.ok(text.includes(`${plan.lyrics_daily ?? plan.lyrics_monthly} lyric requests`));
+    assert.ok(text.includes(`${plan.songs_monthly} songs per month`));
+    assert.ok(text.includes(`${plan.lyrics_monthly} lyric requests per month`));
   }
   await run('find', 'role', 'button', 'click', '--name', 'yearly', '--exact');
   await run('wait', '--text', 'billed yearly');

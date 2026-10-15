@@ -97,19 +97,21 @@ The pricing page, usage display, generation reservations, and storage checks all
 
 | Plan | Chat/day | Analyses/day | Songs | Lyric requests | Storage |
 | --- | ---: | ---: | --- | --- | ---: |
-| free | 20 | 10 | 5/day | 1/day | 512 MiB |
+| free | 20 | 10 | 10/calendar month | 20/calendar month | 512 MiB |
 | starter | 40 | 20 | 30/billing month | 10/billing month | 2 GiB |
 | pro | 80 | 50 | 80/billing month | 30/billing month | 5 GiB |
 | ultra | 150 | 100 | 180/billing month | 60/billing month | 10 GiB |
 
-Use `chat_daily`, `analysis_daily`, `songs_daily`, `songs_monthly`, and `storage_bytes` to set these limits.
-Use `lyrics_daily` for free accounts and `lyrics_monthly` for paid plans. Keep the other lyrics column null.
-The free row uses `songs_daily`. Paid rows use `songs_monthly`. Keep the unused song column null.
+Use `chat_daily`, `analysis_daily`, `songs_monthly`, `lyrics_monthly`, and `storage_bytes` to set these limits.
+All plans use monthly song and lyric limits. Keep `songs_daily` and `lyrics_daily` null.
 One GiB is `1073741824` bytes. Limits must be nonnegative integers. Zero blocks the corresponding operation.
 
 Edits affect the next quota check and appear when users reload pricing or refresh their allowances. No redeploy is required.
 Edits do not reset usage. Reductions can block further use until usage resets or space becomes available.
-Daily allowances reset at midnight UTC. Paid songs reset with the Paddle billing period and do not roll over.
+Daily allowances reset at midnight UTC. Free songs and lyrics reset at the start of each calendar month in UTC.
+Apply [the free monthly allowances migration](supabase/migrations/20261015225822_free_monthly_allowances.sql) before deploying this version.
+It keeps this month's existing free usage and preserves the other plan settings. Monthly allowances do not roll over.
+Paid songs reset with the Paddle billing period.
 Paid lyrics requests use the same billing period. A request reserves one attempt before the Qwen call.
 Failed and uncertain lyrics calls remain charged. Ordinary chat and field edits remain available after lyrics are exhausted.
 The shared chat cap bounds lyrics calls too, because each admitted chat can make at most one lyrics attempt.

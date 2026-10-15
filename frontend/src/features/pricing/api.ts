@@ -117,10 +117,9 @@ export async function getPlanLimits(signal: AbortSignal): Promise<PlanLimits[]> 
     if (!value || typeof value !== "object") return false;
     const row = value as Record<string, unknown>;
     return names.includes(String(row.plan)) &&
-      ["chat_daily", "analysis_daily", "storage_bytes", row.plan === "free" ? "songs_daily" : "songs_monthly", row.plan === "free" ? "lyrics_daily" : "lyrics_monthly"].every(field =>
+      ["chat_daily", "analysis_daily", "storage_bytes", "songs_monthly", "lyrics_monthly"].every(field =>
         typeof row[field] === "number" && Number.isSafeInteger(row[field]) && row[field] >= 0) &&
-      row[row.plan === "free" ? "songs_monthly" : "songs_daily"] === null &&
-      row[row.plan === "free" ? "lyrics_monthly" : "lyrics_daily"] === null;
+      row.songs_daily === null && row.lyrics_daily === null;
   }) || !names.every(name => data.filter((row: PlanLimits) => row.plan === name).length === 1)) {
     throw new Error("invalid plan allowances.");
   }

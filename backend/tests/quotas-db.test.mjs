@@ -8,6 +8,15 @@ const databaseURL = process.env.QUOTA_TEST_DATABASE_URL;
 const psql = process.env.QUOTA_TEST_PSQL || 'psql';
 const globalLimits = JSON.stringify({ chat: 100, analysis: 100, generation: 100 });
 
+test('free songs and lyrics use monthly limits while chat and analysis remain daily', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  await query(await readFile(new URL('./free-monthly-allowances.sql', import.meta.url), 'utf8'));
+});
+
 test('annual subscriptions keep monthly allowances and annual payment dates', {
   skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
 }, async () => {
@@ -297,7 +306,7 @@ test('billing preserves newer state, resets monthly allowances, and refunds the 
         perform public.sync_paddle_event('subscription', payload, event_time + i * interval '1 minute');
         assert not (public.get_billing('${owner}')->>'paidAccess')::boolean, 'inactive statuses stop paid access';
         usage := public.get_usage('${owner}', '{}');
-        assert usage->>'plan' = 'free' and (usage->'generation'->>'limit')::integer = 5, 'inactive accounts use free allowances';
+        assert usage->>'plan' = 'free' and (usage->'generation'->>'limit')::integer = 10, 'inactive accounts use free allowances';
         i := i + 1;
       end loop;
     end;
@@ -399,7 +408,7 @@ test('database quotas serialize reservations, survive new connections, and prote
   }
 });
 
-test('beta allows 20 chats and five completed songs, refunds once, and retains the original UTC date', {
+test('free accounts allow 20 daily chats and ten monthly songs, refund once, and retain the original UTC month', {
   skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a disposable, migrated local PostgreSQL database',
 }, async () => {
   const target = new URL(databaseURL);
@@ -418,22 +427,22 @@ test('beta allows 20 chats and five completed songs, refunds once, and retains t
 
     const tracks = await Promise.all(Array.from({ length: 12 }, () => reserve('generation')));
     const accepted = tracks.filter((result) => result.allowed);
-    assert.equal(accepted.length, 5, 'concurrent requests cannot overspend');
-    assert.equal((await usage()).storage.reserved, 500, 'unknown outcomes retain their storage');
+    assert.equal(accepted.length, 10, 'concurrent requests cannot overspend');
+    assert.equal((await usage()).storage.reserved, 1000, 'unknown outcomes retain their storage');
     const globalBefore = await query("select used from public.global_usage where operation = 'generation';");
     const first = accepted[0].id;
     await settle(first, 'failed', other);
-    assert.equal((await usage()).generation.used, 5, 'another owner cannot refund usage');
+    assert.equal((await usage()).generation.used, 10, 'another owner cannot refund usage');
     await Promise.all(Array.from({ length: 8 }, () => settle(first, 'failed')));
-    assert.equal((await usage()).generation.used, 4, 'concurrent refunds apply exactly once');
-    assert.equal((await usage()).storage.reserved, 400);
+    assert.equal((await usage()).generation.used, 9, 'concurrent refunds apply exactly once');
+    assert.equal((await usage()).storage.reserved, 900);
     assert.equal(await query("select used from public.global_usage where operation = 'generation';"), globalBefore, 'global attempts are never refunded');
     const replacement = await reserve('generation');
     assert.equal(replacement.allowed, true);
     for (const track of [...accepted.slice(1), replacement]) await settle(track.id, 'completed');
-    assert.equal((await reserve('generation')).resource, 'generation', 'five completed songs exhaust the allowance');
+    assert.equal((await reserve('generation')).resource, 'generation', 'ten completed songs exhaust the allowance');
     await settle(replacement.id, 'failed');
-    assert.equal((await usage()).generation.used, 5, 'completion cannot later become a failure');
+    assert.equal((await usage()).generation.used, 10, 'completion cannot later become a failure');
 
     const savedId = accepted[1].id;
     const song = { id: savedId, owner_id: owner, object_key: `users/${owner}/${savedId}.mp3`,
@@ -441,24 +450,25 @@ test('beta allows 20 chats and five completed songs, refunds once, and retains t
     const save = () => query(`set role service_role; select public.prepare_song_save('${JSON.stringify(song)}', '{}');`).then(JSON.parse);
     assert.equal((await save()).allowed, true);
     assert.equal((await save()).allowed, true);
-    assert.equal((await usage()).generation.used, 5, 'save retries do not charge again');
+    assert.equal((await usage()).generation.used, 10, 'save retries do not charge again');
     await query(`delete from public.songs where id = '${savedId}';`);
     await settle(savedId, 'failed');
-    assert.equal((await usage()).generation.used, 5, 'deleting a song never refunds generation');
+    assert.equal((await usage()).generation.used, 10, 'deleting a song never refunds generation');
 
-    // Simulate a request that started yesterday and completes or fails today.
-    await query(`update public.daily_usage set usage_date = usage_date - 1 where user_id = '${owner}' and operation = 'generation';
-      update public.usage_reservations set usage_date = usage_date - 1 where user_id = '${owner}' and operation = 'generation';`);
-    const yesterday = await reserve('generation');
-    await query(`update public.usage_reservations set usage_date = usage_date - 1 where id = '${yesterday.id}';
-      update public.daily_usage set used = used + 1 where user_id = '${owner}' and operation = 'generation' and usage_date = (clock_timestamp() at time zone 'UTC')::date - 1;
+    // Simulate a request from the previous month that finishes this month.
+    const previousMonth = "(date_trunc('month', clock_timestamp() at time zone 'UTC') - interval '1 day')::date";
+    await query(`update public.daily_usage set usage_date = ${previousMonth} where user_id = '${owner}' and operation = 'generation';
+      update public.usage_reservations set usage_date = ${previousMonth} where user_id = '${owner}' and operation = 'generation';`);
+    const oldMonthSong = await reserve('generation');
+    await query(`update public.usage_reservations set usage_date = ${previousMonth} where id = '${oldMonthSong.id}';
+      update public.daily_usage set used = used + 1 where user_id = '${owner}' and operation = 'generation' and usage_date = ${previousMonth};
       delete from public.daily_usage where user_id = '${owner}' and operation = 'generation' and usage_date = (clock_timestamp() at time zone 'UTC')::date;`);
     const today = await reserve('generation');
     await settle(today.id, 'completed');
-    await settle(yesterday.id, 'failed');
-    await settle(yesterday.id, 'failed');
-    assert.equal((await usage()).generation.used, 1, 'a late refund never changes today');
-    assert.equal(await query(`select used from public.daily_usage where user_id = '${owner}' and operation = 'generation' and usage_date = (clock_timestamp() at time zone 'UTC')::date - 1;`), '5');
+    await settle(oldMonthSong.id, 'failed');
+    await settle(oldMonthSong.id, 'failed');
+    assert.equal((await usage()).generation.used, 1, 'a late refund never changes the current month');
+    assert.equal(await query(`select used from public.daily_usage where user_id = '${owner}' and operation = 'generation' and usage_date = ${previousMonth};`), '10');
     const last = await reserve('generation');
     await settle(last.id, 'failed');
     await assert.rejects(settle(last.id, 'reserved'), /invalid generation status/);
@@ -467,7 +477,7 @@ test('beta allows 20 chats and five completed songs, refunds once, and retains t
     await settle(single.id, 'failed', other);
     const empty = await query(`set role service_role; select public.get_usage('${other}', '{}');`).then(JSON.parse);
     assert.equal(empty.generation.used, 0, 'refunding the last song removes the daily counter without going negative');
-    assert.equal(empty.generation.remaining, 5);
+    assert.equal(empty.generation.remaining, 10);
   } finally {
     await query(`delete from public.songs where owner_id = '${owner}'; delete from auth.users where id in ('${owner}', '${other}');`);
   }
@@ -584,7 +594,7 @@ test('plan edits update every allowance without resetting usage or granting cust
       assert jsonb_array_length(public.get_plan_limits()) = 4;
       usage := public.get_usage('${owner}', '{"chat_daily":99999}');
       assert (usage->'chat'->>'limit')::integer = 20, 'request defaults cannot override the plan';
-      assert (usage->'generation'->>'limit')::integer = 5;
+      assert (usage->'generation'->>'limit')::integer = 10;
       insert into public.paddle_customers(id) values ('${customer}');
       insert into public.paddle_subscriptions(id, user_id, customer_id, status, plan, period_start, period_end, updated_at, occurred_at)
         values ('${subscription}', '${owner}', '${customer}', 'active', 'starter', now(), now() + interval '1 month', now(), now());
@@ -708,7 +718,7 @@ test('a subscription change during a reservation keeps the selected billing peri
     assert.equal(await query(`select count(*) from public.daily_usage where user_id = '${owner}' and operation = 'generation';`), '0');
     const usage = JSON.parse(await query(`set role service_role; select public.get_usage('${owner}', '{}');`));
     assert.equal(usage.plan, 'free', 'the next request sees the cancellation');
-    assert.equal(usage.generation.limit, 5);
+    assert.equal(usage.generation.limit, 10);
   } finally {
     await Promise.allSettled([lock, reservation]);
     await query(`delete from auth.users where id = '${owner}'; delete from public.paddle_subscriptions where id = '${subscription}';
@@ -716,7 +726,7 @@ test('a subscription change during a reservation keeps the selected billing peri
   }
 });
 
-test('lyrics reserve daily or monthly attempts independently from chat and preserve billing periods', {
+test('lyrics reserve monthly attempts independently from chat and preserve billing periods', {
   skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
 }, async () => {
   const target = new URL(databaseURL);
@@ -730,8 +740,8 @@ test('lyrics reserve daily or monthly attempts independently from chat and prese
   const original = await query("select lyrics_monthly from public.plan_limits where plan = 'starter';");
   await query(`insert into auth.users(id) values ('${owner}');`);
   try {
-    const free = await Promise.all(Array.from({ length: 8 }, () => reserve()));
-    assert.equal(free.filter(result => result.allowed).length, 1);
+    const free = await Promise.all(Array.from({ length: 25 }, () => reserve()));
+    assert.equal(free.filter(result => result.allowed).length, 20);
     assert.equal((await usage()).lyrics.remaining, 0);
     assert.equal((await reserve()).resource, 'lyrics');
     assert.equal((await usage()).chat.used, 0);
@@ -760,7 +770,7 @@ test('lyrics reserve daily or monthly attempts independently from chat and prese
       await assert.rejects(query(`set role ${role}; select public.reserve_lyrics('${owner}', '${randomUUID()}');`), /permission denied/);
     }
     await query(`update public.paddle_subscriptions set status = 'canceled' where id = '${subscription}';`);
-    assert.equal((await usage()).lyrics.limit, 1, 'cancellation restores the free policy');
+    assert.equal((await usage()).lyrics.limit, 20, 'cancellation restores the free policy');
     assert.equal((await usage()).chat.used, 1, 'paid chat usage remains on its UTC day');
   } finally {
     await query(`update public.plan_limits set lyrics_monthly = ${Number(original)} where plan = 'starter';

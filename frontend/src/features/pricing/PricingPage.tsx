@@ -13,9 +13,9 @@ function Allowances({ limits }: { limits?: PlanLimits }) {
   if (!limits) return <li>allowances unavailable</li>;
   const storage = limits.storage_bytes / 1024 / 1024;
   return <>
-    <li><strong className="font-semibold text-zinc-100">{limits.plan === "free" ? limits.songs_daily : limits.songs_monthly} songs</strong> {limits.plan === "free" ? "per day" : "per month"}</li>
+    <li><strong className="font-semibold text-zinc-100">{limits.songs_monthly} songs</strong> per month</li>
     <li>{limits.chat_daily} chat messages per day</li>
-    <li>{limits.plan === "free" ? limits.lyrics_daily : limits.lyrics_monthly} lyric requests {limits.plan === "free" ? "per day" : "per month"}</li>
+    <li>{limits.lyrics_monthly} lyric requests per month</li>
     <li>{limits.analysis_daily} audio analyses per day</li>
     <li>{storage >= 1024 ? `${storage / 1024} GiB` : `${storage} MiB`} for your song library</li>
   </>;

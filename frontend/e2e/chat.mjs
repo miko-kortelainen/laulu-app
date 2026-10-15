@@ -33,7 +33,9 @@ try {
   assert.equal(run("eval", 'document.querySelector("#allowances-heading")'), "null");
   run("find", "role", "link", "click", "--name", "my profile", "--exact");
   run("wait", "--text", "20 / 20 remaining");
-  run("wait", "--text", "lyric requests per day");
+  run("wait", "--text", "lyric requests per month");
+  run("wait", "--text", "songs per month");
+  run("wait", "--text", "songs and lyric requests reset");
   run("wait", "--text", "0 / 1 remaining");
   run("wait", "--text", "5 / 5 remaining");
   assert.equal(run("eval", 'document.querySelector("time").dateTime'), JSON.stringify(usage.resetAt));
