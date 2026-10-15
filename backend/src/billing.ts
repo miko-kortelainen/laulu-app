@@ -7,9 +7,9 @@ import {
 import { database } from './database.js';
 
 const planSettings = {
-  starter: { variable: 'PADDLE_STARTER_PRICE_ID' },
-  pro: { variable: 'PADDLE_PRO_PRICE_ID' },
-  ultra: { variable: 'PADDLE_ULTRA_PRICE_ID' },
+  starter: { month: 'PADDLE_STARTER_PRICE_ID', year: 'PADDLE_STARTER_ANNUAL_PRICE_ID' },
+  pro: { month: 'PADDLE_PRO_PRICE_ID', year: 'PADDLE_PRO_ANNUAL_PRICE_ID' },
+  ultra: { month: 'PADDLE_ULTRA_PRICE_ID', year: 'PADDLE_ULTRA_ANNUAL_PRICE_ID' },
 } as const;
 
 let paddle: Paddle | undefined;
@@ -21,11 +21,13 @@ export function getPaddle(): Paddle {
 }
 
 function plans() {
-  return Object.entries(planSettings).map(([name, settings]) => {
-    const priceId = process.env[settings.variable];
-    if (!priceId || !/^pri_[a-z0-9]{26}$/.test(priceId)) throw new Error('sandbox billing prices are not configured.');
-    return { name, priceId };
-  });
+  return Object.entries(planSettings).flatMap(([name, settings]) =>
+    (['month', 'year'] as const).flatMap(interval => {
+      const priceId = process.env[settings[interval]];
+      if (!priceId && interval === 'year') return [];
+      if (!priceId || !/^pri_[a-z0-9]{26}$/.test(priceId)) throw new Error('sandbox billing prices are not configured.');
+      return [{ name, priceId, interval }];
+    }));
 }
 
 async function billingRpc(name: string, parameters: Record<string, unknown>): Promise<unknown> {
@@ -39,6 +41,7 @@ export interface Billing {
   status: string | null;
   paidAccess: boolean;
   periodEnd: string | null;
+  billingInterval: 'month' | 'year' | null;
   scheduledChange: { action: string; effectiveAt: string } | null;
   transactionId: string | null;
 }
@@ -48,22 +51,23 @@ export async function getBilling(userId: string): Promise<Billing> {
   if (!data || typeof data !== 'object' || !('paidAccess' in data) || typeof data.paidAccess !== 'boolean' ||
       !('plan' in data) || (data.plan !== null && !['starter', 'pro', 'ultra'].includes(String(data.plan))) ||
       !('status' in data) || (data.status !== null && typeof data.status !== 'string') ||
+      !('billingInterval' in data) || (data.billingInterval !== null && data.billingInterval !== 'month' && data.billingInterval !== 'year') ||
       !('periodEnd' in data) || (data.periodEnd !== null && (typeof data.periodEnd !== 'string' || !Number.isFinite(Date.parse(data.periodEnd))))) {
     throw new Error('invalid billing response.');
   }
   return data as Billing;
 }
 
-export async function createCheckout(userId: string, requestedPlan: unknown): Promise<string> {
+export async function createCheckout(userId: string, requestedPlan: unknown, interval: unknown = 'month'): Promise<string> {
   if (!process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET) throw new Error('subscription fulfillment is not configured yet.');
-  const plan = plans().find(item => item.name === requestedPlan);
-  if (!plan) throw new Error('choose a valid monthly plan.');
+  const plan = plans().find(item => item.name === requestedPlan && item.interval === interval);
+  if (!plan) throw new Error('choose a valid billing plan.');
   const billing = await getBilling(userId);
   if (billing.status && billing.status !== 'canceled') throw new Error('you already have a subscription. manage it before buying another plan.');
 
   const price = await getPaddle().prices.get(plan.priceId);
-  if (price.status !== 'active' || price.billingCycle?.interval !== 'month' || price.billingCycle.frequency !== 1 || price.trialPeriod) {
-    throw new Error('this monthly plan is unavailable.');
+  if (price.status !== 'active' || price.billingCycle?.interval !== plan.interval || price.billingCycle.frequency !== 1 || price.trialPeriod) {
+    throw new Error('this billing plan is unavailable.');
   }
   const pending = await database().from('paddle_transactions').select('id').eq('user_id', userId)
     .order('id', { ascending: false }).limit(1)
@@ -115,28 +119,30 @@ async function ownedSubscription(userId: string): Promise<{ subscription: Subscr
   };
 }
 
-async function planChange(userId: string, requestedPlan: unknown) {
+async function planChange(userId: string, requestedPlan: unknown, interval: unknown) {
   if (!process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET) throw new Error('subscription fulfillment is not configured yet.');
   const catalogue = plans();
-  const plan = catalogue.find(item => item.name === requestedPlan);
-  if (!plan) throw new Error('choose a valid monthly plan.');
+  const plan = catalogue.find(item => item.name === requestedPlan && item.interval === interval);
+  if (!plan) throw new Error('choose a valid billing plan.');
   const { subscription, pendingChange, synced } = await ownedSubscription(userId);
   if (!synced) throw new Error('your subscription update is processing. check its status before changing plans.');
   if (subscription.status !== 'active' || subscription.collectionMode !== 'automatic') {
-    throw new Error('only active monthly subscriptions can change plans.');
+    throw new Error('only active subscriptions can change plans.');
   }
   if (pendingChange || subscription.scheduledChange) throw new Error('your subscription already has a scheduled change.');
   const item = subscription.items.length === 1 ? subscription.items[0] : undefined;
   const current = catalogue.find(candidate => candidate.priceId === item?.price.id);
-  if (!current || item?.quantity !== 1 || subscription.billingCycle.interval !== 'month' || subscription.billingCycle.frequency !== 1) {
+  if (!current || item?.quantity !== 1 || subscription.billingCycle.interval !== current.interval || subscription.billingCycle.frequency !== 1) {
     throw new Error('this subscription cannot change plans here.');
   }
+  if (plan.interval !== current.interval) throw new Error('keep your current billing frequency when changing tiers.');
   if (current.name === plan.name) throw new Error('you already have this plan.');
   const price = await getPaddle().prices.get(plan.priceId);
-  if (price.status !== 'active' || price.billingCycle?.interval !== 'month' || price.billingCycle.frequency !== 1 || price.trialPeriod) {
-    throw new Error('this monthly plan is unavailable.');
+  if (price.status !== 'active' || price.billingCycle?.interval !== plan.interval || price.billingCycle.frequency !== 1 || price.trialPeriod) {
+    throw new Error('this billing plan is unavailable.');
   }
-  const downgrade = catalogue.indexOf(plan) < catalogue.indexOf(current);
+  const tiers = Object.keys(planSettings);
+  const downgrade = tiers.indexOf(plan.name) < tiers.indexOf(current.name);
   const effectiveAt = downgrade ? subscription.currentBillingPeriod?.endsAt : null;
   if (effectiveAt === undefined) throw new Error('your renewal date is unavailable. try again.');
   const body: UpdateSubscriptionRequestBody = {
@@ -149,16 +155,17 @@ async function planChange(userId: string, requestedPlan: unknown) {
 
 export interface PlanChangePreview {
   plan: string;
+  billingInterval: 'month' | 'year';
   subscriptionUpdatedAt: string;
   effectiveAt: string | null;
   chargeNow: string;
-  monthlyTotal: string;
+  recurringTotal: string;
   nextTotal: string;
   nextBilledAt: string;
 }
 
-export async function previewPlanChange(userId: string, requestedPlan: unknown): Promise<PlanChangePreview> {
-  const { subscription, plan, effectiveAt, body } = await planChange(userId, requestedPlan);
+export async function previewPlanChange(userId: string, requestedPlan: unknown, interval: unknown = 'month'): Promise<PlanChangePreview> {
+  const { subscription, plan, effectiveAt, body } = await planChange(userId, requestedPlan, interval);
   const preview = await getPaddle().subscriptions.previewUpdate(subscription.id, body);
   const recurring = preview.recurringTransactionDetails?.totals;
   const next = preview.nextTransaction?.details.totals;
@@ -170,16 +177,16 @@ export async function previewPlanChange(userId: string, requestedPlan: unknown):
     return format.format(Number(amount) / 10 ** digits);
   }
   return {
-    plan: plan.name, subscriptionUpdatedAt: subscription.updatedAt,
+    plan: plan.name, billingInterval: plan.interval, subscriptionUpdatedAt: subscription.updatedAt,
     effectiveAt,
     chargeNow: money(preview.immediateTransaction?.details.totals.grandTotal ?? '0', subscription.currencyCode),
-    monthlyTotal: money(recurring.total, recurring.currencyCode),
+    recurringTotal: money(recurring.total, recurring.currencyCode),
     nextTotal: money(next.grandTotal, next.currencyCode), nextBilledAt: preview.nextBilledAt,
   };
 }
 
-export async function changeSubscription(userId: string, requestedPlan: unknown, updatedAt: unknown): Promise<void> {
-  const { subscription, body } = await planChange(userId, requestedPlan);
+export async function changeSubscription(userId: string, requestedPlan: unknown, updatedAt: unknown, interval: unknown = 'month'): Promise<void> {
+  const { subscription, body } = await planChange(userId, requestedPlan, interval);
   if (typeof updatedAt !== 'string' || subscription.updatedAt !== updatedAt) {
     throw new Error('your subscription changed. review the new price before confirming.');
   }
@@ -208,13 +215,13 @@ async function handleCustomer(event: CustomerCreatedEvent | CustomerUpdatedEvent
 async function handleSubscription(data: SubscriptionNotification | SubscriptionCreatedNotification, occurredAt: string): Promise<void> {
   const item = data.items.length === 1 ? data.items[0] : undefined;
   const plan = item && item.quantity === 1 && item.recurring && ['active', 'trialing'].includes(item.status) &&
-    data.billingCycle.interval === 'month' && data.billingCycle.frequency === 1 &&
-    item.price?.billingCycle?.interval === 'month' && item.price.billingCycle.frequency === 1
-    ? plans().find(candidate => candidate.priceId === item.price?.id) : undefined;
+    data.billingCycle.frequency === 1 && item.price?.billingCycle?.frequency === 1 &&
+    data.billingCycle.interval === item.price.billingCycle.interval
+    ? plans().find(candidate => candidate.priceId === item.price?.id && candidate.interval === data.billingCycle.interval) : undefined;
   await sync('subscription', {
     id: data.id, customer_id: data.customerId, status: data.status,
     transaction_id: 'transactionId' in data ? data.transactionId : null,
-    price_id: item?.price?.id ?? null, plan: plan?.name ?? null,
+    price_id: item?.price?.id ?? null, plan: plan?.name ?? null, billing_interval: plan?.interval ?? null,
     period_start: data.currentBillingPeriod?.startsAt ?? null,
     period_end: data.currentBillingPeriod?.endsAt ?? null,
     scheduled_change: data.scheduledChange, updated_at: data.updatedAt,

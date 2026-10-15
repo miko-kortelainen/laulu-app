@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { Paddle } from "@paddle/paddle-js";
 import type { User } from "@supabase/supabase-js";
-import { cancelSubscription, changeSubscription, createCheckout, getBilling, getPlanLimits, loadPricing, paidPlans, previewPlanChange, type Billing, type PlanChangePreview, type PlanLimits } from "./api";
+import { cancelSubscription, changeSubscription, createCheckout, getBilling, getPlanLimits, loadPricing, paidPlans, previewPlanChange, type Billing, type BillingInterval, type PlanChangePreview, type PlanLimits } from "./api";
 
 export function usePricing(user?: User) {
+  const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const [pricing, setPricing] = useState<{ paddle: Paddle; prices: Record<string, string> }>();
   const [billing, setBilling] = useState<Billing>();
   const [limits, setLimits] = useState<PlanLimits[]>();
@@ -46,7 +47,7 @@ export function usePricing(user?: User) {
         const target = billingTarget.current;
         const confirmed = target === "cancel"
           ? result.status === "canceled" || result.scheduledChange?.action === "cancel"
-          : target ? result.paidAccess && (target.effectiveAt
+          : target ? result.paidAccess && result.billingInterval === target.billingInterval && (target.effectiveAt
             ? (result.scheduledChange?.action === "downgrade" && result.scheduledChange.plan === target.plan) || result.plan === target.plan
             : result.plan === target.plan)
           : result.paidAccess && (!transactionId.current || result.transactionId === transactionId.current);
@@ -135,7 +136,7 @@ export function usePricing(user?: User) {
 
   async function checkout(plan: typeof paidPlans[number]): Promise<void> {
     const controller = requests.current;
-    if (!user || !pricing || !billing || !limitsReady || loading || syncing || !pricing.prices[plan.priceId] ||
+    if (!user || !pricing || !billing || !limitsReady || loading || syncing || !pricing.prices[plan.priceIds[billingInterval]] ||
         checkoutOpen.current || subscriptionCheck.current || managementBusy.current || pendingAction || billingTarget.current ||
         (billing.status && billing.status !== "canceled") || !controller || controller.signal.aborted) return;
     setError(undefined);
@@ -143,7 +144,7 @@ export function usePricing(user?: User) {
     checkoutOpen.current = true;
     setSelectedPlan(plan.name);
     try {
-      transactionId.current = await createCheckout(plan.name, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]));
+      transactionId.current = await createCheckout(plan.name, billingInterval, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]));
       controller.signal.throwIfAborted();
       pricing.paddle.Checkout.open({
         transactionId: transactionId.current,
@@ -161,7 +162,7 @@ export function usePricing(user?: User) {
   async function choosePlan(plan: typeof paidPlans[number]): Promise<void> {
     if (!billing?.status || billing.status === "canceled") return checkout(plan);
     const controller = requests.current;
-    if (!user || billing.status !== "active" || billing.scheduledChange || pendingAction || managementBusy.current ||
+    if (!user || billing.status !== "active" || billing.billingInterval !== billingInterval || billing.scheduledChange || pendingAction || managementBusy.current ||
         checkoutOpen.current || subscriptionCheck.current || billingTarget.current || !controller || controller.signal.aborted) return;
     managementBusy.current = true;
     setManaging(true);
@@ -169,7 +170,7 @@ export function usePricing(user?: User) {
     setError(undefined);
     setNotice(undefined);
     try {
-      const preview = await previewPlanChange(plan.name, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]));
+      const preview = await previewPlanChange(plan.name, billingInterval, AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]));
       controller.signal.throwIfAborted();
       setPendingAction({ preview });
     } catch (cause: unknown) {
@@ -229,7 +230,7 @@ export function usePricing(user?: User) {
     setAttempt(previous => previous + 1);
   }
 
-  return { prices: pricing?.prices, limits, limitsReady, billing, loading, billingLoading, error, notice, selectedPlan, syncing,
+  return { prices: pricing?.prices, billingInterval, setBillingInterval, limits, limitsReady, billing, loading, billingLoading, error, notice, selectedPlan, syncing,
     choosePlan, requestCancellation, pendingAction, managing, confirmAction, dismissAction, retry, confirmSubscription,
     updatePending: Boolean(billingTarget.current), pendingTransaction: Boolean(transactionId.current || billingTarget.current) };
 }

@@ -38,8 +38,8 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
           {usage ? <>
             <dl className="space-y-1 tabular-nums">
               {([
-                ["chat messages per day", usage.chat], [usage.plan === "free" ? "songs per day" : "songs per billing month", usage.generation], ["audio analyses per day", usage.analysis],
-                [usage.plan === "free" ? "lyric requests per day" : "lyric requests per billing month", usage.lyrics],
+                ["chat messages per day", usage.chat], [usage.plan === "free" ? "songs per day" : "songs per month", usage.generation], ["audio analyses per day", usage.analysis],
+                [usage.plan === "free" ? "lyric requests per day" : "lyric requests per month", usage.lyrics],
               ] as const).map(([label, allowance]) => (
                 <div key={label} className="flex justify-between gap-3">
                   <dt>{label}</dt><dd>{allowance.remaining} / {allowance.limit} remaining</dd>

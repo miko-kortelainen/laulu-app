@@ -157,7 +157,7 @@ The separate Qwen lyrics agent keeps its 8,192-token completion budget, includin
 ### Configure sandbox pricing and checkout
 
 The public `/pricing` page shows free, starter, pro, and ultra plans.
-Paid prices come from Paddle's localized price preview. Checkout requires login and uses the Paddle sandbox only.
+Paid prices come from Paddle's price preview in USD. Checkout requires login and uses the Paddle sandbox only.
 Verified sandbox subscriptions select starter, pro, or ultra allowances from `public.plan_limits`.
 Paid plans increase chat, audio analysis, monthly songs, and saved-song storage. Shared daily limits still apply.
 
@@ -172,16 +172,21 @@ VITE_PADDLE_CLIENT_TOKEN=test_your_public_client_token
 VITE_PADDLE_STARTER_PRICE_ID=pri_01m4tvkjam9nptz0f1ngrbr9mj
 VITE_PADDLE_PRO_PRICE_ID=pri_01m4tvmm85j15s4vjd9ykmsa0d
 VITE_PADDLE_ULTRA_PRICE_ID=pri_01m4tvnr6xfnyk1nwtyt5vma9e
+VITE_PADDLE_STARTER_ANNUAL_PRICE_ID=pri_01m50px1szmdvk7ytv5sejdzgr
+VITE_PADDLE_PRO_ANNUAL_PRICE_ID=pri_01m50pzdw9pfn9c5ss1kehnv9n
+VITE_PADDLE_ULTRA_ANNUAL_PRICE_ID=pri_01m50q3rnc8na58rv1s4n9yay9
 ```
 
-These existing sandbox prices are $9, $19, and $39 USD per month, with no trial.
+The sandbox monthly prices are $10, $20, and $40 USD. Annual prices are $99, $199, and $380 USD, with no trial.
+The page switches between monthly and yearly billing. Song and lyric allowances stay monthly for both billing frequencies.
+Apply `20261015212549_annual_billing.sql` before deploying annual billing. It preserves billing dates and counts usage in monthly UTC windows anchored to the subscription start date.
 The ultra price belongs to the Paddle product named `Advanced`.
-The page includes applicable tax for the detected location; checkout confirms the total for the billing address.
+The page shows USD prices with applicable tax for the detected location. Checkout selects the local currency and confirms the total for the billing address.
 Use a `test_` client token from Paddle's sandbox authentication settings. Never put a Paddle API key in a `VITE_` variable.
 Set the default payment link in the sandbox checkout settings to a URL that serves this app, such as `http://localhost:5173/pricing`.
 Sandbox checkout uses [Paddle test cards](https://developer.paddle.com/concepts/payment-methods/credit-debit-card#test-cards).
 Restart the frontend after changing its environment values.
-In Coolify, enable build-time availability for the four `VITE_PADDLE_*` values. They are not needed at runtime.
+In Coolify, enable build-time availability for all `VITE_PADDLE_*` values. They are not needed at runtime.
 
 Set these server-only values in `backend/.env` (runtime variables in Coolify):
 
@@ -191,11 +196,14 @@ PADDLE_NOTIFICATION_WEBHOOK_SECRET=your_notification_destination_signing_secret
 PADDLE_STARTER_PRICE_ID=pri_01m4tvkjam9nptz0f1ngrbr9mj
 PADDLE_PRO_PRICE_ID=pri_01m4tvmm85j15s4vjd9ykmsa0d
 PADDLE_ULTRA_PRICE_ID=pri_01m4tvnr6xfnyk1nwtyt5vma9e
+PADDLE_STARTER_ANNUAL_PRICE_ID=pri_01m50px1szmdvk7ytv5sejdzgr
+PADDLE_PRO_ANNUAL_PRICE_ID=pri_01m50pzdw9pfn9c5ss1kehnv9n
+PADDLE_ULTRA_ANNUAL_PRICE_ID=pri_01m50q3rnc8na58rv1s4n9yay9
 ```
 
 The API key needs price read, transaction read/write, and subscription read/write permissions. The signing secret belongs to the webhook destination;
 it is not the API key. The public frontend price IDs must match the server price IDs.
-Keep these five server-side Paddle values runtime-only in Coolify; disable their build-time availability.
+Keep all server-side Paddle values runtime-only in Coolify; disable their build-time availability.
 The permanent sandbox destination is `https://studio.lau.lu/api/paddle/webhook`.
 Subscribe it to `customer.created`, `customer.updated`, `transaction.completed`, and
 `subscription.created`, `subscription.updated`, `subscription.canceled`, `subscription.activated`,
@@ -208,14 +216,14 @@ Browser-provided emails and custom data never establish ownership. Purchases mad
 have no trusted account binding and need an explicit account-to-transaction mapping before replaying their notifications.
 The raw webhook route runs before JSON parsing and authentication. Invalid signatures and failed database writes return non-2xx.
 Mirrors upsert by Paddle ID and ignore older state; late created events can still establish ownership.
-Only `active` and `trialing` subscriptions with a recognized monthly plan grant paid access.
+Only `active` and `trialing` subscriptions with a recognized monthly or yearly plan grant paid access.
 Scheduled cancellation or pause retains access while the status remains active; `paused`, `past_due`, and `canceled` use free allowances.
-The last verified billing period remains in use until Paddle reports renewal. A new period starts a new allowance.
+The last verified billing period remains in use until Paddle reports renewal. Yearly subscriptions receive a new song and lyric allowance each month, without another payment webhook.
 Confirmed failures refund the original period, once; unknown outcomes stay charged.
-Operation cleanup retains monthly reservations and never touches billing mirrors.
+Operation cleanup retains paid reservations and never touches billing mirrors.
 
 Signed-in subscribers can change or cancel their subscription from `/pricing`.
-Plan changes show Paddle's price preview before confirmation. Upgrades charge the prorated difference immediately.
+Plan changes keep the current billing frequency and show Paddle's price preview before confirmation. Upgrades charge the prorated difference immediately.
 Downgrades bill the full lower price at the next renewal and keep the current allowances until that period starts.
 Further plan changes are blocked while a downgrade or cancellation is scheduled. Cancellation remains available during a pending downgrade.
 Cancellation takes effect at the end of the paid period. Paused subscriptions end immediately, as required by Paddle.

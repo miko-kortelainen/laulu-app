@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import test from 'node:test';
-import { cancelSubscription, changeSubscription, createCheckout, getPaddle, processPaddleEvent } from '../src/billing.js';
+import { cancelSubscription, changeSubscription, createCheckout, getPaddle, previewPlanChange, processPaddleEvent } from '../src/billing.js';
+
+const annualPrices = ['pri_01m50px1szmdvk7ytv5sejdzgr', 'pri_01m50pzdw9pfn9c5ss1kehnv9n', 'pri_01m50q3rnc8na58rv1s4n9yay9'];
+[process.env.PADDLE_STARTER_ANNUAL_PRICE_ID, process.env.PADDLE_PRO_ANNUAL_PRICE_ID, process.env.PADDLE_ULTRA_ANNUAL_PRICE_ID] = annualPrices;
 
 // Offline payloads and a mocked database transport; no Paddle or database entities are created.
 test('plan changes enforce ownership, replace the tier, preserve declined payments, and defer downgrades', async () => {
@@ -41,7 +44,7 @@ test('plan changes enforce ownership, replace the tier, preserve declined paymen
     return Response.json({ data: subscription });
   };
   try {
-    await assert.rejects(changeSubscription(userId, 'unknown', updatedAt), /valid monthly plan/);
+    await assert.rejects(changeSubscription(userId, 'unknown', updatedAt), /valid billing plan/);
     await assert.rejects(changeSubscription(userId, 'ultra', 'old-preview'), /subscription changed/);
     ownerFound = false;
     await assert.rejects(cancelSubscription(userId), /no subscription/);
@@ -61,6 +64,67 @@ test('plan changes enforce ownership, replace the tier, preserve declined paymen
       { items: [{ price_id: prices[0], quantity: 1 }], proration_billing_mode: 'do_not_bill', on_payment_failure: 'prevent_change' },
       { effective_from: 'next_billing_period' },
     ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('annual checkout and tier changes use yearly prices, previews, and renewal dates', async () => {
+  const userId = '9f218508-49ca-4d85-9f7b-08dc3383fd82';
+  const customerId = 'ctm_01m4tvkjam9nptz0f1ngrbr9mj';
+  const transactionId = 'txn_01m4tvkjam9nptz0f1ngrbr9mj';
+  const updatedAt = '2026-10-14T12:00:00Z';
+  process.env.PADDLE_SANDBOX_API_KEY = 'pdl_sdbx_offline_billing';
+  process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET = 'offline_notification_secret';
+  process.env.SUPABASE_URL = 'https://offline-billing.supabase.co';
+  process.env.SUPABASE_SECRET_KEY = 'sb_secret_offline';
+  let interval = 'year';
+  const price = (id: string) => ({ id, status: 'active', billing_cycle: { interval, frequency: 1 }, trial_period: null,
+    unit_price: { amount: '19900', currency_code: 'USD' }, quantity: { minimum: 1, maximum: 1 } });
+  const subscription = { id: 'sub_01m4tvkjam9nptz0f1ngrbr9mj', customer_id: customerId, status: 'active', updated_at: updatedAt,
+    currency_code: 'USD', collection_mode: 'automatic', billing_cycle: { interval: 'year', frequency: 1 },
+    current_billing_period: { starts_at: '2026-10-14T12:00:00Z', ends_at: '2027-10-14T12:00:00Z' },
+    items: [{ price: price(annualPrices[1]), quantity: 1, product: { id: 'pro_01m4tvkjam9nptz0f1ngrbr9mj' } }] };
+  const writes: { path: string; body: Record<string, unknown> }[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, options) => {
+    const request = new Request(input, options);
+    const url = new URL(request.url);
+    if (url.hostname === 'offline-billing.supabase.co') {
+      if (url.pathname.endsWith('/get_billing')) return Response.json({ plan: null, status: null, paidAccess: false,
+        periodEnd: null, billingInterval: null, scheduledChange: null, transactionId: null });
+      if (url.pathname.endsWith('/paddle_transactions')) return Response.json([]);
+      if (url.pathname.endsWith('/register_paddle_checkout')) return Response.json(null);
+      assert.equal(url.searchParams.get('user_id'), `eq.${userId}`);
+      return Response.json({ id: subscription.id, customer_id: customerId, scheduled_change: null, updated_at: updatedAt });
+    }
+    if (url.pathname.startsWith('/prices/')) return Response.json({ data: price(url.pathname.split('/').at(-1)!) });
+    if (request.method === 'GET') return Response.json({ data: subscription });
+    writes.push({ path: url.pathname, body: await request.json() as Record<string, unknown> });
+    if (url.pathname === '/transactions') return Response.json({ data: { id: transactionId, status: 'draft', items: [], payments: [] } });
+    if (url.pathname.endsWith('/preview')) return Response.json({ data: { ...subscription, next_billed_at: subscription.current_billing_period.ends_at,
+      recurring_transaction_details: { totals: { total: '9900', currency_code: 'USD' }, tax_rates_used: [], line_items: [] },
+      next_transaction: { billing_period: subscription.current_billing_period, adjustments: [],
+        details: { totals: { grand_total: '9900', currency_code: 'USD' }, tax_rates_used: [], line_items: [] } } } });
+    return Response.json({ data: subscription });
+  };
+  try {
+    await assert.rejects(createCheckout(userId, 'starter', 'week'), /valid billing plan/);
+    interval = 'month';
+    await assert.rejects(createCheckout(userId, 'starter', 'year'), /billing plan is unavailable/);
+    interval = 'year';
+    assert.equal(await createCheckout(userId, 'starter', 'year'), transactionId);
+    assert.deepEqual(writes.at(-1)?.body.items, [{ price_id: annualPrices[0], quantity: 1 }]);
+    await assert.rejects(changeSubscription(userId, 'starter', updatedAt, 'month'), /current billing frequency/);
+    const preview = await previewPlanChange(userId, 'starter', 'year');
+    assert.equal(preview.billingInterval, 'year');
+    assert.equal(preview.recurringTotal, '$99.00');
+    assert.equal(preview.effectiveAt, '2027-10-14T12:00:00Z');
+    await changeSubscription(userId, 'starter', updatedAt, 'year');
+    assert.equal(writes.at(-1)?.body.proration_billing_mode, 'do_not_bill');
+    await changeSubscription(userId, 'ultra', updatedAt, 'year');
+    assert.deepEqual(writes.at(-1)?.body, { items: [{ price_id: annualPrices[2], quantity: 1 }],
+      proration_billing_mode: 'prorated_immediately', on_payment_failure: 'prevent_change' });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -167,7 +231,7 @@ test('checkout blocks a completed payment until its subscription is confirmed ca
         }
         assert.equal(url.hostname, 'offline-billing.supabase.co');
         if (url.pathname === '/rest/v1/rpc/get_billing') {
-          return Response.json({ plan: null, status: null, paidAccess: false, periodEnd: null, scheduledChange: null, transactionId: null });
+          return Response.json({ plan: null, status: null, paidAccess: false, periodEnd: null, billingInterval: null, scheduledChange: null, transactionId: null });
         }
         if (url.pathname === '/rest/v1/paddle_transactions') {
           assert.equal(url.searchParams.get('user_id'), `eq.${userId}`);
@@ -216,28 +280,31 @@ test('subscription dispatch maps actual purchased prices, including trialing ite
   };
   try {
     for (const [index, name] of ['starter', 'pro', 'ultra'].entries()) {
-      for (const status of ['active', 'trialing']) {
-        const body = JSON.stringify({ event_type: 'subscription.created', event_id: 'evt_01m4tvkjam9nptz0f1ngrbr9mj',
-          notification_id: 'ntf_01m4tvkjam9nptz0f1ngrbr9mj', occurred_at: '2026-10-13T12:00:00Z', data: {
-            id: 'sub_01m4tvkjam9nptz0f1ngrbr9mj', customer_id: 'ctm_01m4tvkjam9nptz0f1ngrbr9mj',
-            transaction_id: 'txn_01m4tvkjam9nptz0f1ngrbr9mj', status, currency_code: 'USD', collection_mode: 'automatic',
-            billing_cycle: { interval: 'month', frequency: 1 }, created_at: '2026-10-13T12:00:00Z', updated_at: '2026-10-13T12:00:00Z',
-            current_billing_period: { starts_at: '2026-10-13T12:00:00Z', ends_at: '2026-11-13T12:00:00Z' },
-            scheduled_change: { action: 'cancel', effective_at: '2026-11-13T12:00:00Z', resume_at: null },
-            custom_data: { user_id: 'untrusted-browser-user' }, discount: null, billing_details: null, import_meta: null,
-            items: [{ status, quantity: 1, recurring: true, price: { id: priceIds[index], billing_cycle: { interval: 'month', frequency: 1 } },
-              product: null, trial_dates: null, created_at: '2026-10-13T12:00:00Z', updated_at: '2026-10-13T12:00:00Z' }],
-          } });
-        const timestamp = Math.floor(Date.now() / 1000);
-        const secret = 'offline_notification_secret';
-        const hmac = createHmac('sha256', secret).update(`${timestamp}:${body}`).digest('hex');
-        await processPaddleEvent(await getPaddle().webhooks.unmarshal(body, secret, `ts=${timestamp};h1=${hmac}`));
-        const write = writes.at(-1);
-        assert.equal(write?.plan, name);
-        assert.equal('song_limit' in (write ?? {}), false, 'allowances come from the plan table');
-        assert.equal(write?.status, status);
-        assert.equal('user_id' in (write ?? {}), false);
-        assert.deepEqual(write?.scheduled_change, { action: 'cancel', effectiveAt: '2026-11-13T12:00:00Z', resumeAt: null });
+      for (const interval of ['month', 'year']) {
+        for (const status of ['active', 'trialing']) {
+          const body = JSON.stringify({ event_type: 'subscription.created', event_id: 'evt_01m4tvkjam9nptz0f1ngrbr9mj',
+            notification_id: 'ntf_01m4tvkjam9nptz0f1ngrbr9mj', occurred_at: '2026-10-13T12:00:00Z', data: {
+              id: 'sub_01m4tvkjam9nptz0f1ngrbr9mj', customer_id: 'ctm_01m4tvkjam9nptz0f1ngrbr9mj',
+              transaction_id: 'txn_01m4tvkjam9nptz0f1ngrbr9mj', status, currency_code: 'USD', collection_mode: 'automatic',
+              billing_cycle: { interval, frequency: 1 }, created_at: '2026-10-13T12:00:00Z', updated_at: '2026-10-13T12:00:00Z',
+              current_billing_period: { starts_at: '2026-10-13T12:00:00Z', ends_at: '2026-11-13T12:00:00Z' },
+              scheduled_change: { action: 'cancel', effective_at: '2026-11-13T12:00:00Z', resume_at: null },
+              custom_data: { user_id: 'untrusted-browser-user' }, discount: null, billing_details: null, import_meta: null,
+              items: [{ status, quantity: 1, recurring: true, price: { id: interval === 'year' ? annualPrices[index] : priceIds[index], billing_cycle: { interval, frequency: 1 } },
+                product: null, trial_dates: null, created_at: '2026-10-13T12:00:00Z', updated_at: '2026-10-13T12:00:00Z' }],
+            } });
+          const timestamp = Math.floor(Date.now() / 1000);
+          const secret = 'offline_notification_secret';
+          const hmac = createHmac('sha256', secret).update(`${timestamp}:${body}`).digest('hex');
+          await processPaddleEvent(await getPaddle().webhooks.unmarshal(body, secret, `ts=${timestamp};h1=${hmac}`));
+          const write = writes.at(-1);
+          assert.equal(write?.plan, name);
+          assert.equal(write?.billing_interval, interval);
+          assert.equal('song_limit' in (write ?? {}), false, 'allowances come from the plan table');
+          assert.equal(write?.status, status);
+          assert.equal('user_id' in (write ?? {}), false);
+          assert.deepEqual(write?.scheduled_change, { action: 'cancel', effectiveAt: '2026-11-13T12:00:00Z', resumeAt: null });
+        }
       }
     }
   } finally {

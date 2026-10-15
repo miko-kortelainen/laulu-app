@@ -64,11 +64,15 @@ VITE_PADDLE_CLIENT_TOKEN={{vault.VITE_PADDLE_CLIENT_TOKEN}}
 VITE_PADDLE_STARTER_PRICE_ID={{vault.VITE_PADDLE_STARTER_PRICE_ID}}
 VITE_PADDLE_PRO_PRICE_ID={{vault.VITE_PADDLE_PRO_PRICE_ID}}
 VITE_PADDLE_ULTRA_PRICE_ID={{vault.VITE_PADDLE_ULTRA_PRICE_ID}}
+VITE_PADDLE_STARTER_ANNUAL_PRICE_ID={{vault.VITE_PADDLE_STARTER_ANNUAL_PRICE_ID}}
+VITE_PADDLE_PRO_ANNUAL_PRICE_ID={{vault.VITE_PADDLE_PRO_ANNUAL_PRICE_ID}}
+VITE_PADDLE_ULTRA_ANNUAL_PRICE_ID={{vault.VITE_PADDLE_ULTRA_ANNUAL_PRICE_ID}}
 ```
 
-Store the sandbox `test_` client token and the three sandbox price IDs in Doppler under these names.
+Store the sandbox `test_` client token and the monthly and annual sandbox price IDs in Doppler under these names.
 The Dockerfile declares the matching build arguments. See [sandbox pricing setup](README.md#configure-sandbox-pricing-and-checkout)
-for the existing price IDs. Checkout remains in sandbox and does not activate paid allowances.
+for the existing price IDs. Checkout remains in sandbox. Confirmed sandbox subscriptions activate the selected tier allowances.
+Add the matching `PADDLE_*_ANNUAL_PRICE_ID` variables at runtime and apply `20261015212549_annual_billing.sql` before deploying.
 
 Keep these values in Coolify as runtime variables:
 

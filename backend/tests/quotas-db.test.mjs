@@ -1,11 +1,21 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const databaseURL = process.env.QUOTA_TEST_DATABASE_URL;
 const psql = process.env.QUOTA_TEST_PSQL || 'psql';
 const globalLimits = JSON.stringify({ chat: 100, analysis: 100, generation: 100 });
+
+test('annual subscriptions keep monthly allowances and annual payment dates', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
+}, async () => {
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  await query(await readFile(new URL('./annual-allowances.sql', import.meta.url), 'utf8'));
+});
 
 function query(sql) {
   return new Promise((resolve, reject) => {

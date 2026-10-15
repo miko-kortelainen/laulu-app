@@ -48,13 +48,21 @@ const server = createServer(async (req, res) => {
   if ((target === "pricing" || target === "all") && (pathname === "/pricing" || pathname === "/")) {
     content = Buffer.from(content.toString().replace("</head>", `<script>
       window.checkoutRequests = [];
+      window.previewRequests = [];
+      window.billingRequests = [];
+      const originalFetch = window.fetch;
+      window.fetch = (...args) => {
+        if (String(args[0]).includes('/api/billing/') && args[1]?.body) window.billingRequests.push(JSON.parse(args[1].body));
+        return originalFetch(...args);
+      };
       window.PaddleBillingV1 = {
         Initialized: false, Environment: { set() {} },
         Initialize(options) { this.Initialized = true; this.callback = options.eventCallback; },
         Update(options) { this.callback = options.eventCallback; },
-        PricePreview({ items }) { return Promise.resolve({ data: { details: { lineItems: items.map(item => ({
-          price: { id: item.priceId, status: 'active', billingCycle: { interval: 'month', frequency: 1 }, trialPeriod: null },
-          product: { status: 'active' }, formattedTotals: { total: '$9.00' }
+        PricePreview({ items, currencyCode }) { window.previewRequests.push({ currencyCode }); return Promise.resolve({ data: { details: { lineItems: items.map(item => ({
+          price: { id: item.priceId, status: 'active', billingCycle: {
+            interval: ['pri_01m50px1szmdvk7ytv5sejdzgr', 'pri_01m50pzdw9pfn9c5ss1kehnv9n', 'pri_01m50q3rnc8na58rv1s4n9yay9'].includes(item.priceId) ? 'year' : 'month', frequency: 1 }, trialPeriod: null },
+          product: { status: 'active' }, formattedTotals: { total: item.priceId.startsWith('pri_01m50') ? '$90.00' : '$9.00' }
         })) } } }); },
         Checkout: { open(options) { window.checkoutRequests.push(options); }, close() {} }
       };
@@ -73,7 +81,10 @@ try {
       VITE_PADDLE_CLIENT_TOKEN: "test_offline",
       VITE_PADDLE_STARTER_PRICE_ID: "pri_01m4tvkjam9nptz0f1ngrbr9mj",
       VITE_PADDLE_PRO_PRICE_ID: "pri_01m4tvmm85j15s4vjd9ykmsa0d",
-      VITE_PADDLE_ULTRA_PRICE_ID: "pri_01m4tvnr6xfnyk1nwtyt5vma9e" },
+      VITE_PADDLE_ULTRA_PRICE_ID: "pri_01m4tvnr6xfnyk1nwtyt5vma9e",
+      VITE_PADDLE_STARTER_ANNUAL_PRICE_ID: "pri_01m50px1szmdvk7ytv5sejdzgr",
+      VITE_PADDLE_PRO_ANNUAL_PRICE_ID: "pri_01m50pzdw9pfn9c5ss1kehnv9n",
+      VITE_PADDLE_ULTRA_ANNUAL_PRICE_ID: "pri_01m50q3rnc8na58rv1s4n9yay9" },
   });
   process.stdout.write(build.stdout);
   for (const name of target === "all" ? ["auth", "chat", "audio-player", "songs", "operations", "pricing"] : [target]) {

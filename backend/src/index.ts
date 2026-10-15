@@ -55,21 +55,21 @@ app.get('/api/billing', async (_req, res) => {
 });
 
 app.post('/api/billing/checkout', requireTerms, locked(async (req, res) => {
-  const transactionId = await createCheckout(res.locals.userId, req.body?.plan).catch((error: unknown) => {
+  const transactionId = await createCheckout(res.locals.userId, req.body?.plan, req.body?.billingInterval).catch((error: unknown) => {
     res.status(503).json({ error: error instanceof Error ? error.message : 'checkout could not start. try again.' });
   });
   if (transactionId) res.set('Cache-Control', 'private, no-store').json({ transactionId });
 }));
 
 app.post('/api/billing/preview', requireTerms, locked(async (req, res) => {
-  const preview = await previewPlanChange(res.locals.userId, req.body?.plan).catch((error: unknown) => {
+  const preview = await previewPlanChange(res.locals.userId, req.body?.plan, req.body?.billingInterval).catch((error: unknown) => {
     res.status(503).json({ error: error instanceof Error ? error.message : 'could not preview this plan change. try again.' });
   });
   if (preview) res.set('Cache-Control', 'private, no-store').json(preview);
 }));
 
 app.post('/api/billing/change', requireTerms, locked(async (req, res) => {
-  await changeSubscription(res.locals.userId, req.body?.plan, req.body?.subscriptionUpdatedAt).catch((error: unknown) => {
+  await changeSubscription(res.locals.userId, req.body?.plan, req.body?.subscriptionUpdatedAt, req.body?.billingInterval).catch((error: unknown) => {
     res.status(503).json({ error: error instanceof Error ? error.message : 'could not change your plan. check your subscription before retrying.' });
   });
   if (!res.headersSent) res.status(204).end();

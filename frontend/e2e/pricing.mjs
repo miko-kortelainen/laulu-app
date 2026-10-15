@@ -13,7 +13,7 @@ const plans = [
   { plan: 'pro', lyrics_daily: null, lyrics_monthly: 30, chat_daily: 80, analysis_daily: 50, songs_daily: null, songs_monthly: 80, storage_bytes: 5368709120 },
   { plan: 'ultra', lyrics_daily: null, lyrics_monthly: 60, chat_daily: 150, analysis_daily: 100, songs_daily: null, songs_monthly: 180, storage_bytes: 10737418240 },
 ];
-const billing = { plan: null, status: null, paidAccess: false, periodEnd: null, scheduledChange: null, transactionId: null };
+const billing = { plan: null, status: null, paidAccess: false, periodEnd: null, billingInterval: null, scheduledChange: null, transactionId: null };
 const transactionId = 'txn_01m4tvkjam9nptz0f1ngrbr9mj';
 async function planResponse(data) {
   await run('network', 'unroute', '**/api/plans');
@@ -25,13 +25,20 @@ try {
   await planResponse(plans);
   await run('open', `${url}/pricing`);
   await run('wait', '--text', '180 songs');
+  assert.equal(await run('eval', 'window.previewRequests.at(-1).currencyCode'), JSON.stringify('USD'));
+  await run('wait', '--text', 'checkout confirms the total in your local currency.');
   for (const plan of plans) {
     const text = JSON.parse(await run('eval', `${card(plan.plan)}.textContent`));
-    assert.ok(text.includes(`${plan.chat_daily} chat messages per UTC day`));
-    assert.ok(text.includes(`${plan.analysis_daily} audio analyses per UTC day`));
+    assert.ok(text.includes(`${plan.chat_daily} chat messages per day`));
+    assert.ok(text.includes(`${plan.analysis_daily} audio analyses per day`));
     assert.ok(text.includes(`${plan.songs_daily ?? plan.songs_monthly} songs`));
     assert.ok(text.includes(`${plan.lyrics_daily ?? plan.lyrics_monthly} lyric requests`));
   }
+  await run('find', 'role', 'button', 'click', '--name', 'yearly', '--exact');
+  await run('wait', '--text', 'per year · billed yearly');
+  assert.ok(JSON.parse(await run('eval', `${card('starter')}.textContent`)).includes('$90.00'));
+  assert.ok(JSON.parse(await run('eval', `${card('starter')}.textContent`)).includes('30 songs per month'));
+  await run('find', 'role', 'button', 'click', '--name', 'monthly', '--exact');
   assert.equal(await run('eval', 'window.checkoutRequests.length'), '0');
   await run('network', 'route', '**/api/billing', '--body', JSON.stringify(billing));
   await run('network', 'route', '**/api/billing/checkout', '--body', JSON.stringify({ transactionId }));
@@ -40,6 +47,13 @@ try {
   await run('find', 'role', 'button', 'click', '--name', 'choose starter', '--exact');
   await run('wait', '--fn', 'window.checkoutRequests.length === 1');
   assert.equal(await run('eval', 'window.checkoutRequests[0].transactionId'), JSON.stringify(transactionId));
+  assert.equal(await run('eval', 'Object.hasOwn(window.checkoutRequests[0], "currencyCode")'), 'false');
+  assert.equal(await run('eval', 'window.billingRequests.at(-1).billingInterval'), JSON.stringify('month'));
+  await run('eval', "window.PaddleBillingV1.callback({ name: 'checkout.closed' })");
+  await run('find', 'role', 'button', 'click', '--name', 'yearly', '--exact');
+  await run('find', 'role', 'button', 'click', '--name', 'choose starter', '--exact');
+  await run('wait', '--fn', 'window.checkoutRequests.length === 2');
+  assert.equal(await run('eval', 'window.billingRequests.at(-1).billingInterval'), JSON.stringify('year'));
   await run('eval', "window.PaddleBillingV1.callback({ name: 'checkout.closed' })");
 
   // Reload uses edited allowances, with no rebuilt frontend or new subscription event.
@@ -65,9 +79,9 @@ try {
   await run('wait', '--fn', `${card('starter')}.querySelector('button').disabled === false`);
   assert.equal(await run('eval', "document.querySelector('[role=alert]')"), 'null');
 
-  const paidBilling = { ...billing, plan: 'pro', status: 'active', paidAccess: true, periodEnd: '2026-11-13T12:00:00Z' };
-  const preview = { plan: 'starter', subscriptionUpdatedAt: '2026-10-14T12:00:00Z', effectiveAt: paidBilling.periodEnd,
-    chargeNow: '$0.00', monthlyTotal: '$9.00', nextTotal: '$9.00', nextBilledAt: paidBilling.periodEnd };
+  const paidBilling = { ...billing, plan: 'pro', billingInterval: 'month', status: 'active', paidAccess: true, periodEnd: '2026-11-13T12:00:00Z' };
+  const preview = { plan: 'starter', billingInterval: 'month', subscriptionUpdatedAt: '2026-10-14T12:00:00Z', effectiveAt: paidBilling.periodEnd,
+    chargeNow: '$0.00', recurringTotal: '$9.00', nextTotal: '$9.00', nextBilledAt: paidBilling.periodEnd };
   await run('network', 'unroute', '**/api/billing');
   await run('network', 'route', '**/api/billing', '--body', JSON.stringify(paidBilling));
   await run('network', 'route', '**/api/billing/preview', '--body', JSON.stringify(preview));
@@ -96,9 +110,24 @@ try {
   await run('find', 'role', 'button', 'click', '--name', 'confirm cancellation', '--exact');
   await run('wait', '--text', 'cancellation is scheduled.');
   assert.equal(await run('eval', `${card('pro')}.querySelector('button').textContent.trim()`), JSON.stringify('current plan'));
+  await run('network', 'unroute', '**/api/billing');
+  await run('network', 'route', '**/api/billing', '--body', JSON.stringify({ ...paidBilling, billingInterval: 'year', periodEnd: '2027-10-13T12:00:00Z' }));
+  await run('eval', 'location.reload()');
+  await run('wait', '--text', 'select your current billing frequency');
+  assert.equal(await run('eval', `${card('starter')}.querySelector('button').disabled`), 'true');
+  await run('find', 'role', 'button', 'click', '--name', 'yearly', '--exact');
+  await run('wait', '--fn', `${card('starter')}.querySelector('button')?.disabled === false`);
+  assert.equal(await run('eval', `${card('pro')}.querySelector('button').textContent.trim()`), JSON.stringify('current plan'));
+  await run('network', 'unroute', '**/api/billing/preview');
+  await run('network', 'route', '**/api/billing/preview', '--body', JSON.stringify({ ...preview, billingInterval: 'year',
+    recurringTotal: '$90.00', nextTotal: '$90.00', effectiveAt: '2027-10-13T12:00:00Z', nextBilledAt: '2027-10-13T12:00:00Z' }));
+  await run('find', 'role', 'button', 'click', '--name', 'change to starter', '--exact');
+  await run('wait', '--text', '$90.00 per year.');
+  assert.equal(await run('eval', 'window.billingRequests.at(-1).billingInterval'), JSON.stringify('year'));
+  await run('find', 'role', 'button', 'click', '--name', 'keep current plan', '--exact');
   await run('set', 'viewport', '390', '844');
   assert.equal(await run('eval', 'document.documentElement.scrollWidth <= innerWidth'), 'true');
-  console.log('Pricing E2E passed: plan allowances, checkout, recovery, downgrade preview and confirmation, cancellation, and mobile width. All billing calls were mocked.');
+  console.log('Pricing E2E passed: monthly/yearly prices and checkout, monthly allowances, recovery, plan changes, cancellation, and mobile width. All billing calls were mocked.');
 } catch (error) {
   process.stderr.write(`${await run('snapshot')}\n`);
   throw error;

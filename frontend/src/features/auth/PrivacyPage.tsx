@@ -30,7 +30,7 @@ export function PrivacyPage() {
         </section>
         <section className="space-y-2" aria-labelledby="privacy-limits">
           <h2 id="privacy-limits" className="text-base font-semibold text-zinc-100">beta limits</h2>
-          <p>Open my profile to see your allowances and reset times. Free accounts have 5 songs per UTC day. Starter, pro, and ultra have 30, 80, and 180 songs per billing month, with no rollover. Chat and audio analysis keep their daily limits. Shared daily limits and song storage limits also apply, so requests can stop even when you have song allowance left.</p>
+          <p>Open my profile to see your allowances and reset times. Free accounts have 5 songs per UTC day. Starter, pro, and ultra have 30, 80, and 180 songs per month, with no rollover. Yearly subscriptions keep the same monthly song and lyric allowances. Chat and audio analysis keep their daily limits. Shared daily limits and song storage limits also apply, so requests can stop even when you have song allowance left.</p>
           <p>A completed song uses one generation allowance. A confirmed generation failure restores personal allowance; an unknown outcome keeps it reserved. Retrying a failed save does not generate another song. Deleting a song does not restore generation allowance.</p>
           <p>Uploads must be MP3, WAV, FLAC, or OGG, up to 50 MiB and ten minutes long. The beta can have interruptions. Download songs you want to keep.</p>
         </section>

@@ -43,6 +43,16 @@ export function PricingPage({ user }: { user?: User }) {
           </p>
         </section>
 
+        <div role="group" aria-label="billing frequency" className="flex w-fit gap-1 rounded-lg border border-white/15 p-1">
+          {(["month", "year"] as const).map(interval => <button key={interval} type="button"
+            aria-pressed={pricing.billingInterval === interval}
+            disabled={Boolean(pricing.selectedPlan) || pricing.syncing || pricing.managing || Boolean(pricing.pendingAction) || pricing.updatePending}
+            onClick={() => pricing.setBillingInterval(interval)}
+            className={cn(buttonClass, "w-auto border-transparent", pricing.billingInterval === interval && "bg-white/10")}>
+            {interval === "month" ? "monthly" : "yearly"}
+          </button>)}
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <section aria-labelledby="plan-free" className="flex flex-col rounded-xl border border-white/10 bg-zinc-900/60 p-6">
             <p className="mb-4 text-xs text-zinc-400">try laulu</p>
@@ -58,24 +68,24 @@ export function PricingPage({ user }: { user?: User }) {
 
           {paidPlans.map(plan => {
             const featured = plan.name === "pro";
-            const price = pricing.prices?.[plan.priceId];
+            const price = pricing.prices?.[plan.priceIds[pricing.billingInterval]];
             const hasSubscription = Boolean(pricing.billing?.status && pricing.billing.status !== "canceled");
-            const currentPlan = pricing.billing?.plan === plan.name && pricing.billing.paidAccess;
+            const currentPlan = pricing.billing?.plan === plan.name && pricing.billing.paidAccess && pricing.billing.billingInterval === pricing.billingInterval;
             return (
               <section key={plan.name} aria-labelledby={`plan-${plan.name}`} className={cn(
                 "flex flex-col rounded-xl border bg-zinc-900/60 p-6",
                 featured ? "pricing-gradient-border border-transparent" : "border-white/10",
               )}>
-                <p className={cn("mb-4 text-xs", featured ? "text-amber-200" : "text-zinc-400")}>{featured ? "recommended" : "monthly plan"}</p>
+                <p className={cn("mb-4 text-xs", featured ? "text-amber-200" : "text-zinc-400")}>{featured ? "recommended" : pricing.billingInterval === "year" ? "yearly plan" : "monthly plan"}</p>
                 <h2 id={`plan-${plan.name}`} className="text-lg font-semibold">{plan.name}</h2>
                 <p className="mt-1 text-sm text-zinc-400">{plan.description}</p>
                 <p className="mt-6 break-words text-4xl font-semibold tabular-nums">{price ?? (pricing.loading ? "…" : "unavailable")}</p>
-                <p className="mt-2 text-xs text-zinc-400">per month · billed monthly</p>
+                <p className="mt-2 text-xs text-zinc-400">{pricing.billingInterval === "year" ? "per year · billed yearly" : "per month · billed monthly"}</p>
                 <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
                   <Allowances limits={pricing.limits?.find(limits => limits.plan === plan.name)} />
                 </ul>
                 {user ? <button type="button" disabled={pricing.loading || !pricing.limitsReady || pricing.billingLoading || !pricing.billing || !price || Boolean(pricing.selectedPlan) || pricing.syncing || pricing.managing || Boolean(pricing.pendingAction) || pricing.updatePending || currentPlan ||
-                    (hasSubscription && (pricing.billing?.status !== "active" || Boolean(pricing.billing.scheduledChange)))}
+                    (hasSubscription && (pricing.billing?.status !== "active" || pricing.billing.billingInterval !== pricing.billingInterval || Boolean(pricing.billing.scheduledChange)))}
                   onClick={() => void pricing.choosePlan(plan)} className={buttonClass}>
                   {pricing.selectedPlan === plan.name ? hasSubscription ? "loading preview…" : "opening checkout…"
                     : currentPlan ? "current plan" : hasSubscription ? `change to ${plan.name}` : `choose ${plan.name}`}
@@ -98,7 +108,7 @@ export function PricingPage({ user }: { user?: User }) {
             <p>{pricing.pendingAction.preview.effectiveAt
               ? `${pricing.pendingAction.preview.plan} starts on ${formatDate(pricing.pendingAction.preview.effectiveAt)}. you keep your current allowances until then. no charge or credit today.`
               : `your new plan starts after payment is confirmed. estimated charge today: ${pricing.pendingAction.preview.chargeNow}.`}</p>
-            <p>next payment: {pricing.pendingAction.preview.nextTotal} on {formatDate(pricing.pendingAction.preview.nextBilledAt)}. then {pricing.pendingAction.preview.monthlyTotal} per month.</p>
+            <p>next payment: {pricing.pendingAction.preview.nextTotal} on {formatDate(pricing.pendingAction.preview.nextBilledAt)}. then {pricing.pendingAction.preview.recurringTotal} per {pricing.pendingAction.preview.billingInterval}.</p>
           </div>}
           <div className="flex flex-wrap gap-3">
             <button type="button" autoFocus aria-describedby="subscription-confirm-title" className={cn(buttonClass, "w-auto")} disabled={pricing.managing || pricing.syncing} onClick={() => void pricing.confirmAction()}>
@@ -109,12 +119,15 @@ export function PricingPage({ user }: { user?: User }) {
         </section>}
 
         <div className="space-y-3 text-sm">
-          <p role="status" className="text-zinc-300">{pricing.loading ? "loading local prices…" : pricing.notice}</p>
+          <p role="status" className="text-zinc-300">{pricing.loading ? "loading prices…" : pricing.notice}</p>
           {pricing.billing?.status && <p className="text-zinc-300">
             {pricing.billing.plan ?? "subscription"} · {pricing.billing.status}
+            {pricing.billing.billingInterval && ` · billed ${pricing.billing.billingInterval === "year" ? "yearly" : "monthly"}`}
             {!pricing.billing.paidAccess && " · free allowance applies"}
             {pricing.billing.scheduledChange && ` · ${pricing.billing.scheduledChange.action === "downgrade" ? `change to ${pricing.billing.scheduledChange.plan}` : pricing.billing.scheduledChange.action} scheduled for ${formatDate(pricing.billing.scheduledChange.effectiveAt, true)}`}
           </p>}
+          {pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.billingInterval !== pricing.billingInterval &&
+            <p className="text-zinc-400">select your current billing frequency to change tiers. billing frequency changes are not available here.</p>}
           {user && pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.scheduledChange?.action !== "cancel" &&
             <button type="button" className={linkClass} onClick={pricing.requestCancellation}
               disabled={pricing.billingLoading || pricing.managing || pricing.syncing || Boolean(pricing.selectedPlan) || Boolean(pricing.pendingAction) || pricing.updatePending}>
@@ -125,8 +138,8 @@ export function PricingPage({ user }: { user?: User }) {
             {pricing.pendingTransaction ? <button type="button" onClick={() => void pricing.confirmSubscription()} disabled={pricing.syncing || pricing.managing} className={linkClass}>check subscription</button>
               : <button type="button" onClick={pricing.retry} disabled={pricing.loading || pricing.billingLoading || pricing.managing} className={linkClass}>retry</button>}
           </div>}
-          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">prices include applicable tax for your detected location. checkout confirms the total for your billing address. each generated version counts as one song.</p>
-          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">unused songs and lyric requests do not roll over. chat and audio analysis reset at midnight UTC. shared daily limits apply to all plans.</p>
+          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">prices shown in USD include applicable tax for your detected location. checkout confirms the total in your local currency. each generated version counts as one song.</p>
+          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">paid song and lyric allowances reset monthly, including on yearly plans. unused allowances do not roll over. chat and audio analysis reset at midnight UTC. shared daily limits apply to all plans.</p>
         </div>
 
         <footer className="flex flex-wrap gap-x-6 text-xs text-zinc-400">
