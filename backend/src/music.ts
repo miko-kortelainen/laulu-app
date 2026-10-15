@@ -28,6 +28,19 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function musicServiceError(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  if (/\b(moderation|safety|prohibited|content[_ -]?(filter(?:ed)?|policy)|copyright|recitation)\b/i.test(message)) {
+    return 'this prompt was blocked by music safety checks. edit the prompt or lyrics and try again.';
+  }
+  const status = record(error).status;
+  if (status === 400 || status === 422) {
+    return 'the music service could not use this prompt. edit the prompt or lyrics and try again.';
+  }
+  if (status === 429) return 'the music service is busy. try again in a few minutes.';
+  return 'could not generate your track. try again later.';
+}
+
 export function validateMusicPrompt(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 10_000) {
     throw new Error('music prompt must contain 1–10,000 characters.');
@@ -117,11 +130,12 @@ export const generateMusic = traceable(async (
     contents: input,
     config: { httpOptions: { timeout: 30_000, retryOptions: { attempts: 1 } } },
   }).catch((error: unknown) => {
-    throw new Error(`music token counting failed. generation was not started. ${error instanceof Error ? error.message : 'unknown service error.'}`);
+    console.error('music token counting failed:', error);
+    throw new Error('could not check your prompt. generation was not started. try again later.');
   });
   const totalTokens = tokenData.totalTokens;
   if (typeof totalTokens !== 'number' || !Number.isSafeInteger(totalTokens) || totalTokens < 0) {
-    throw new Error('music token counting returned an invalid count. generation was not started.');
+    throw new Error('could not check your prompt. generation was not started. try again later.');
   }
   if (totalTokens > 131_072) {
     throw new MusicPromptTokenLimitError(`music prompt contains ${totalTokens.toLocaleString('en-US')} tokens; the ${model} input limit is 131,072. shorten the prompt and try again.`);
@@ -137,12 +151,14 @@ export const generateMusic = traceable(async (
     }, { timeout: 300_000, maxRetries: 0 });
     confirmedFailure = ['completed', 'failed', 'cancelled', 'incomplete', 'budget_exceeded'].includes(data.status);
     if (data.status !== 'completed' || !Array.isArray(data.steps)) {
-      throw new Error('music service did not return a completed track.');
+      throw new Error(data.errors?.length ? JSON.stringify(data.errors) : 'music service did not return a completed track.');
     }
 
     for (const value of data.steps) {
       const step = record(value);
-      if (step.type !== 'model_output' || !Array.isArray(step.content)) continue;
+      if (step.type !== 'model_output') continue;
+      if (step.error) throw new Error(JSON.stringify(step.error));
+      if (!Array.isArray(step.content)) continue;
 
       for (const value of step.content) {
         const block = record(value);
@@ -156,8 +172,9 @@ export const generateMusic = traceable(async (
         audio = Buffer.from(block.data, 'base64');
       }
     }
-    if (!audio?.length) throw new Error('music service returned no audio.');
+    if (!audio?.length) throw new Error(data.errors?.length ? JSON.stringify(data.errors) : 'music service returned no audio.');
   } catch (error: unknown) {
+    console.error('music generation failed:', error);
     const rejected = error instanceof Error && 'status' in error && typeof error.status === 'number' &&
       [400, 401, 403, 404, 422, 429].includes(error.status);
     let settlementError: string | undefined;
@@ -167,7 +184,8 @@ export const generateMusic = traceable(async (
         settlementError = ' could not restore your song allowance. contact support.';
       });
     }
-    throw new MusicGenerationError(`music generation failed. ${error instanceof Error ? error.message : 'unknown service error.'}` +
+    const message = confirmedFailure || rejected ? musicServiceError(error) : 'could not confirm whether your track finished.';
+    throw new MusicGenerationError(message +
       (settlementError ?? (confirmedFailure || rejected ? '' : ' the outcome is unknown; your song allowance remains reserved.')), confirmedFailure || rejected);
   }
 

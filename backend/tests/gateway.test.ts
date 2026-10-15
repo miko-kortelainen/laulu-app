@@ -124,7 +124,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     assert.equal(calls.length, 5);
 
     fail = true;
-    await assert.rejects(generateMusic('instrumental folk', undefined, session), /token counting failed/);
+    await assert.rejects(generateMusic('instrumental folk', undefined, session), /could not check your prompt/);
     assert.equal(calls.length, 6);
     await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), /offline gateway failure/);
     assert.equal(calls.length, 7);

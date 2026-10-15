@@ -259,6 +259,8 @@ an unavailable endpoint; sandbox retries are limited. Keep Paddle's default paym
 Provider keys stay in Cloudflare. The backend requires the gateway for every hosted AI call.
 Chat, lyric generation, audio analysis, and music generation incur provider charges.
 The **generate song** button starts music generation from the edited brief.
+Music errors show short recovery instructions instead of raw provider responses.
+Safety rejections ask you to edit the prompt or lyrics before trying again.
 
 ## Storage and recovery
 

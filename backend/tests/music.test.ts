@@ -113,17 +113,17 @@ test('music waits for confirmation, validates responses, and saves only valid au
     assert.equal(calls, 0);
 
     tokenResponse = async () => new Response('{}', { status: 429 });
-    await assert.rejects(generateMusic(prompt), /token counting failed.*429/);
+    await assert.rejects(generateMusic(prompt), /could not check your prompt.*generation was not started/);
     tokenResponse = async () => new Response('invalid JSON');
-    await assert.rejects(generateMusic(prompt), /token counting failed/);
+    await assert.rejects(generateMusic(prompt), /could not check your prompt/);
     for (const totalTokens of [undefined, null, '100', -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
       tokenResponse = async () => Response.json({ totalTokens });
-      await assert.rejects(generateMusic(prompt), /invalid count/);
+      await assert.rejects(generateMusic(prompt), /could not check your prompt/);
     }
     tokenResponse = async () => { throw new TypeError('offline'); };
-    await assert.rejects(generateMusic(prompt), /generation was not started.*offline/);
+    await assert.rejects(generateMusic(prompt), /generation was not started/);
     tokenResponse = async () => { throw new DOMException('timeout', 'TimeoutError'); };
-    await assert.rejects(generateMusic(prompt), /generation was not started.*timeout/);
+    await assert.rejects(generateMusic(prompt), /generation was not started/);
     assert.equal(calls, 0);
     tokenResponse = async () => Response.json({ totalTokens: 100 });
 
@@ -141,11 +141,26 @@ test('music waits for confirmation, validates responses, and saves only valid au
 
     response = Response.json({ error: { code: 400, message: 'Prompt rejected by music service.', status: 'INVALID_ARGUMENT' } }, { status: 400 });
     const previousErrorCalls = calls;
-    await assert.rejects(generateMusic(prompt), /music generation failed.*Prompt rejected by music service/);
+    await assert.rejects(generateMusic(prompt), { message: 'the music service could not use this prompt. edit the prompt or lyrics and try again.' });
     assert.equal(calls, previousErrorCalls + 1);
     assert.equal(storage.quotas.reservations.size, 1);
     assert.equal([...storage.quotas.reservations.values()][0].storageBytes, 0);
     assert.equal([...storage.quotas.reservations.values()][0].status, 'failed', 'confirmed rejection refunds personal usage');
+
+    const moderationMessage = 'this prompt was blocked by music safety checks. edit the prompt or lyrics and try again.';
+    for (const status of [400, 403]) {
+      response = Response.json({ error: { code: status, message: 'Prompt blocked by safety filters. Technical details: request_id=private-id' } }, { status });
+      await assert.rejects(generateMusic(prompt), { message: moderationMessage });
+      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'failed');
+    }
+    response = Response.json({ status: 'failed', errors: [{ code: 'content_filter', message: 'Prompt rejected by moderation.' }], steps: [] });
+    await assert.rejects(generateMusic(prompt), { message: moderationMessage });
+    response = Response.json({ status: 'completed', steps: [{ type: 'model_output', error: { code: 3, message: 'Audio blocked by safety filters.' } }] });
+    await assert.rejects(generateMusic(prompt), { message: moderationMessage });
+    response = Response.json({ error: { message: 'Rate limit exceeded: private-id' } }, { status: 429 });
+    await assert.rejects(generateMusic(prompt), { message: 'the music service is busy. try again in a few minutes.' });
+    response = Response.json({ error: { message: 'Invalid API key: private-id' } }, { status: 403 });
+    await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
     refundUnavailable = true;
     response = Response.json({ status: 'failed', steps: [] });
     await assert.rejects(generateMusic(prompt), /could not restore your song allowance/);
@@ -154,7 +169,7 @@ test('music waits for confirmation, validates responses, and saves only valid au
     refundUnavailable = false;
     for (const status of ['failed', 'cancelled', 'incomplete']) {
       response = Response.json({ status, steps: [] });
-      await assert.rejects(generateMusic(prompt), /completed track/);
+      await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
       assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'failed');
     }
     for (const status of [408, 500, 502, 504]) {
@@ -173,12 +188,12 @@ test('music waits for confirmation, validates responses, and saves only valid au
     await assert.rejects(generateMusic(prompt), /outcome is unknown/);
     assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved');
     response = Response.json({ status: 'completed', steps: [] });
-    await assert.rejects(generateMusic(prompt), /no audio/);
+    await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
     for (const data of ['invalid!', 'AAAAA', 'A===', 'AA=A', 'AA==AAAA']) {
       response = Response.json({ status: 'completed', steps: [{
         type: 'model_output', content: [{ type: 'audio', mime_type: 'audio/mpeg', data }],
       }] });
-      await assert.rejects(generateMusic(prompt), /invalid MP3/);
+      await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
     }
 
     const bytes = Buffer.concat([Buffer.from('ID3-offline-audio-fixture'), Buffer.alloc(4 * 1024 * 1024)]);
