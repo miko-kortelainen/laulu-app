@@ -59,8 +59,8 @@ export function PricingPage({ user }: { user?: User }) {
             <h2 id="plan-free" className="text-lg font-semibold">free</h2>
             <p className="mt-1 text-sm text-zinc-400">get started with the free beta</p>
             <p className="mt-6 text-4xl font-semibold tabular-nums">$0</p>
-            <p className="mt-2 text-xs text-zinc-400">no payment required</p>
-            <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
+            <p className="mt-2 min-h-5 text-xs text-zinc-400">no payment required</p>
+            <ul className="my-8 min-h-37 flex-1 space-y-3 text-sm text-zinc-300">
               <Allowances limits={pricing.limits?.find(plan => plan.plan === "free")} />
             </ul>
             <Link to={user ? "/" : "/create-account"} className={buttonClass}>{user ? "open studio" : "create free account"}</Link>
@@ -80,13 +80,17 @@ export function PricingPage({ user }: { user?: User }) {
                 <p className={cn("mb-4 text-xs", featured ? "text-amber-200" : "text-zinc-400")}>{featured ? "recommended" : pricing.billingInterval === "year" ? "yearly plan" : "monthly plan"}</p>
                 <h2 id={`plan-${plan.name}`} className="text-lg font-semibold">{plan.name}</h2>
                 <p className="mt-1 text-sm text-zinc-400">{plan.description}</p>
-                <p className="mt-6 break-words text-4xl font-semibold tabular-nums">{price ?? (pricing.loading ? "…" : "unavailable")}</p>
-                <p className="mt-2 text-xs text-zinc-400">
+                <p className="mt-6 break-words text-4xl font-semibold tabular-nums">
+                  {price ?? (pricing.loading
+                    ? <span aria-hidden="true" className="block h-10 w-28 rounded bg-white/10 motion-safe:animate-pulse" />
+                    : "unavailable")}
+                </p>
+                <p className="mt-2 min-h-5 text-xs text-zinc-400">
                   {pricing.billingInterval === "year" ? "billed yearly" : "billed monthly"}
                   {savings !== undefined && savings > 0 &&
                     <span aria-hidden={pricing.billingInterval !== "year"} className={cn("ml-2 inline-block rounded-full bg-green-400/10 px-2 py-0.5 font-medium text-green-300", pricing.billingInterval !== "year" && "invisible")}>save {savings}%</span>}
                 </p>
-                <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
+                <ul className="my-8 min-h-37 flex-1 space-y-3 text-sm text-zinc-300">
                   <Allowances limits={pricing.limits?.find(limits => limits.plan === plan.name)} />
                 </ul>
                 {user ? <button type="button" disabled={pricing.loading || !pricing.limitsReady || pricing.billingLoading || !pricing.billing || !price || Boolean(pricing.selectedPlan) || pricing.syncing || pricing.managing || Boolean(pricing.pendingAction) || pricing.updatePending || currentPlan ||
@@ -124,7 +128,7 @@ export function PricingPage({ user }: { user?: User }) {
         </section>}
 
         <div className="space-y-3 text-sm">
-          <p role="status" className="text-zinc-300">{pricing.loading ? "loading prices…" : pricing.notice}</p>
+          <p role="status" className="text-zinc-300">{pricing.loading ? <span className="sr-only">loading prices…</span> : pricing.notice}</p>
           {pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.billingInterval !== pricing.billingInterval &&
             <p className="text-zinc-400">select your current billing frequency to change tiers. billing frequency changes are not available here.</p>}
           {user && pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.scheduledChange?.action !== "cancel" &&
@@ -138,12 +142,6 @@ export function PricingPage({ user }: { user?: User }) {
               : <button type="button" onClick={pricing.retry} disabled={pricing.loading || pricing.billingLoading || pricing.managing} className={linkClass}>retry</button>}
           </div>}
         </div>
-
-        <footer className="flex flex-wrap gap-x-6 text-xs text-zinc-400">
-          <Link to="/" className={linkClass}>back to studio</Link>
-          <Link to="/privacy" className={linkClass}>privacy</Link>
-          <Link to="/terms" className={linkClass}>terms</Link>
-        </footer>
       </div>
     </main>
   );
