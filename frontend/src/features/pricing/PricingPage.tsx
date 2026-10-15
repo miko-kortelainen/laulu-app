@@ -43,7 +43,7 @@ export function PricingPage({ user }: { user?: User }) {
           </p>
         </section>
 
-        <div role="group" aria-label="billing frequency" className="mx-auto grid w-fit grid-cols-2 gap-1 rounded-lg border border-white/15 p-1">
+        <div role="group" aria-label="billing frequency" className="mx-auto mb-4! grid w-fit grid-cols-2 gap-1 rounded-lg border border-white/10 p-1">
           {(["month", "year"] as const).map(interval => <button key={interval} type="button"
             aria-pressed={pricing.billingInterval === interval}
             disabled={Boolean(pricing.selectedPlan) || pricing.syncing || pricing.managing || Boolean(pricing.pendingAction) || pricing.updatePending}
