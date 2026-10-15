@@ -69,7 +69,7 @@ test('durable operations survive lost start responses and deletion locks survive
       'Content-Type': 'application/json' };
   }
   const start = (signal?: AbortSignal) => fetch(`${base}/api/music`, { method: 'POST', headers: headers(), signal,
-    body: JSON.stringify({ operationId: id, prompt: 'offline folk' }) });
+    body: JSON.stringify({ operationId: id, prompt: 'offline folk', title: 'quiet morning' }) });
   t.after(async () => {
     insertResponse.release(); providerResult.release();
     globalThis.fetch = originalFetch;
@@ -94,6 +94,7 @@ test('durable operations survive lost start responses and deletion locks survive
   let operation = await getOperation(owner, id);
   while (operation.state === 'running') { await new Promise((resolve) => setTimeout(resolve, 10)); operation = await getOperation(owner, id); }
   assert.equal(operation.state, 'completed');
+  assert.equal((operation.result?.track as { title: string }).title, 'quiet morning');
   assert.equal((operation.result?.track as { url: string }).url, `/api/music/${id}.mp3`);
   assert.equal(generations, 1);
   assert.equal((await start()).status, 202);

@@ -333,12 +333,12 @@ app.post('/api/music', requireTerms, locked(async (req: Request, res: Response) 
 
   if (req.body?.operationId !== undefined) {
     const operation = await startOperation(sessionId, req.body.operationId, 'music', async () => ({
-      track: await generateMusic(prompt, model, sessionId, req.body.operationId, { metadata: { thread_id: sessionId, ls_model_name: model } }, title),
+      track: await generateMusic(prompt, model, sessionId, req.body.operationId, title, { metadata: { thread_id: sessionId, ls_model_name: model } }),
     })).catch((error: unknown) => storageFailure(res, error));
     if (operation) res.status(202).json({ operation });
     return;
   }
-  const track = await generateMusic(prompt, model, sessionId, undefined, { metadata: { thread_id: sessionId, ls_model_name: model } }, title).catch((error: unknown) => {
+  const track = await generateMusic(prompt, model, sessionId, undefined, title, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
     if (error instanceof QuotaError || error instanceof SongStorageError) return storageFailure(res, error);
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
       .json({ error: error instanceof Error ? error.message : 'music generation failed.' });

@@ -111,8 +111,8 @@ export const generateMusic = traceable(async (
   modelId: unknown = 'lyria-3.5',
   userId: string,
   operationId?: string,
-  _traceConfig?: { metadata: { thread_id: string; ls_model_name?: string } },
   title: string = 'untitled',
+  _traceConfig?: { metadata: { thread_id: string; ls_model_name?: string } },
 ): Promise<SavedSong> => {
   const input = validateMusicPrompt(prompt);
   const model = validateMusicModel(modelId);
@@ -198,6 +198,6 @@ export const generateMusic = traceable(async (
 }, {
   name: 'generate_audio',
   run_type: 'tool',
-  argsConfigPath: [4],
+  argsConfigPath: [5],
   metadata: { ls_provider: 'google' },
 });
