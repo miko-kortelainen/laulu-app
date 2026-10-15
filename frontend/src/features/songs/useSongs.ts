@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { deleteSavedSong, getSongRecovery, getSongs, retrySongStorage, type SavedSong } from "./api";
+import { deleteSavedSong, getSongRecovery, getSongs, retrySongStorage, setSongFavourite, type SavedSong } from "./api";
 
 export function useSongs() {
   const [songs, setSongs] = useState<SavedSong[]>();
+  const [activeTab, setActiveTab] = useState<"all songs" | "favourites">("all songs");
+  const [favouritingId, setFavouritingId] = useState<string>();
+  const [favouriteError, setFavouriteError] = useState<{ id: string; message: string }>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [request, setRequest] = useState(0);
@@ -49,6 +52,33 @@ export function useSongs() {
     // Keep only the three most recently opened players loaded; older ones reload on reopen.
     setOpenedSongIds((previous) => [...previous.filter((songId) => songId !== id), id].slice(-3));
     setSelectedSongId((previous) => previous === id ? undefined : id);
+  }
+
+  function selectTab(tab: typeof activeTab): void {
+    setActiveTab(tab);
+    setSelectedSongId(undefined);
+  }
+
+  async function toggleFavourite(id: string): Promise<void> {
+    const song = songs?.find((song) => song.id === id);
+    if (!song || loading || acting.current) return;
+    const signal = currentRequest.current!.signal;
+    const isFavourite = !song.isFavourite;
+    acting.current = true;
+    setFavouritingId(id);
+    setFavouriteError(undefined);
+    const failure = await setSongFavourite(id, isFavourite, signal).catch((cause: unknown) =>
+      new Error(cause instanceof Error ? cause.message : "could not update favourite. try again."));
+    if (signal.aborted) return;
+    if (failure) setFavouriteError({ id, message: failure.message });
+    else {
+      setSongs((previous) => previous?.map((song) => song.id === id ? { ...song, isFavourite } : song));
+      if (activeTab === "favourites" && !isFavourite) {
+        setSelectedSongId((previous) => previous === id ? undefined : previous);
+      }
+    }
+    acting.current = false;
+    setFavouritingId(undefined);
   }
 
   function requestDelete(id: string): void {
@@ -102,6 +132,9 @@ export function useSongs() {
     setSavingId(undefined);
   }
 
-  return { songs, loading, error, refresh, selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
+  const visibleSongs = activeTab === "favourites" ? songs?.filter((song) => song.isFavourite) : songs;
+
+  return { songs, visibleSongs, activeTab, selectTab, favouritingId, favouriteError, toggleFavourite,
+    loading, error, refresh, selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
     recoveryIds, savingId, saveError, saveSong };
 }

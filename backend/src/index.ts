@@ -10,7 +10,7 @@ import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudi
 import { requireAuth } from './auth.js';
 import { hasAcceptedTerms, recordTermsAcceptance, requireTerms, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
-import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, SongNotFoundError, SongStorageError, validateSongTitle } from './songs.js';
+import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, setSongFavourite, SongNotFoundError, SongStorageError, validateSongTitle } from './songs.js';
 import { getUsage, QuotaError, quotaRpc, reserveUsage } from './quotas.js';
 import { cleanupLocalAudio, LocalAudioLimitError } from './local-audio.js';
 import { acknowledgeOperation, busySessions, getOperation, operationId, listOperations, recoverOperations, sessionBusy, startOperation } from './operations.js';
@@ -200,6 +200,16 @@ app.use('/api/audio', (error: unknown, _req: Request, res: Response, _next: Next
   const oversized = error && typeof error === 'object' && 'type' in error && error.type === 'entity.too.large';
   res.status(oversized ? 413 : 400).json({ error: oversized ? 'audio upload must be 50 MB or smaller.' : 'audio upload failed.' });
 });
+
+app.patch('/api/songs/:id/favourite', locked(async (req, res) => {
+  const isFavourite: unknown = req.body?.isFavourite;
+  if (typeof isFavourite !== 'boolean') {
+    res.status(400).json({ error: 'isFavourite must be a boolean.' });
+    return;
+  }
+  await setSongFavourite(res.locals.userId, req.params.id as string, isFavourite).catch((error: unknown) => storageFailure(res, error));
+  if (!res.headersSent) res.status(204).end();
+}));
 
 app.delete('/api/songs/:id', locked(async (req, res) => {
   await deleteSong(res.locals.userId, req.params.id as string).catch((error: unknown) => storageFailure(res, error));

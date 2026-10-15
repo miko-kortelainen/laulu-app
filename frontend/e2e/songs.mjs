@@ -18,7 +18,7 @@ const songs = [
     prompt: "genre / style: warm acoustic folk\n\nmood: hopeful\n\nkey: C major\n\nBPM: 90\n\nduration: 3 minutes\n\nvocals / language: soft English vocals\n\ninstruments: acoustic guitar\n\npiano\n\nproduction: warm room sound\nkey: keep this line\n\nLyrics:\nrequested lyrics\n\nmood: not a field",
     lyrics: songFields.lyrics, model: "lyria-3.5", createdAt: "2026-10-06T10:00:00Z" },
   { id: "22222222-2222-4222-8222-222222222222", title: "untitled", prompt: "instrumental piano", lyrics: "", model: "lyria-3.5", createdAt: "2026-10-05T10:00:00Z" },
-].map((song) => ({ ...song, url: `/api/music/${song.id}.mp3`, sizeBytes: 16044 }));
+].map((song) => ({ ...song, url: `/api/music/${song.id}.mp3`, sizeBytes: 16044, isFavourite: false }));
 
 async function listResponse(items) {
   await run("network", "unroute", "**/api/songs");
@@ -41,9 +41,14 @@ try {
   await run("fill", 'input[name="genre"]', "retained song style");
   await listResponse(songs);
   await run("eval", `window.songRequests = []; window.songFailure = false; window.badSongs = false;
+    window.favouriteFailure = true; window.favouriteRequests = [];
     const originalFetch = window.fetch;
     window.fetch = (input, options) => {
       if (String(input).startsWith('/api/')) window.songRequests.push({ url: String(input), token: new Headers(options.headers).get('authorization') });
+      if (String(input).endsWith('/favourite') && options?.method === 'PATCH') {
+        window.favouriteRequests.push({ url: input, ...JSON.parse(options.body) });
+        return Promise.resolve(window.favouriteFailure ? Response.json({}, { status: 503 }) : new Response(null, { status: 204 }));
+      }
       if (input === '/api/songs' && window.songFailure) return Promise.resolve(Response.json({}, { status: 503 }));
       if (input === '/api/songs' && window.badSongs) return Promise.resolve(Response.json({ songs: [{ ...${JSON.stringify(songs[0])}, url: 'https://invalid.example/song.mp3' }] }));
       return originalFetch(input, options);
@@ -54,10 +59,30 @@ try {
   await run("wait", "--text", "untitled");
   assert.equal(await run("eval", "document.querySelector('a[aria-current=page]').textContent.trim()"), '"my songs"');
   assert.equal(await run("eval", "document.querySelectorAll('main li').length"), "2");
-  assert.equal(await run("eval", "document.querySelector('main section > div button')"), "null");
+  assert.equal(await run("eval", "document.querySelector('section[aria-labelledby=songs-title] > div:first-child button')"), "null");
   assert.equal(await run("eval", "document.querySelector('main time').dateTime"), JSON.stringify(songs[0].createdAt));
   assert.equal(await run("eval", "window.songRequests.some(request => request.url.startsWith('/api/music/'))"), "false");
   assert.equal(await run("eval", "document.querySelectorAll('main li details, main li textarea').length"), "0");
+  await run("find", "role", "tab", "click", "--name", "favourites", "--exact");
+  await run("wait", "--text", "no favourites yet.");
+  await run("press", "Home");
+  assert.equal(await run("eval", "document.activeElement.id"), '"all-songs-tab"');
+  await run("find", "role", "button", "click", "--name", "favourite quiet morning", "--exact");
+  await run("wait", "--text", "could not update favourite.");
+  assert.equal(await run("eval", "document.querySelector('button[aria-label=\"favourite quiet morning\"]').getAttribute('aria-pressed')"), '"false"');
+  await run("eval", "window.favouriteFailure = false");
+  await run("find", "role", "button", "click", "--name", "favourite quiet morning", "--exact");
+  await run("wait", "--fn", "document.querySelector('button[aria-label=\"favourite quiet morning\"]').getAttribute('aria-pressed') === 'true'");
+  await run("find", "role", "tab", "click", "--name", "favourites", "--exact");
+  assert.equal(await run("eval", "document.querySelectorAll('ul[aria-label=\"saved songs\"] > li').length"), "1");
+  await run("find", "role", "button", "click", "--name", "favourite quiet morning", "--exact");
+  await run("wait", "--text", "no favourites yet.");
+  await run("find", "role", "tab", "click", "--name", "all songs", "--exact");
+  await run("find", "role", "button", "click", "--name", "favourite quiet morning", "--exact");
+  await run("wait", "--fn", "document.querySelector('button[aria-label=\"favourite quiet morning\"]').getAttribute('aria-pressed') === 'true'");
+  assert.equal(await run("eval", "window.favouriteRequests.at(-1).isFavourite"), "true");
+  songs[0].isFavourite = true;
+  await listResponse(songs);
   await run("wait", "--text", "select a song to view its prompt and lyrics.");
   await run("focus", "main li:first-child h2 button");
   await run("press", "Enter");
@@ -171,6 +196,7 @@ try {
   await run("eval", "location.reload()");
   await run("wait", "--text", "quiet morning");
   assert.equal(await run("eval", "location.pathname"), '"/songs"');
+  assert.equal(await run("eval", "document.querySelector('button[aria-label=\"favourite quiet morning\"]').getAttribute('aria-pressed')"), '"true"');
 
   // Unfinished saves survive reload and retry existing audio, without generating again.
   const recoveredSong = { ...songs[0], id: "33333333-3333-4333-8333-333333333333",

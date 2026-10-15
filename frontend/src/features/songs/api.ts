@@ -5,6 +5,7 @@ const songIdPattern = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 export interface SavedSong {
   id: string;
   title: string;
+  isFavourite: boolean;
   url: string;
   prompt: string;
   lyrics: string;
@@ -17,6 +18,7 @@ function isSavedSong(value: unknown): value is SavedSong {
     "id" in value && typeof value.id === "string" &&
     songIdPattern.test(value.id) &&
     "title" in value && typeof value.title === "string" && value.title.trim().length > 0 && value.title.length <= 200 &&
+    "isFavourite" in value && typeof value.isFavourite === "boolean" &&
     "url" in value && value.url === `/api/music/${value.id}.mp3` &&
     "prompt" in value && typeof value.prompt === "string" &&
     "lyrics" in value && typeof value.lyrics === "string" &&
@@ -35,6 +37,14 @@ export async function getSongs(signal: AbortSignal): Promise<SavedSong[]> {
   const songs: unknown[] = data.songs;
   if (!songs.every(isSavedSong)) throw new Error("invalid songs response. try again.");
   return songs;
+}
+
+export async function setSongFavourite(id: string, isFavourite: boolean, signal: AbortSignal): Promise<void> {
+  if (!songIdPattern.test(id)) throw new Error("invalid song reference.");
+  const response = await authenticatedFetch(`/api/songs/${id}/favourite`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isFavourite }), signal,
+  });
+  if (response.status !== 204) throw new Error("could not update favourite. try again.");
 }
 
 export async function deleteSavedSong(id: string, signal: AbortSignal): Promise<void> {

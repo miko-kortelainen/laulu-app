@@ -6,7 +6,7 @@ An AI music studio. Describe a song, refine its lyrics and sound, then generate 
 - Generate full songs with Lyria 3.5 or 30-second clips with Lyria 3 Clip Preview.
 - Set a song title in the music generation form. Blank titles are saved as `untitled`.
 - Upload audio for analysis and production feedback.
-- Save, play, download, and delete your own songs.
+- Save, play, download, favourite, and delete your own songs. Use the all songs and favourites tabs to filter your library.
 
 The frontend uses React, Vite, and Tailwind CSS. The backend uses Express, TypeScript, and the Strands Agents SDK.
 Supabase provides authentication and metadata. Private Cloudflare R2 storage holds saved songs.
@@ -81,6 +81,10 @@ Saved songs use private R2 objects and Supabase metadata. Playback and downloads
 If storage fails, use **retry saving** to save the existing audio without another generation call.
 Apply [the song title migration](supabase/migrations/20261013123303_song_titles.sql) before deploying the title field.
 It adds `songs.title`, sets existing song titles to `untitled`, and updates the metadata save function.
+
+Apply [the song favourites migration](supabase/migrations/20261015233700_song_favourites.sql) before deploying favourites.
+It stores each song's favourite state on the account and keeps older recovery metadata compatible.
+The favourites tab filters the latest 100 saved songs shown in the library.
 
 ### Configure usage quotas
 

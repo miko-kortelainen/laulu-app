@@ -87,6 +87,28 @@ test('songs persist privately, restore from R2, and retry failed saves without r
     assert.equal(own.songs.length, 1);
     assert.equal(own.songs[0].id, track.id);
     assert.equal(own.songs[0].title, 'quiet morning');
+    assert.equal(own.songs[0].isFavourite, false);
+    const favourite = (isFavourite: unknown, auth = headersA, id = track.id) => fetch(`${base}/api/songs/${id}/favourite`, {
+      method: 'PATCH', headers: auth, body: JSON.stringify({ isFavourite, owner_id: userB }),
+    });
+    assert.equal((await fetch(`${base}/api/songs/${track.id}/favourite`, { method: 'PATCH' })).status, 401);
+    for (const value of [null, 'true', 1, undefined]) assert.equal((await favourite(value)).status, 400);
+    assert.equal((await favourite(true, headersB)).status, 404);
+    assert.equal((await favourite(true, headersA, randomUUID())).status, 404);
+    assert.equal((await favourite(true, headersA, 'invalid')).status, 404);
+    storage.rows.set(track.id, { ...row, status: 'pending' });
+    assert.equal((await favourite(true)).status, 404);
+    storage.rows.set(track.id, row);
+    assert.equal((await favourite(true)).status, 204);
+    assert.equal(storage.rows.get(track.id)!.is_favourite, true);
+    const favourited = await (await fetch(`${base}/api/songs`, { headers: headersA })).json();
+    assert.equal(favourited.songs[0].isFavourite, true);
+    storage.failures.favourite = true;
+    assert.equal((await favourite(false)).status, 502);
+    assert.equal(storage.rows.get(track.id)!.is_favourite, true);
+    storage.failures.favourite = false;
+    assert.equal((await favourite(false)).status, 204);
+    assert.equal(storage.rows.get(track.id)!.is_favourite, false);
     assert.equal('object_key' in own.songs[0], false);
     assert.deepEqual(await (await fetch(`${base}/api/songs`, { headers: headersB })).json(), { songs: [] });
     assert.deepEqual(await (await fetch(`${base}/api/songs/recovery`, { headers: headersA })).json(), { songIds: [] });

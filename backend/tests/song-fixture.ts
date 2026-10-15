@@ -15,7 +15,7 @@ export function configureTestSongStorage() {
   const quotas = configureTestQuotas();
   const rows = new Map<string, Record<string, unknown>>();
   const objects = new Map<string, Buffer>();
-  const failures = { read: false, insert: false, put: false, ready: false, readyResponse: false, deleteObject: false, deleteRow: false };
+  const failures = { read: false, insert: false, put: false, ready: false, readyResponse: false, deleteObject: false, deleteRow: false, favourite: false };
   let writes = 0;
   let reads = 0;
   let deletes = 0;
@@ -70,7 +70,7 @@ export function configureTestSongStorage() {
       const { p_song: row }: { p_song: Record<string, unknown> } = await request.json();
       assert.equal(row.status, 'pending');
       const id = row.id as string;
-      if (!rows.has(id)) rows.set(id, row);
+      if (!rows.has(id)) rows.set(id, { ...row, is_favourite: false });
       const reservation = quotas.reservations.get(id);
       if (reservation) reservation.storageBytes = 0;
       return Response.json({ allowed: true, song: rows.get(id) });
@@ -93,10 +93,20 @@ export function configureTestSongStorage() {
       return new Response(null, { status: 204 });
     }
     assert.equal(request.method, 'PATCH');
+    const patch: unknown = await request.json();
+    if (patch && typeof patch === 'object' && 'is_favourite' in patch) {
+      assert.ok(owner && id && status === 'ready', 'favourites must filter owner, id, and ready state');
+      assert.equal(typeof patch.is_favourite, 'boolean');
+      assert.deepEqual(Object.keys(patch), ['is_favourite']);
+      if (failures.favourite) return Response.json({ message: 'offline favourite failure' }, { status: 503 });
+      const row = matches[0] ? { ...matches[0], is_favourite: patch.is_favourite } : null;
+      if (row) rows.set(id, row);
+      return Response.json(row);
+    }
     assert.ok(owner && id && status === 'pending', 'every update must filter owner, id, and state');
     if (failures.ready) return Response.json({ message: 'offline update failure' }, { status: 503 });
     assert.equal(matches.length, 1);
-    assert.deepEqual(await request.json(), { status: 'ready' });
+    assert.deepEqual(patch, { status: 'ready' });
     const row = { ...matches[0], status: 'ready' };
     rows.set(id, row);
     if (failures.readyResponse) return Response.json({ message: 'lost update response' }, { status: 503 });

@@ -383,7 +383,7 @@ test('database quotas serialize reservations, survive new connections, and prote
     assert.equal((await usage()).storage.used, 0, 'metadata deletion releases bytes exactly once');
 
     // Existing song metadata counts immediately, without a second counter or a backfill.
-    const legacy = metadata(randomUUID(), 101, other);
+    const legacy = { ...metadata(randomUUID(), 101, other), is_favourite: false };
     await query(`insert into public.songs select (jsonb_populate_record(null::public.songs, '${JSON.stringify(legacy)}')).*;`);
     assert.equal((await reserve('generation', randomUUID(), 1, other)).resource, 'storage');
     await query(`update public.user_quotas set chat_daily = 0 where user_id = '${other}';`);
