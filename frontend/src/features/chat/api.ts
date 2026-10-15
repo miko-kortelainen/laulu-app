@@ -1,5 +1,11 @@
 import { formatMusicPrompt, isMusicPrompt, type MusicPrompt } from "@/lib/music-prompt";
 import { authenticatedFetch } from "@/lib/api";
+import { formatDate } from "@/lib/date";
+
+function formatResetDate(message: string, data: object): string {
+  return "resetAt" in data && typeof data.resetAt === "string" && Number.isFinite(Date.parse(data.resetAt))
+    ? message.replace(data.resetAt, formatDate(data.resetAt, true)) : message;
+}
 
 export interface ChatReply {
   operationId?: string;
@@ -171,7 +177,7 @@ async function readChatReply(response: Response): Promise<ChatReply> {
   const error = "error" in data && typeof data.error === "string" ? data.error : "";
 
   if (!response.ok || error) {
-    throw new OperationError(error || reply || "Chat request failed.", response.headers.get("X-Operation-ID") ?? undefined);
+    throw new OperationError(formatResetDate(error || reply || "Chat request failed.", data), response.headers.get("X-Operation-ID") ?? undefined);
   }
 
   if (!reply || ("musicPrompt" in data && data.musicPrompt !== undefined &&
@@ -232,7 +238,7 @@ async function readMusicResponse(response: Response): Promise<MusicTrack> {
   const data: unknown = await response.json();
   if (!data || typeof data !== "object") throw new Error("Invalid music response.");
   if (!response.ok || ("error" in data && typeof data.error === "string")) {
-    const message = "error" in data && typeof data.error === "string" ? data.error : "Music request failed.";
+    const message = formatResetDate("error" in data && typeof data.error === "string" ? data.error : "Music request failed.", data);
     if ("songId" in data && typeof data.songId === "string" &&
         /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(data.songId)) {
       throw new SongStorageError(data.songId, message, response.headers.get("X-Operation-ID") ?? undefined);

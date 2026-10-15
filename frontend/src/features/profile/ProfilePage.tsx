@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/date";
 import type { Usage } from "@/lib/usage";
 
 interface ProfilePageProps {
@@ -11,14 +12,6 @@ interface ProfilePageProps {
   usageError?: string;
   loading: boolean;
   refreshUsage: () => Promise<void>;
-}
-
-function formatDate(value?: string): string {
-  if (!value) return "not available";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "not available" : date.toLocaleDateString(undefined, {
-    year: "numeric", month: "long", day: "numeric",
-  });
 }
 
 export function ProfilePage({ user, onLogout, signingOut, authError, usage, usageError, loading, refreshUsage }: ProfilePageProps) {
@@ -54,8 +47,8 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
               ))}
               <div className="flex justify-between gap-3"><dt>saved-song space</dt><dd>{Math.floor(usage.storage.remaining / 1024 / 1024)} MiB remaining</dd></div>
             </dl>
-            <p>daily allowances reset <time dateTime={usage.resetAt}>{new Date(usage.resetAt).toLocaleString()}</time></p>
-            {usage.plan !== "free" && <p>songs and lyric requests reset <time dateTime={usage.generationResetAt}>{new Date(usage.generationResetAt).toLocaleString()}</time> · no rollover</p>}
+            <p>daily allowances reset <time dateTime={usage.resetAt}>{formatDate(usage.resetAt, true)}</time></p>
+            {usage.plan !== "free" && <p>songs and lyric requests reset <time dateTime={usage.generationResetAt}>{formatDate(usage.generationResetAt, true)}</time> · no rollover</p>}
             <p>pending songs reserve allowance. shared daily limits also apply.</p>
           </> : !usageError && <p>loading allowances...</p>}
           {usageError && <div className="space-y-1">

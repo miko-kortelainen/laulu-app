@@ -3,6 +3,7 @@ import { AudioDownload } from "@/components/ui/audio-download";
 import { AudioPlayer } from "@/components/ui/audio-player";
 import { MusicPromptFields } from "@/components/MusicPromptFields";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/date";
 import { useSongs } from "./useSongs";
 import { getSongPrompt } from "./songPrompt";
 
@@ -68,7 +69,7 @@ export function SongsPage() {
                   <span className="min-w-0">
                     <span className="block break-words font-medium">{song.title}</span>
                     <span className="mt-1 block break-words text-xs text-zinc-400">
-                      <time dateTime={song.createdAt}>{new Date(song.createdAt).toLocaleString()}</time> · {song.model}
+                      <time dateTime={song.createdAt}>{formatDate(song.createdAt, true)}</time> · {song.model}
                     </span>
                   </span>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"

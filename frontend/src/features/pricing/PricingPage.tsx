@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js";
 import { Link } from "react-router";
 import { LauluWordmark } from "@/components/ui/LauluWordmark";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/date";
 import { paidPlans, type PlanLimits } from "./api";
 import { usePricing } from "./usePricing";
 
@@ -92,12 +93,12 @@ export function PricingPage({ user }: { user?: User }) {
           </h2>
           {pricing.pendingAction === "cancel" ? <p className="text-sm text-zinc-300">
             {pricing.billing?.status === "paused" ? "your paused subscription will end immediately."
-              : `your subscription will end ${pricing.billing?.periodEnd ? `on ${new Date(pricing.billing.periodEnd).toLocaleDateString()}` : "at the next renewal"}. you keep access until then, and it will not renew.`}
+              : `your subscription will end ${pricing.billing?.periodEnd ? `on ${formatDate(pricing.billing.periodEnd)}` : "at the next renewal"}. you keep access until then, and it will not renew.`}
           </p> : <div className="space-y-2 text-sm text-zinc-300">
             <p>{pricing.pendingAction.preview.effectiveAt
-              ? `${pricing.pendingAction.preview.plan} starts on ${new Date(pricing.pendingAction.preview.effectiveAt).toLocaleDateString()}. you keep your current allowances until then. no charge or credit today.`
+              ? `${pricing.pendingAction.preview.plan} starts on ${formatDate(pricing.pendingAction.preview.effectiveAt)}. you keep your current allowances until then. no charge or credit today.`
               : `your new plan starts after payment is confirmed. estimated charge today: ${pricing.pendingAction.preview.chargeNow}.`}</p>
-            <p>next payment: {pricing.pendingAction.preview.nextTotal} on {new Date(pricing.pendingAction.preview.nextBilledAt).toLocaleDateString()}. then {pricing.pendingAction.preview.monthlyTotal} per month.</p>
+            <p>next payment: {pricing.pendingAction.preview.nextTotal} on {formatDate(pricing.pendingAction.preview.nextBilledAt)}. then {pricing.pendingAction.preview.monthlyTotal} per month.</p>
           </div>}
           <div className="flex flex-wrap gap-3">
             <button type="button" autoFocus aria-describedby="subscription-confirm-title" className={cn(buttonClass, "w-auto")} disabled={pricing.managing || pricing.syncing} onClick={() => void pricing.confirmAction()}>
@@ -112,7 +113,7 @@ export function PricingPage({ user }: { user?: User }) {
           {pricing.billing?.status && <p className="text-zinc-300">
             {pricing.billing.plan ?? "subscription"} · {pricing.billing.status}
             {!pricing.billing.paidAccess && " · free allowance applies"}
-            {pricing.billing.scheduledChange && ` · ${pricing.billing.scheduledChange.action === "downgrade" ? `change to ${pricing.billing.scheduledChange.plan}` : pricing.billing.scheduledChange.action} scheduled for ${new Date(pricing.billing.scheduledChange.effectiveAt).toLocaleString()}`}
+            {pricing.billing.scheduledChange && ` · ${pricing.billing.scheduledChange.action === "downgrade" ? `change to ${pricing.billing.scheduledChange.plan}` : pricing.billing.scheduledChange.action} scheduled for ${formatDate(pricing.billing.scheduledChange.effectiveAt, true)}`}
           </p>}
           {user && pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.scheduledChange?.action !== "cancel" &&
             <button type="button" className={linkClass} onClick={pricing.requestCancellation}

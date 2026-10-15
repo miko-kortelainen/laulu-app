@@ -37,7 +37,7 @@ try {
   run("wait", "--text", "0 / 1 remaining");
   run("wait", "--text", "5 / 5 remaining");
   assert.equal(run("eval", 'document.querySelector("time").dateTime'), JSON.stringify(usage.resetAt));
-  assert.equal(run("eval", 'document.querySelector("time").textContent === new Date(document.querySelector("time").dateTime).toLocaleString()'), "true");
+  assert.equal(run("eval", 'document.querySelector("time").textContent === new Date(document.querySelector("time").dateTime).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })'), "true");
   run("find", "role", "link", "click", "--name", "studio", "--exact");
   run("wait", "--text", "0 / 16 messages");
   assert.equal(run("eval", 'document.querySelector("#app-desktop-navigation nav").getBoundingClientRect().right <= document.querySelector("#app-content").getBoundingClientRect().left'), "true");
@@ -299,6 +299,15 @@ try {
   assert.equal(run("eval", 'window.musicRequests.at(-1).prompt'), JSON.stringify(
     "genre / style: indie pop\n\nmood: hopeful\n\nkey: E minor\n\nBPM: 110 with a swung feel\n\nduration: 2 minutes\n\nvocals / language: alto vocals in English\n\ninstruments: acoustic guitar\n\nproduction: natural\n\nLyrics:\n" + lyrics,
   ));
+  run("network", "unroute", "**/api/music");
+  run("network", "route", "**/api/music", "--body", JSON.stringify({
+    error: `your generation allowance exhausted. try again after ${usage.resetAt}.`,
+    code: "quota_exceeded", resetAt: usage.resetAt,
+  }));
+  run("find", "role", "button", "click", "--name", "generate song");
+  run("wait", "--text", "your generation allowance exhausted. try again after");
+  assert.equal(run("eval", `document.querySelector('aside [role="alert"]').textContent.includes(${JSON.stringify(usage.resetAt)})`), "false");
+  assert.equal(run("eval", `document.querySelector('aside [role="alert"]').textContent.includes(new Date(${JSON.stringify(usage.resetAt)}).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }))`), "true");
   run("network", "unroute", "**/api/music");
   run("network", "route", "**/api/music", "--body", JSON.stringify({
     track: { url: generatedAudioUrl, lyrics, title: "quiet morning" },
