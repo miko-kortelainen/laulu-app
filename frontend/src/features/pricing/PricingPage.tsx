@@ -43,12 +43,12 @@ export function PricingPage({ user }: { user?: User }) {
           </p>
         </section>
 
-        <div role="group" aria-label="billing frequency" className="flex w-fit gap-1 rounded-lg border border-white/15 p-1">
+        <div role="group" aria-label="billing frequency" className="mx-auto grid w-fit grid-cols-2 gap-1 rounded-lg border border-white/15 p-1">
           {(["month", "year"] as const).map(interval => <button key={interval} type="button"
             aria-pressed={pricing.billingInterval === interval}
             disabled={Boolean(pricing.selectedPlan) || pricing.syncing || pricing.managing || Boolean(pricing.pendingAction) || pricing.updatePending}
             onClick={() => pricing.setBillingInterval(interval)}
-            className={cn(buttonClass, "w-auto border-transparent", pricing.billingInterval === interval && "bg-white/10")}>
+            className={cn(buttonClass, "min-h-6 w-auto border-transparent py-0", pricing.billingInterval === interval && "bg-white/10")}>
             {interval === "month" ? "monthly" : "yearly"}
           </button>)}
         </div>
@@ -69,6 +69,7 @@ export function PricingPage({ user }: { user?: User }) {
           {paidPlans.map(plan => {
             const featured = plan.name === "pro";
             const price = pricing.prices?.[plan.priceIds[pricing.billingInterval]];
+            const savings = pricing.annualSavings?.[plan.name];
             const hasSubscription = Boolean(pricing.billing?.status && pricing.billing.status !== "canceled");
             const currentPlan = pricing.billing?.plan === plan.name && pricing.billing.paidAccess && pricing.billing.billingInterval === pricing.billingInterval;
             return (
@@ -80,7 +81,11 @@ export function PricingPage({ user }: { user?: User }) {
                 <h2 id={`plan-${plan.name}`} className="text-lg font-semibold">{plan.name}</h2>
                 <p className="mt-1 text-sm text-zinc-400">{plan.description}</p>
                 <p className="mt-6 break-words text-4xl font-semibold tabular-nums">{price ?? (pricing.loading ? "…" : "unavailable")}</p>
-                <p className="mt-2 text-xs text-zinc-400">{pricing.billingInterval === "year" ? "per year · billed yearly" : "per month · billed monthly"}</p>
+                <p className="mt-2 text-xs text-zinc-400">
+                  {pricing.billingInterval === "year" ? "billed yearly" : "billed monthly"}
+                  {savings !== undefined && savings > 0 &&
+                    <span aria-hidden={pricing.billingInterval !== "year"} className={cn("ml-2 inline-block rounded-full bg-green-400/10 px-2 py-0.5 font-medium text-green-300", pricing.billingInterval !== "year" && "invisible")}>save {savings}%</span>}
+                </p>
                 <ul className="my-8 flex-1 space-y-3 text-sm text-zinc-300">
                   <Allowances limits={pricing.limits?.find(limits => limits.plan === plan.name)} />
                 </ul>

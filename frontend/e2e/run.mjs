@@ -62,7 +62,8 @@ const server = createServer(async (req, res) => {
         PricePreview({ items, currencyCode }) { window.previewRequests.push({ currencyCode }); return Promise.resolve({ data: { details: { lineItems: items.map(item => ({
           price: { id: item.priceId, status: 'active', billingCycle: {
             interval: ['pri_01m50px1szmdvk7ytv5sejdzgr', 'pri_01m50pzdw9pfn9c5ss1kehnv9n', 'pri_01m50q3rnc8na58rv1s4n9yay9'].includes(item.priceId) ? 'year' : 'month', frequency: 1 }, trialPeriod: null },
-          product: { status: 'active' }, formattedTotals: { total: item.priceId.startsWith('pri_01m50') ? '$90.00' : '$9.00' }
+          product: { status: 'active' }, totals: { total: item.priceId.startsWith('pri_01m50') ? '9000' : '900' },
+          formattedTotals: { total: item.priceId.startsWith('pri_01m50') ? '$90.00' : '$9.00' }
         })) } } }); },
         Checkout: { open(options) { window.checkoutRequests.push(options); }, close() {} }
       };

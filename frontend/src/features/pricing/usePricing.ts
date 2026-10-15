@@ -5,7 +5,7 @@ import { cancelSubscription, changeSubscription, createCheckout, getBilling, get
 
 export function usePricing(user?: User) {
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
-  const [pricing, setPricing] = useState<{ paddle: Paddle; prices: Record<string, string> }>();
+  const [pricing, setPricing] = useState<Awaited<ReturnType<typeof loadPricing>>>();
   const [billing, setBilling] = useState<Billing>();
   const [limits, setLimits] = useState<PlanLimits[]>();
   const [limitsReady, setLimitsReady] = useState(false);
@@ -230,7 +230,7 @@ export function usePricing(user?: User) {
     setAttempt(previous => previous + 1);
   }
 
-  return { prices: pricing?.prices, billingInterval, setBillingInterval, limits, limitsReady, billing, loading, billingLoading, error, notice, selectedPlan, syncing,
+  return { prices: pricing?.prices, annualSavings: pricing?.annualSavings, billingInterval, setBillingInterval, limits, limitsReady, billing, loading, billingLoading, error, notice, selectedPlan, syncing,
     choosePlan, requestCancellation, pendingAction, managing, confirmAction, dismissAction, retry, confirmSubscription,
     updatePending: Boolean(billingTarget.current), pendingTransaction: Boolean(transactionId.current || billingTarget.current) };
 }

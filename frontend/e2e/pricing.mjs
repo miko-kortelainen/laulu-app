@@ -27,6 +27,7 @@ try {
   await run('wait', '--text', '180 songs');
   assert.equal(await run('eval', 'window.previewRequests.at(-1).currencyCode'), JSON.stringify('USD'));
   await run('wait', '--text', 'checkout confirms the total in your local currency.');
+  assert.equal(await run('eval', "document.querySelector('main').textContent.includes('save 17%')"), 'false');
   for (const plan of plans) {
     const text = JSON.parse(await run('eval', `${card(plan.plan)}.textContent`));
     assert.ok(text.includes(`${plan.chat_daily} chat messages per day`));
@@ -35,9 +36,12 @@ try {
     assert.ok(text.includes(`${plan.lyrics_daily ?? plan.lyrics_monthly} lyric requests`));
   }
   await run('find', 'role', 'button', 'click', '--name', 'yearly', '--exact');
-  await run('wait', '--text', 'per year · billed yearly');
+  await run('wait', '--text', 'billed yearly');
   assert.ok(JSON.parse(await run('eval', `${card('starter')}.textContent`)).includes('$90.00'));
   assert.ok(JSON.parse(await run('eval', `${card('starter')}.textContent`)).includes('30 songs per month'));
+  for (const plan of plans) {
+    assert.equal(JSON.parse(await run('eval', `${card(plan.plan)}.textContent`)).includes('save 17%'), plan.plan !== 'free');
+  }
   await run('find', 'role', 'button', 'click', '--name', 'monthly', '--exact');
   assert.equal(await run('eval', 'window.checkoutRequests.length'), '0');
   await run('network', 'route', '**/api/billing', '--body', JSON.stringify(billing));

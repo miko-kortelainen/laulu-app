@@ -127,7 +127,7 @@ export async function getPlanLimits(signal: AbortSignal): Promise<PlanLimits[]> 
   return data as PlanLimits[];
 }
 
-export async function loadPricing(onEvent: (event: PaddleEventData) => void): Promise<{ paddle: Paddle; prices: Record<string, string> }> {
+export async function loadPricing(onEvent: (event: PaddleEventData) => void): Promise<{ paddle: Paddle; prices: Record<string, string>; annualSavings: Record<string, number> }> {
   const token = import.meta.env.VITE_PADDLE_CLIENT_TOKEN;
   const pricesToLoad = paidPlans.flatMap(plan => (["month", "year"] as const)
     .filter(interval => interval === "month" || plan.priceIds[interval])
@@ -146,6 +146,7 @@ export async function loadPricing(onEvent: (event: PaddleEventData) => void): Pr
     throw new Error("prices could not load. try again.");
   });
   const prices: Record<string, string> = {};
+  const totals: Record<string, number> = {};
   for (const plan of pricesToLoad) {
     const item = preview.data?.details?.lineItems?.find(line => line.price.id === plan.priceId);
     if (!item || item.price.status !== "active" || item.product.status !== "active" ||
@@ -154,6 +155,16 @@ export async function loadPricing(onEvent: (event: PaddleEventData) => void): Pr
       throw new Error("prices are unavailable. try again.");
     }
     prices[plan.priceId] = item.formattedTotals.total;
+    const total = item.totals?.total;
+    totals[plan.priceId] = typeof total === "string" && /^\d+$/.test(total) ? Number(total) : NaN;
   }
-  return { paddle, prices };
+  const annualSavings: Record<string, number> = {};
+  for (const plan of paidPlans) {
+    const monthly = totals[plan.priceIds.month];
+    const annual = totals[plan.priceIds.year];
+    if (Number.isSafeInteger(monthly) && monthly > 0 && Number.isSafeInteger(annual) && annual >= 0 && annual < monthly * 12) {
+      annualSavings[plan.name] = Math.round((1 - annual / (monthly * 12)) * 100);
+    }
+  }
+  return { paddle, prices, annualSavings };
 }
