@@ -76,7 +76,7 @@ const server = createServer(async (request, response) => {
     response.writeHead(404);
     return response.end();
   }
-  response.setHeader("Content-Type", { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" }[extname(path)] || "application/octet-stream");
+  response.setHeader("Content-Type", { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" }[extname(path) || ".html"] || "application/octet-stream");
   response.end(file);
 });
 
@@ -86,7 +86,7 @@ try {
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   await seedAuth(run, `http://127.0.0.1:${address.port}`);
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
   await run("upload", 'input[type="file"]', fixturePath);
   await run("wait", "--fn", `${media}?.duration === 8 && document.querySelector('footer svg path') !== null`);
   const path = JSON.parse(await run("eval", 'document.querySelector("footer svg path").getAttribute("d")'));

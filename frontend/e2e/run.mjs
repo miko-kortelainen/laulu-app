@@ -46,7 +46,7 @@ const server = createServer(async (req, res) => {
   }
   if (!content) { res.writeHead(404); return res.end(); }
   if ((target === "pricing" || target === "all") && (pathname === "/pricing" || pathname === "/")) {
-    content = Buffer.from(content.toString().replace("</head>", `<script>
+    content = Buffer.from(content.toString().replace("</head>", `<script>(() => {
       window.checkoutRequests = [];
       window.previewRequests = [];
       window.billingRequests = [];
@@ -67,7 +67,7 @@ const server = createServer(async (req, res) => {
         })) } } }); },
         Checkout: { open(options) { window.checkoutRequests.push(options); }, close() {} }
       };
-    </script></head>`));
+    })();</script></head>`));
   }
   res.setHeader("Content-Type", { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" }[extname(path) || ".html"] ?? "application/octet-stream");
   res.end(content);

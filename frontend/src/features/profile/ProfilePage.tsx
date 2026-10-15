@@ -25,7 +25,6 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
             ["tier", usage?.plan ?? (usageError ? "not available" : "loading...")],
             ["email status", user.email_confirmed_at ? "confirmed" : "not confirmed"],
             ["member since", formatDate(user.created_at)],
-            ["last sign-in", formatDate(user.last_sign_in_at)],
           ].map(([label, value]) => (
             <div key={label}>
               <dt className="text-zinc-400">{label}</dt>
@@ -49,7 +48,6 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
             </dl>
             <p>daily allowances reset <time dateTime={usage.resetAt}>{formatDate(usage.resetAt, true)}</time></p>
             {usage.plan !== "free" && <p>songs and lyric requests reset <time dateTime={usage.generationResetAt}>{formatDate(usage.generationResetAt, true)}</time> · no rollover</p>}
-            <p>pending songs reserve allowance. shared daily limits also apply.</p>
           </> : !usageError && <p>loading allowances...</p>}
           {usageError && <div className="space-y-1">
             <p role="alert" className="text-red-400">{usageError} {usage && "shown allowances may be out of date."}</p>

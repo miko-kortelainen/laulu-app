@@ -128,11 +128,10 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
         <div className="space-y-2 border-t border-white/10 pt-4 text-xs text-zinc-400">
           <div className="flex items-center justify-between gap-3">
             <label htmlFor="chat-context">conversation context</label>
-            <span className="tabular-nums">{context ? `${context.messages} / ${context.limit} messages` : contextError ? "unavailable" : "loading..."}</span>
+            <span className="tabular-nums">{context ? `${context.messages} / ${context.limit}` : contextError ? "unavailable" : "loading..."}</span>
           </div>
           {context && <meter id="chat-context" min={0} max={context.limit} value={context.messages}
-            className="block h-2 w-full" aria-describedby="chat-context-description" />}
-          <p id="chat-context-description">recent chat and tool messages. older messages are trimmed; new session resets the history.</p>
+            className="block h-2 w-full" />}
           {contextError && <p className="text-red-400">{contextError}</p>}
         </div>
       </aside>

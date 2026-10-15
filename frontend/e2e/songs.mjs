@@ -37,7 +37,7 @@ try {
   await run("wait", "--text", "no saved songs yet.");
   assert.equal(await run("eval", "location.pathname"), '"/songs"');
   await run("find", "role", "link", "click", "--name", "create a song in chat", "--exact");
-  await run("wait", "--text", "0 / 16 messages");
+  await run("wait", "--text", "0 / 16");
   await run("fill", 'input[name="genre"]', "retained song style");
   await listResponse(songs);
   await run("eval", `window.songRequests = []; window.songFailure = false; window.badSongs = false;
@@ -148,7 +148,7 @@ try {
 
   await run("set", "viewport", "1280", "900");
   await run("find", "role", "link", "click", "--name", "studio", "--exact");
-  await run("wait", "--text", "0 / 16 messages");
+  await run("wait", "--text", "0 / 16");
   assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
   await listResponse([songs[0]]);
   await run("find", "role", "link", "click", "--name", "my songs", "--exact");

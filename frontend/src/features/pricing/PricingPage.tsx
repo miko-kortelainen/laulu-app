@@ -125,12 +125,6 @@ export function PricingPage({ user }: { user?: User }) {
 
         <div className="space-y-3 text-sm">
           <p role="status" className="text-zinc-300">{pricing.loading ? "loading prices…" : pricing.notice}</p>
-          {pricing.billing?.status && <p className="text-zinc-300">
-            {pricing.billing.plan ?? "subscription"} · {pricing.billing.status}
-            {pricing.billing.billingInterval && ` · billed ${pricing.billing.billingInterval === "year" ? "yearly" : "monthly"}`}
-            {!pricing.billing.paidAccess && " · free allowance applies"}
-            {pricing.billing.scheduledChange && ` · ${pricing.billing.scheduledChange.action === "downgrade" ? `change to ${pricing.billing.scheduledChange.plan}` : pricing.billing.scheduledChange.action} scheduled for ${formatDate(pricing.billing.scheduledChange.effectiveAt, true)}`}
-          </p>}
           {pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.billingInterval !== pricing.billingInterval &&
             <p className="text-zinc-400">select your current billing frequency to change tiers. billing frequency changes are not available here.</p>}
           {user && pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.scheduledChange?.action !== "cancel" &&
@@ -143,8 +137,6 @@ export function PricingPage({ user }: { user?: User }) {
             {pricing.pendingTransaction ? <button type="button" onClick={() => void pricing.confirmSubscription()} disabled={pricing.syncing || pricing.managing} className={linkClass}>check subscription</button>
               : <button type="button" onClick={pricing.retry} disabled={pricing.loading || pricing.billingLoading || pricing.managing} className={linkClass}>retry</button>}
           </div>}
-          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">prices shown in USD include applicable tax for your detected location. checkout confirms the total in your local currency. each generated version counts as one song.</p>
-          <p className="max-w-2xl text-xs leading-relaxed text-zinc-400">paid song and lyric allowances reset monthly, including on yearly plans. unused allowances do not roll over. chat and audio analysis reset at midnight UTC. shared daily limits apply to all plans.</p>
         </div>
 
         <footer className="flex flex-wrap gap-x-6 text-xs text-zinc-400">

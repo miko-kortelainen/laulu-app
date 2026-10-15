@@ -26,8 +26,7 @@ try {
   await run('open', `${url}/pricing`);
   await run('wait', '--text', '180 songs');
   assert.equal(await run('eval', 'window.previewRequests.at(-1).currencyCode'), JSON.stringify('USD'));
-  await run('wait', '--text', 'checkout confirms the total in your local currency.');
-  assert.equal(await run('eval', "document.querySelector('main').textContent.includes('save 17%')"), 'false');
+  assert.equal(await run('eval', "document.querySelector('main').innerText.includes('save 17%')"), 'false');
   for (const plan of plans) {
     const text = JSON.parse(await run('eval', `${card(plan.plan)}.textContent`));
     assert.ok(text.includes(`${plan.chat_daily} chat messages per day`));

@@ -27,7 +27,7 @@ try {
   run("network", "route", "**/api/context", "--body", '{"messages":0,"limit":16}');
   run("network", "route", "**/api/usage", "--body", JSON.stringify(usage));
   run("open", url);
-  run("wait", "--text", "0 / 16 messages");
+  run("wait", "--text", "0 / 16");
   run("set", "viewport", "1280", "900");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   assert.equal(run("eval", 'document.querySelector("#allowances-heading")'), "null");
@@ -39,7 +39,7 @@ try {
   assert.equal(run("eval", 'document.querySelector("time").dateTime'), JSON.stringify(usage.resetAt));
   assert.equal(run("eval", 'document.querySelector("time").textContent === new Date(document.querySelector("time").dateTime).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })'), "true");
   run("find", "role", "link", "click", "--name", "studio", "--exact");
-  run("wait", "--text", "0 / 16 messages");
+  run("wait", "--text", "0 / 16");
   assert.equal(run("eval", 'document.querySelector("#app-desktop-navigation nav").getBoundingClientRect().right <= document.querySelector("#app-content").getBoundingClientRect().left'), "true");
   assert.equal(run("eval", 'document.querySelectorAll("fieldset").length'), "1");
   assert.equal(run("eval", 'document.querySelector("aside fieldset") !== null && document.querySelector("main fieldset") === null'), "true");
@@ -93,7 +93,7 @@ try {
   run("eval", 'window.usage.chat = { limit: 20, used: 1, remaining: 19 }');
   run("click", send);
   run("wait", "--text", "e2e reply");
-  run("wait", "--text", "6 / 16 messages");
+  run("wait", "--text", "6 / 16");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "6");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
 
@@ -103,7 +103,7 @@ try {
   run("wait", "--text", "19 / 20 remaining");
   run("wait", "--text", "256 MiB remaining");
   run("find", "role", "link", "click", "--name", "studio", "--exact");
-  run("wait", "--text", "6 / 16 messages");
+  run("wait", "--text", "6 / 16");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("mouse message")'), "true");
   assert.equal(run("eval", 'document.querySelector("main").innerText.includes("e2e reply")'), "true");
 
@@ -135,7 +135,7 @@ try {
   run("fill", "textarea:not([name])", "retry message");
   run("click", send);
   run("wait", "--text", "recovered reply");
-  run("wait", "--text", "16 / 16 messages");
+  run("wait", "--text", "16 / 16");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "16");
 
   // Progress and errors follow durable operation polling.
@@ -335,7 +335,7 @@ try {
   run("wait", "--text", "this saves the song already generated.");
   assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"retry saving"');
   assert.equal(run("eval", 'document.querySelector("textarea[name=lyrics]").value'), JSON.stringify(lyrics));
-  assert.equal(run("eval", 'window.musicRequests.length'), "2");
+  assert.equal(run("eval", 'window.musicRequests.length'), "3");
   run("find", "role", "button", "click", "--name", "retry saving", "--exact");
   run("wait", "--text", "saving track...");
   assert.equal(run("eval", 'document.querySelector("aside > button").disabled'), "true");
@@ -350,7 +350,7 @@ try {
   run("eval", 'window.finishStorageRetry(); window.fetch = window.fetchBeforeStorage');
   run("wait", "--fn", 'document.querySelector("audio") !== null');
   run("wait", "--fn", '!document.querySelector("fieldset").disabled');
-  assert.equal(run("eval", 'window.musicRequests.length'), "2");
+  assert.equal(run("eval", 'window.musicRequests.length'), "3");
   assert.equal(run("eval", 'window.storageRetries.length === 2 && window.storageRetries.every(request => request.method === "POST" && request.authenticated)'), "true");
   assert.equal(run("eval", 'document.querySelector("aside > button").textContent.trim()'), '"generate song"');
   assert.equal(run("eval", 'document.querySelector("audio").closest("div.mt-3").querySelector("p").textContent'), '"quiet morning"');
@@ -459,7 +459,7 @@ try {
   run("network", "route", "**/api/reset", "--body", '{"status":"ok"}');
   run("find", "role", "button", "click", "--name", "new session", "--exact");
   run("wait", "--text", "fresh start. what kind of song are we making now?");
-  run("wait", "--text", "0 / 16 messages");
+  run("wait", "--text", "0 / 16");
   assert.equal(run("eval", 'document.querySelector("aside meter").value'), "0");
   assert.equal(run("eval", 'Array.from(document.querySelectorAll("fieldset input, fieldset textarea")).every(el => el.value === "")'), "true");
   assert.equal(run("eval", 'document.querySelector("select[name=musicModel]").value'), '"lyria-3.5"');

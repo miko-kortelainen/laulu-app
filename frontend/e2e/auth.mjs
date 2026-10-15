@@ -10,7 +10,6 @@ const url = process.env.E2E_URL;
 const first = authSession();
 first.user.email_confirmed_at = "2026-01-15T12:00:00Z";
 first.user.created_at = "2026-01-15T12:00:00Z";
-first.user.last_sign_in_at = "2026-10-05T12:00:00Z";
 const second = authSession("20000000-0000-4000-8000-000000000002", "second@example.com");
 const captcha = Boolean(process.env.E2E_CAPTCHA);
 
@@ -163,10 +162,10 @@ try {
   const hash = new URLSearchParams({ access_token: first.access_token, refresh_token: first.refresh_token,
     expires_in: "3600", token_type: "bearer", type: "signup" });
   await run("open", `${url}/#${hash}`);
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
   assert.equal(await run("eval", "location.pathname"), JSON.stringify("/"), "account confirmation opens chat");
   await run("open", `${url}/create-account`);
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
   assert.equal(await run("eval", "location.pathname"), JSON.stringify("/"), "authenticated account creation opens chat");
   assert.equal(await run("eval", "location.hash"), '""');
   await run("set", "viewport", "1280", "900");
@@ -206,9 +205,9 @@ try {
   await clickSubmit();
   await run("wait", "--text", "member since");
   await run("find", "role", "link", "click", "--name", "studio", "--exact");
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
   await run("eval", "location.reload()");
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
 
   // Profile routing uses the current user and preserves the song form on return.
   await run("fill", 'input[name="genre"]', "retained song style");
@@ -217,31 +216,30 @@ try {
   assert.equal(await run("eval", "location.pathname"), '"/profile"');
   assert.equal(await run("eval", "document.querySelector('a[aria-current=page]').textContent.trim()"), '"my profile"');
   assert.deepEqual(JSON.parse(await run("eval", "Array.from(document.querySelectorAll('#profile-title + dl dd'), element => element.textContent)")), [
-    first.user.email, "confirmed",
-    JSON.parse(await run("eval", `new Date(${JSON.stringify(first.user.created_at)}).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })`)),
-    JSON.parse(await run("eval", `new Date(${JSON.stringify(first.user.last_sign_in_at)}).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })`)),
+    first.user.email, "not available", "confirmed",
+    JSON.parse(await run("eval", `new Date(${JSON.stringify(first.user.created_at)}).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' })`)),
   ]);
   assert.equal(await run("eval", "document.documentElement.scrollWidth <= innerWidth"), "true");
   await run("back");
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
   assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
   await run("find", "role", "link", "click", "--name", "privacy", "--exact");
-  await run("wait", "--text", "LangSmith tracing is disabled in the production beta.");
+  await run("wait", "--text", "When tracing is enabled");
   assert.equal(await run("eval", "document.documentElement.scrollWidth <= innerWidth"), "true");
   await run("find", "role", "link", "click", "--name", "back to app", "--exact");
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
   assert.equal(await run("eval", 'document.querySelector("input[name=genre]").value'), '"retained song style"');
   await run("find", "role", "link", "click", "--name", "my profile", "--exact");
   await run("eval", "location.reload()");
   await run("wait", "--text", "member since");
   assert.equal(await run("eval", "location.pathname"), '"/profile"');
   await run("find", "role", "link", "click", "--name", "studio", "--exact");
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
 
   // The real SDK refreshes an expired saved session through the mocked token endpoint.
   const expired = authSession(first.user.id, first.user.email, -5);
   await run("eval", `localStorage.setItem(${JSON.stringify(storageKey)}, ${JSON.stringify(JSON.stringify(expired))}); location.reload();`);
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
   assert.equal(await run("eval", `JSON.parse(localStorage.getItem(${JSON.stringify(storageKey)})).expires_at > Date.now() / 1000`), "true");
 
   // An authenticated request carries a token. Logout aborts its pending result.
@@ -269,8 +267,7 @@ try {
   await run("find", "role", "link", "click", "--name", "my profile", "--exact");
   await run("wait", "--text", "member since");
   assert.equal(await run("eval", "document.querySelector('dd').textContent"), JSON.stringify(second.user.email));
-  assert.equal(await run("eval", "document.querySelectorAll('#profile-title + dl dd')[1].textContent"), '"not confirmed"');
-  assert.equal(await run("eval", "document.querySelectorAll('#profile-title + dl dd')[3].textContent"), '"not available"');
+  assert.equal(await run("eval", "document.querySelectorAll('#profile-title + dl dd')[2].textContent"), '"not confirmed"');
   await run("eval", `const beforeLogout = window.fetch; window.failLogout = true;
     window.fetch = (input, options) => String(input).includes('/auth/v1/logout') && window.failLogout
       ? Promise.resolve(Response.json({ msg: 'logout unavailable' }, { status: 400 })) : beforeLogout(input, options);`);
@@ -306,7 +303,7 @@ try {
   await run("network", "route", `${authOrigin}/auth/v1/user`, "--body", JSON.stringify(first.user));
   await run("fill", "#auth-password", "new-offline-password");
   await run("click", 'button[type="submit"]');
-  await run("wait", "--text", "0 / 40 messages");
+  await run("wait", "--text", "0 / 40");
   await run("find", "role", "link", "click", "--name", "my profile", "--exact");
   await run("wait", "--fn", "document.querySelector('main section > button')?.disabled === false");
   await run("find", "role", "button", "click", "--name", "log out", "--exact");
