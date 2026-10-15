@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Link } from "react-router";
 import { AudioDownload } from "@/components/ui/audio-download";
 import { AudioPlayer } from "@/components/ui/audio-player";
@@ -11,18 +12,26 @@ const buttonClass = "min-h-10 rounded-lg border border-white/10 px-3 py-2 text-s
 const infoClass = "w-full min-w-0 resize-y rounded-lg border border-white/15 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400";
 
 export function SongsPage() {
-  const { songs, loading, error, refresh, selectedSongId, openedSongIds, selectSong, deletingId, deleteError, removeSong,
+  const { songs, loading, error, refresh, selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
     recoveryIds, savingId, saveError, saveSong } = useSongs();
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const busy = loading || deletingId !== undefined || savingId !== undefined;
   const selectedSong = songs?.find((song) => song.id === selectedSongId);
+  const pendingDeleteSong = songs?.find((song) => song.id === pendingDeleteId);
   const songPrompt = selectedSong && getSongPrompt(selectedSong);
+
+  useEffect(() => {
+    if (pendingDeleteId) deleteDialogRef.current?.showModal();
+    else deleteDialogRef.current?.close();
+  }, [pendingDeleteId]);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto py-8 lg:flex-row lg:overflow-hidden">
       <section aria-labelledby="songs-title" className="max-h-[60dvh] min-h-0 min-w-0 shrink-0 space-y-6 overflow-y-auto lg:max-h-none lg:flex-1 lg:pr-2">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 id="songs-title" className="text-2xl font-semibold">my songs</h1>
+            <h1 ref={titleRef} id="songs-title" tabIndex={-1} className="text-2xl font-semibold">my songs</h1>
             <p className="mt-1 text-sm text-zinc-400">your latest 100 saved songs, newest first</p>
           </div>
           {error && <button type="button" onClick={refresh} disabled={busy} className={buttonClass}>
@@ -83,7 +92,7 @@ export function SongsPage() {
                   active={selectedSongId === song.id} className="w-full" />}
               </div>
               <div className="flex flex-wrap items-start gap-2">
-                <button type="button" disabled={busy} onClick={() => void removeSong(song.id)}
+                <button type="button" disabled={busy} onClick={() => requestDelete(song.id)}
                   title={`delete ${song.title}`} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg px-3 py-2 text-red-300 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
                   {deletingId === song.id ? (
                     <span aria-hidden="true" className="size-4 rounded-full border-2 border-current border-t-transparent motion-safe:animate-spin" />
@@ -99,7 +108,6 @@ export function SongsPage() {
                   {`download MP3 ${song.title}`}
                 </AudioDownload>
               </div>
-              {deleteError?.id === song.id && <p role="alert" className="text-sm text-red-300">{deleteError.message}</p>}
             </li>
           ))}
         </ul>
@@ -115,6 +123,23 @@ export function SongsPage() {
           </label>}
         </> : <p className="text-sm text-zinc-400">select a song to view its prompt and lyrics.</p>}
       </aside>
+      <dialog ref={deleteDialogRef} aria-labelledby="delete-song-title" aria-describedby="delete-song-description"
+        onCancel={(event) => { if (deletingId) event.preventDefault(); }}
+        onClose={() => {
+          cancelDelete();
+          if (document.activeElement === document.body) titleRef.current?.focus();
+        }}
+        className="m-auto w-[calc(100%-2rem)] max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-xl border border-white/15 bg-zinc-900 p-6 text-zinc-100 backdrop:bg-black/60">
+        <h2 id="delete-song-title" className="text-lg font-semibold">delete song?</h2>
+        <p id="delete-song-description" className="break-words text-sm text-zinc-400">delete “{pendingDeleteSong?.title}” permanently? this cannot be undone.</p>
+        {deleteError && deleteError.id === pendingDeleteId && <p role="alert" className="text-sm text-red-300">{deleteError.message}</p>}
+        <div className="flex flex-wrap justify-end gap-3">
+          <button type="button" autoFocus disabled={Boolean(deletingId)} onClick={cancelDelete} className={buttonClass}>cancel</button>
+          <button type="button" disabled={Boolean(deletingId)} onClick={() => void removeSong()} className={cn(buttonClass, "border-red-300/20 text-red-300")}>
+            {deletingId ? "deleting..." : "delete song"}
+          </button>
+        </div>
+      </dialog>
     </main>
   );
 }

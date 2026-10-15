@@ -8,6 +8,7 @@ export function useSongs() {
   const [request, setRequest] = useState(0);
   const [selectedSongId, setSelectedSongId] = useState<string>();
   const [openedSongIds, setOpenedSongIds] = useState<string[]>([]);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string>();
   const [deletingId, setDeletingId] = useState<string>();
   const [deleteError, setDeleteError] = useState<{ id: string; message: string }>();
   const [recoveryIds, setRecoveryIds] = useState<string[]>([]);
@@ -50,8 +51,20 @@ export function useSongs() {
     setSelectedSongId((previous) => previous === id ? undefined : id);
   }
 
-  async function removeSong(id: string): Promise<void> {
-    if (loading || acting.current || !window.confirm("delete this song permanently? this cannot be undone.")) return;
+  function requestDelete(id: string): void {
+    if (loading || acting.current) return;
+    setDeleteError(undefined);
+    setPendingDeleteId(id);
+  }
+
+  function cancelDelete(): void {
+    if (acting.current) return;
+    setPendingDeleteId(undefined);
+  }
+
+  async function removeSong(): Promise<void> {
+    const id = pendingDeleteId;
+    if (!id || loading || acting.current) return;
     const signal = currentRequest.current!.signal;
     acting.current = true;
     setDeletingId(id);
@@ -61,6 +74,7 @@ export function useSongs() {
     if (signal.aborted) return;
     if (failure) setDeleteError({ id, message: failure.message });
     else {
+      setPendingDeleteId(undefined);
       setSongs((previous) => previous?.filter((song) => song.id !== id));
       setSelectedSongId((previous) => previous === id ? undefined : previous);
       setOpenedSongIds((previous) => previous.filter((songId) => songId !== id));
@@ -88,6 +102,6 @@ export function useSongs() {
     setSavingId(undefined);
   }
 
-  return { songs, loading, error, refresh, selectedSongId, openedSongIds, selectSong, deletingId, deleteError, removeSong,
+  return { songs, loading, error, refresh, selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
     recoveryIds, savingId, saveError, saveSong };
 }
