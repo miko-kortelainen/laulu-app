@@ -61,11 +61,6 @@ export async function reserveUsage(userId: string, operation: PaidOperation, sto
   const data = await quotaRpc('reserve_usage', {
     p_user_id: userId, p_operation: operation, p_id: id,
     p_storage_bytes: storageBytes, p_defaults: {},
-    p_global_limits: {
-      chat: configuredLimit('GLOBAL_CHAT_DAILY', 0, 2_147_483_647),
-      analysis: configuredLimit('GLOBAL_ANALYSIS_DAILY', 0, 2_147_483_647),
-      generation: configuredLimit('GLOBAL_GENERATION_DAILY', 0, 2_147_483_647),
-    },
   });
   checkAllowance(data);
   if (!data || typeof data !== 'object' || !('allowed' in data) || data.allowed !== true ||

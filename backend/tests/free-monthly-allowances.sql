@@ -1,6 +1,7 @@
 begin;
 set local plpgsql.check_asserts = on;
 set local timezone = 'Pacific/Auckland';
+update public.global_usage set daily_limit = 2147483647;
 do $$
 declare
   owner_id uuid := gen_random_uuid();
@@ -11,7 +12,6 @@ declare
   today date := (clock_timestamp() at time zone 'UTC')::date;
   month_start date := date_trunc('month', today::timestamp)::date;
   month_end timestamptz := (month_start::timestamp + interval '1 month') at time zone 'UTC';
-  global_limits jsonb := '{"chat":2147483647,"analysis":2147483647,"generation":2147483647}';
   usage jsonb;
   result jsonb;
   global_used integer;
@@ -33,10 +33,10 @@ begin
   assert (usage->>'generationResetAt')::timestamptz = month_end, 'monthly reset is UTC even in another time zone';
   assert (usage->>'resetAt')::timestamptz = (today + 1)::timestamp at time zone 'UTC';
 
-  result := public.reserve_usage(owner_id, 'generation', song_id, 100, '{}', global_limits);
+  result := public.reserve_usage(owner_id, 'generation', song_id, 100, '{}');
   assert (result->>'allowed')::boolean;
-  assert not (public.reserve_usage(owner_id, 'generation', song_id, 100, '{}', global_limits)->>'created')::boolean;
-  result := public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}', global_limits);
+  assert not (public.reserve_usage(owner_id, 'generation', song_id, 100, '{}')->>'created')::boolean;
+  result := public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}');
   assert not (result->>'allowed')::boolean and (result->>'resetAt')::timestamptz = month_end;
   perform public.reserve_lyrics(owner_id, lyric_id);
   assert not (public.reserve_lyrics(owner_id, lyric_id)->>'created')::boolean;
@@ -45,7 +45,7 @@ begin
 
   perform public.settle_generation(owner_id, song_id, 'failed');
   assert (public.get_usage(owner_id, '{}')->'generation'->>'remaining')::integer = 1, 'failed songs restore monthly allowance';
-  perform public.reserve_usage(owner_id, 'generation', pending_id, 100, '{}', global_limits);
+  perform public.reserve_usage(owner_id, 'generation', pending_id, 100, '{}');
   select used into global_used from public.global_usage where operation = 'generation';
   result := public.reset_user_usage(owner_id, 'generation');
   assert result = '{"limit":10,"used":0,"remaining":10}'::jsonb;
@@ -54,7 +54,7 @@ begin
   assert (select used = global_used from public.global_usage where operation = 'generation');
   assert (select storage_bytes = 100 and quota_reset from public.usage_reservations where id = pending_id);
   assert exists (select 1 from public.daily_usage where user_id = owner_id and usage_date = month_start - 1);
-  perform public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}', global_limits);
+  perform public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}');
   perform public.settle_generation(owner_id, pending_id, 'failed');
   assert (public.get_usage(owner_id, '{}')->'generation'->>'used')::integer = 1, 'late refunds cannot erase usage after a reset';
   assert (select storage_bytes = 0 from public.usage_reservations where id = pending_id);
@@ -62,22 +62,24 @@ begin
   assert result = '{"limit":20,"used":0,"remaining":20}'::jsonb;
   assert (select quota_reset from public.usage_reservations where id = lyric_id);
 
-  result := public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}', '{"generation":0}');
+  update public.global_usage set daily_limit = 0 where operation = 'generation';
+  result := public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}');
   assert result->>'scope' = 'global' and (result->>'resetAt')::timestamptz = (today + 1)::timestamp at time zone 'UTC';
+  update public.global_usage set daily_limit = 2147483647 where operation = 'generation';
   update public.user_quotas set generation_daily = 0 where user_id = owner_id;
-  assert not (public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}', global_limits)->>'allowed')::boolean,
+  assert not (public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}')->>'allowed')::boolean,
     'individual zero blocks remain effective';
   update public.user_quotas set generation_daily = null where user_id = owner_id;
   update public.plan_limits set songs_monthly = 1, lyrics_monthly = 0 where plan = 'free';
-  assert not (public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}', global_limits)->>'allowed')::boolean;
+  assert not (public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}')->>'allowed')::boolean;
   assert not (public.reserve_lyrics(owner_id, gen_random_uuid())->>'allowed')::boolean, 'plan edits apply immediately';
 
   update public.user_quotas set chat_daily = 1, analysis_daily = 1 where user_id = owner_id;
-  perform public.reserve_usage(owner_id, 'chat', gen_random_uuid(), 0, '{}', global_limits);
-  result := public.reserve_usage(owner_id, 'chat', gen_random_uuid(), 0, '{}', global_limits);
+  perform public.reserve_usage(owner_id, 'chat', gen_random_uuid(), 0, '{}');
+  result := public.reserve_usage(owner_id, 'chat', gen_random_uuid(), 0, '{}');
   assert not (result->>'allowed')::boolean and (result->>'resetAt')::timestamptz = (today + 1)::timestamp at time zone 'UTC';
-  perform public.reserve_usage(owner_id, 'analysis', gen_random_uuid(), 0, '{}', global_limits);
-  result := public.reserve_usage(owner_id, 'analysis', gen_random_uuid(), 0, '{}', global_limits);
+  perform public.reserve_usage(owner_id, 'analysis', gen_random_uuid(), 0, '{}');
+  result := public.reserve_usage(owner_id, 'analysis', gen_random_uuid(), 0, '{}');
   assert not (result->>'allowed')::boolean and (result->>'resetAt')::timestamptz = (today + 1)::timestamp at time zone 'UTC';
 end;
 $$;

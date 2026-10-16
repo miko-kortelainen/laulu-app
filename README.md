@@ -88,8 +88,10 @@ The favourites tab filters the latest 100 saved songs shown in the library.
 
 ### Configure usage quotas
 
-Set positive `GLOBAL_CHAT_DAILY`, `GLOBAL_ANALYSIS_DAILY`, and `GLOBAL_GENERATION_DAILY` limits in `backend/.env`.
-The example values are `200`, `30`, and `20`. Missing or zero values disable the corresponding paid operation.
+Set shared daily attempt limits in Supabase Table Editor → `public.global_usage` → `daily_limit`.
+The initial limits are `200` for `chat`, `30` for `analysis`, and `20` for `generation`. Set `daily_limit` to `0` to disable an operation.
+Edits apply to the next request without a backend restart. Keep `used` and `usage_date` unchanged; usage resets at midnight UTC.
+Apply [the database global limits migration](supabase/migrations/20261016003139_database_global_limits.sql) before deploying this backend. The old `GLOBAL_*` environment variables are no longer used.
 
 Apply [the plan limits migration](supabase/migrations/20261013212037_plan_limits.sql) before deploying the updated backend and frontend.
 It preserves usage counts and gives existing subscribers their plan allowances.
@@ -149,7 +151,7 @@ It preserves plan limits, account overrides, saved songs, pending reservations, 
 The function is restricted to admins and the server's service role; signed-in users cannot reset their own usage.
 Refresh the user's allowances in the app to see the result.
 
-Shared `GLOBAL_*` limits still apply to every plan. Increase these separately when paid demand requires more capacity.
+Shared `public.global_usage.daily_limit` limits still apply to every plan. Increase these separately when paid demand requires more capacity.
 Saved storage counts generated songs and their pending reservations. Uploads do not consume this allowance.
 
 The chat agent keeps 16 recent messages and allows three model calls per request.

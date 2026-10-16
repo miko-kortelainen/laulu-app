@@ -1,5 +1,6 @@
 begin;
 set local plpgsql.check_asserts = on;
+update public.global_usage set daily_limit = 100;
 do $$
 declare
   owner_id uuid := gen_random_uuid();
@@ -39,11 +40,11 @@ begin
   assert (usage->'generation'->>'limit')::integer = 1 and (usage->'generation'->>'used')::integer = 0;
   assert (usage->'lyrics'->>'limit')::integer = 1 and (usage->'lyrics'->>'used')::integer = 0;
   assert (usage->>'generationResetAt')::timestamptz = allowance_period.period_end;
-  result := public.reserve_usage(owner_id, 'generation', song_id, 100, '{}', '{"chat":100,"analysis":100,"generation":100}');
+  result := public.reserve_usage(owner_id, 'generation', song_id, 100, '{}');
   assert (result->>'allowed')::boolean;
   assert (select billing_period_start = allowance_period.period_start from public.usage_reservations where id = song_id);
   perform public.reserve_lyrics(owner_id, lyric_id);
-  result := public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}', '{"chat":100,"analysis":100,"generation":100}');
+  result := public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}');
   assert not (result->>'allowed')::boolean, 'annual payment does not grant twelve months upfront';
   assert (result->>'resetAt')::timestamptz = allowance_period.period_end;
   result := public.reserve_lyrics(owner_id, gen_random_uuid());
@@ -55,7 +56,7 @@ begin
   assert not (select quota_reset from public.usage_reservations where user_id = owner_id and billing_period_start = started limit 1);
   assert (public.get_usage(owner_id, '{}')->'generation'->>'used')::integer = 0;
   assert (public.get_usage(owner_id, '{}')->'lyrics'->>'used')::integer = 0;
-  perform public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}', '{"chat":100,"analysis":100,"generation":100}');
+  perform public.reserve_usage(owner_id, 'generation', gen_random_uuid(), 0, '{}');
   perform public.settle_generation(owner_id, song_id, 'failed');
   assert (public.get_usage(owner_id, '{}')->'generation'->>'used')::integer = 1, 'late failure does not erase new usage';
 

@@ -6,7 +6,20 @@ import test from 'node:test';
 
 const databaseURL = process.env.QUOTA_TEST_DATABASE_URL;
 const psql = process.env.QUOTA_TEST_PSQL || 'psql';
-const globalLimits = JSON.stringify({ chat: 100, analysis: 100, generation: 100 });
+
+test.beforeEach(async () => {
+  if (!databaseURL) return;
+  const target = new URL(databaseURL);
+  assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
+  assert.match(target.pathname, /^\/quota_test/);
+  await query('update public.global_usage set daily_limit = 100;');
+});
+
+test('global limits use database settings immediately and ignore legacy server limits', {
+  skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
+}, async () => {
+  await query(await readFile(new URL('./global-limits.sql', import.meta.url), 'utf8'));
+});
 
 test('free songs and lyrics use monthly limits while chat and analysis remain daily', {
   skip: databaseURL ? false : 'set QUOTA_TEST_DATABASE_URL to a migrated local PostgreSQL database',
@@ -69,10 +82,10 @@ test('individual usage resets preserve allowances, owners, songs, and late gener
       assert not has_function_privilege('anon', 'public.reset_user_usage(uuid,text)', 'execute');
       assert not has_function_privilege('authenticated', 'public.reset_user_usage(uuid,text)', 'execute');
       update public.global_usage set usage_date = (clock_timestamp() at time zone 'UTC')::date, used = 0;
-      perform public.reserve_usage('${owner}', 'chat', gen_random_uuid(), 0, '{}', '${globalLimits}');
-      perform public.reserve_usage('${owner}', 'analysis', gen_random_uuid(), 0, '{}', '${globalLimits}');
-      perform public.reserve_usage('${owner}', 'generation', pending_id, 100, '{}', '${globalLimits}');
-      perform public.reserve_usage('${owner}', 'generation', saved_id, 0, '{}', '${globalLimits}');
+      perform public.reserve_usage('${owner}', 'chat', gen_random_uuid(), 0, '{}');
+      perform public.reserve_usage('${owner}', 'analysis', gen_random_uuid(), 0, '{}');
+      perform public.reserve_usage('${owner}', 'generation', pending_id, 100, '{}');
+      perform public.reserve_usage('${owner}', 'generation', saved_id, 0, '{}');
       insert into public.songs(id, owner_id, object_key, prompt, model, size_bytes, status)
         values (saved_id, '${owner}', 'users/${owner}/' || saved_id || '.mp3', 'offline folk', 'lyria-3.5', 100, 'ready');
       perform public.settle_generation('${owner}', saved_id, 'completed');
@@ -101,7 +114,7 @@ test('individual usage resets preserve allowances, owners, songs, and late gener
       assert (select sum(used) = global_used from public.global_usage), 'global attempts are not reset';
       assert (select generation_status = 'reserved' and storage_bytes = 100 from public.usage_reservations where id = pending_id);
       assert exists (select 1 from public.songs where id = saved_id), 'saved songs survive';
-      perform public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}', '${globalLimits}');
+      perform public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}');
       perform public.settle_generation('${owner}', pending_id, 'failed');
       assert (public.get_usage('${owner}', '{}')->'generation'->>'used')::integer = 1,
         'late refunds from reset reservations cannot erase new daily usage';
@@ -132,12 +145,12 @@ test('individual usage resets preserve allowances, owners, songs, and late gener
       assert (public.get_usage('${owner}', '{}')->'lyrics'->>'used')::integer = 1;
 
       pending_id := gen_random_uuid();
-      perform public.reserve_usage('${owner}', 'generation', pending_id, 100, '{}', '${globalLimits}');
+      perform public.reserve_usage('${owner}', 'generation', pending_id, 100, '{}');
       before_reset := public.get_usage('${owner}', '{}');
       result := public.reset_user_usage('${owner}', 'generation');
       assert (result->>'used')::integer = 0 and result->'limit' = before_reset->'generation'->'limit';
       assert (public.get_usage('${owner}', '{}')->'storage') = before_reset->'storage';
-      perform public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}', '${globalLimits}');
+      perform public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}');
       perform public.settle_generation('${owner}', pending_id, 'failed');
       usage := public.get_usage('${owner}', '{}');
       assert (usage->'generation'->>'used')::integer = 1 and (usage->'lyrics'->>'used')::integer = 1;
@@ -261,10 +274,10 @@ test('billing preserves newer state, resets monthly allowances, and refunds the 
       for i in 1..30 loop
         reservation_id := case when i = 1 then first_id else gen_random_uuid() end;
         if i = 2 then second_id := reservation_id; end if;
-        reservation := public.reserve_usage('${owner}', 'generation', reservation_id, 0, '{}', '${globalLimits}');
+        reservation := public.reserve_usage('${owner}', 'generation', reservation_id, 0, '{}');
         assert (reservation->>'allowed')::boolean, 'the monthly allowance must exceed five daily songs';
       end loop;
-      reservation := public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}', '${globalLimits}');
+      reservation := public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}');
       assert not (reservation->>'allowed')::boolean, 'the 31st song must be denied';
       assert not exists (select 1 from public.daily_usage where user_id = '${owner}' and operation = 'generation'),
         'paid songs do not consume the free counter';
@@ -274,7 +287,7 @@ test('billing preserves newer state, resets monthly allowances, and refunds the 
       usage := public.get_usage('${owner}', '{}');
       assert (usage->'generation'->>'remaining')::integer = 1, 'a failure refunds exactly once';
       assert (select used = attempts from public.global_usage where operation = 'generation'), 'refunds retain global attempts';
-      reservation := public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}', '${globalLimits}');
+      reservation := public.reserve_usage('${owner}', 'generation', gen_random_uuid(), 0, '{}');
       assert (reservation->>'allowed')::boolean, 'one replacement fits';
 
       payload := payload || jsonb_build_object('status', 'active', 'period_start', period_start + interval '1 month',
@@ -282,9 +295,9 @@ test('billing preserves newer state, resets monthly allowances, and refunds the 
       perform public.sync_paddle_event('subscription', payload, event_time + interval '2 minutes');
       usage := public.get_usage('${owner}', '{}');
       assert (usage->'generation'->>'remaining')::integer = 30, 'renewal starts a fresh allowance without rollover';
-      reservation := public.reserve_usage('${owner}', 'generation', next_id, 0, '{}', '${globalLimits}');
+      reservation := public.reserve_usage('${owner}', 'generation', next_id, 0, '{}');
       assert (reservation->>'allowed')::boolean;
-      reservation := public.reserve_usage('${owner}', 'generation', next_id, 0, '{}', '${globalLimits}');
+      reservation := public.reserve_usage('${owner}', 'generation', next_id, 0, '{}');
       assert not (reservation->>'created')::boolean, 'a request replay does not charge twice';
       perform public.settle_generation('${owner}', second_id, 'failed');
       perform public.settle_generation('${owner}', second_id, 'failed');
@@ -324,7 +337,7 @@ test('database quotas serialize reservations, survive new connections, and prote
   const other = randomUUID();
   const day = "(clock_timestamp() at time zone 'UTC')::date";
   const reserve = (operation, id = randomUUID(), bytes = 0, user = owner) =>
-    query(`set role service_role; select public.reserve_usage('${user}', '${operation}', '${id}', ${bytes}, '{}', '${globalLimits}');`).then(JSON.parse);
+    query(`set role service_role; select public.reserve_usage('${user}', '${operation}', '${id}', ${bytes}, '{}');`).then(JSON.parse);
   const usage = () => query(`set role service_role; select public.get_usage('${owner}', '{}');`).then(JSON.parse);
   const metadata = (id, bytes, user = owner) => ({ id, owner_id: user, title: 'untitled',
     object_key: `users/${user}/${id}.mp3`, prompt: 'offline folk', model: 'lyria-3.5', lyrics: '',
@@ -394,7 +407,7 @@ test('database quotas serialize reservations, survive new connections, and prote
         await assert.rejects(query(`set role ${role}; select * from public.${table};`), /permission denied/);
         await assert.rejects(query(`set role ${role}; update public.${table} set ${table === 'global_usage' ? 'used = 0' : `user_id = '${other}'`};`), /permission denied/);
       }
-      await assert.rejects(query(`set role ${role}; select public.reserve_usage('${owner}', 'chat', '${randomUUID()}', 0, '{}', '${globalLimits}');`), /permission denied/);
+      await assert.rejects(query(`set role ${role}; select public.reserve_usage('${owner}', 'chat', '${randomUUID()}', 0, '{}');`), /permission denied/);
       await assert.rejects(query(`set role ${role}; select public.get_usage('${owner}', '{}');`), /permission denied/);
       await assert.rejects(query(`set role ${role}; select public.settle_generation('${owner}', '${song.id}', 'failed');`), /permission denied/);
       await assert.rejects(query(`set role ${role}; select public.prepare_song_save('${JSON.stringify(song)}', '{}');`), /permission denied/);
@@ -416,7 +429,7 @@ test('free accounts allow 20 daily chats and ten monthly songs, refund once, and
   assert.match(target.pathname, /^\/quota_test/);
   const owner = randomUUID();
   const other = randomUUID();
-  const reserve = (operation) => query(`set role service_role; select public.reserve_usage('${owner}', '${operation}', '${randomUUID()}', ${operation === 'generation' ? 100 : 0}, '{}', '${globalLimits}');`).then(JSON.parse);
+  const reserve = (operation) => query(`set role service_role; select public.reserve_usage('${owner}', '${operation}', '${randomUUID()}', ${operation === 'generation' ? 100 : 0}, '{}');`).then(JSON.parse);
   const usage = () => query(`set role service_role; select public.get_usage('${owner}', '{}');`).then(JSON.parse);
   const settle = (id, status, user = owner) => query(`set role service_role; select public.settle_generation('${user}', '${id}', '${status}');`);
   await query(`insert into auth.users(id) values ('${owner}'), ('${other}');`);
@@ -472,7 +485,7 @@ test('free accounts allow 20 daily chats and ten monthly songs, refund once, and
     const last = await reserve('generation');
     await settle(last.id, 'failed');
     await assert.rejects(settle(last.id, 'reserved'), /invalid generation status/);
-    const single = await query(`set role service_role; select public.reserve_usage('${other}', 'generation', '${randomUUID()}', 100, '{}', '${globalLimits}');`).then(JSON.parse);
+    const single = await query(`set role service_role; select public.reserve_usage('${other}', 'generation', '${randomUUID()}', 100, '{}');`).then(JSON.parse);
     await settle(single.id, 'failed', other);
     await settle(single.id, 'failed', other);
     const empty = await query(`set role service_role; select public.get_usage('${other}', '{}');`).then(JSON.parse);
@@ -490,12 +503,12 @@ test('global limits serialize different accounts and survive account deletion an
   assert.ok(['localhost', '127.0.0.1'].includes(target.hostname));
   assert.match(target.pathname, /^\/quota_test/);
   const users = Array.from({ length: 4 }, () => randomUUID());
-  const limits = JSON.stringify({ chat: 0, analysis: 5, generation: 5 });
-  const reserve = (user, operation, id = randomUUID(), bytes = 0, caps = limits) =>
-    query(`set role service_role; select public.reserve_usage('${user}', '${operation}', '${id}', ${bytes}, '{}', '${caps}');`).then(JSON.parse);
+  const reserve = (user, operation, id = randomUUID(), bytes = 0) =>
+    query(`set role service_role; select public.reserve_usage('${user}', '${operation}', '${id}', ${bytes}, '{}');`).then(JSON.parse);
   await query(`insert into auth.users(id) values ${users.map((id) => `('${id}')`).join(',')};
     insert into public.user_quotas values ${users.map((id) => `('${id}',100,100,100,0)`).join(',')};
-    update public.global_usage set usage_date = (clock_timestamp() at time zone 'UTC')::date - 1;`);
+    update public.global_usage set usage_date = (clock_timestamp() at time zone 'UTC')::date - 1,
+      daily_limit = case when operation = 'chat' then 0 else 5 end;`);
   try {
     const results = await Promise.all(Array.from({ length: 16 }, (_, index) => reserve(users[index % users.length], 'analysis')));
     assert.equal(results.filter((result) => result.allowed).length, 5);
@@ -513,7 +526,7 @@ test('global limits serialize different accounts and survive account deletion an
     assert.equal((await reserve(remaining, 'chat')).scope, 'global', 'zero disables an operation');
     assert.equal((await reserve(remaining, 'generation', randomUUID(), 1)).resource, 'storage');
     assert.equal(await query(`select count(*) from public.usage_reservations where user_id = '${remaining}' and operation in ('chat', 'generation');`), '0');
-    await assert.rejects(reserve(remaining, 'analysis', randomUUID(), 0, '{}'), /invalid global allowance/);
+    await assert.rejects(query("update public.global_usage set daily_limit = -1 where operation = 'analysis';"), /check constraint/);
     await query("update public.global_usage set usage_date = usage_date - 1 where operation = 'analysis';");
     assert.equal((await reserve(remaining, 'analysis')).allowed, true);
     assert.equal(await query("select used from public.global_usage where operation = 'analysis';"), '1');
@@ -537,7 +550,7 @@ test('operation records are server-only and bounded cleanup preserves unknown ch
   await query(`insert into auth.users(id) values ('${owner}');`);
   try {
     for (const id of [unknown, running]) {
-      const reservation = await query(`set role service_role; select public.reserve_usage('${owner}', 'generation', '${id}', 100, '{}', '${globalLimits}');`).then(JSON.parse);
+      const reservation = await query(`set role service_role; select public.reserve_usage('${owner}', 'generation', '${id}', 100, '{}');`).then(JSON.parse);
       assert.equal(reservation.allowed, true);
     }
     const before = await query(`set role service_role; select public.get_usage('${owner}', '{}');`).then(JSON.parse);
@@ -611,9 +624,9 @@ test('plan edits update every allowance without resetting usage or granting cust
       update public.paddle_subscriptions set plan = 'starter',
         period_start = period_start + interval '1 month', period_end = period_end + interval '1 month' where id = '${subscription}';
       update public.global_usage set usage_date = current_date, used = 0;
-      perform public.reserve_usage('${owner}', 'chat', gen_random_uuid(), 0, '{}', '${globalLimits}');
-      perform public.reserve_usage('${owner}', 'analysis', gen_random_uuid(), 0, '{}', '${globalLimits}');
-      perform public.reserve_usage('${owner}', 'generation', song_id, 10, '{}', '${globalLimits}');
+      perform public.reserve_usage('${owner}', 'chat', gen_random_uuid(), 0, '{}');
+      perform public.reserve_usage('${owner}', 'analysis', gen_random_uuid(), 0, '{}');
+      perform public.reserve_usage('${owner}', 'generation', song_id, 10, '{}');
       update public.plan_limits set chat_daily = 60, analysis_daily = 25, songs_monthly = 40, storage_bytes = 200 where plan = 'starter';
       usage := public.get_usage('${owner}', '{}');
       assert (usage->'chat'->>'limit')::integer = 60 and (usage->'chat'->>'used')::integer = 1;
@@ -622,7 +635,7 @@ test('plan edits update every allowance without resetting usage or granting cust
       assert (usage->'storage'->>'remaining')::bigint = 190;
       update public.plan_limits set chat_daily = 1, analysis_daily = 1, songs_monthly = 1, storage_bytes = 5 where plan = 'starter';
       foreach operation in array array['chat', 'analysis', 'generation'] loop
-        result := public.reserve_usage('${owner}', operation, gen_random_uuid(), 0, '{}', '${globalLimits}');
+        result := public.reserve_usage('${owner}', operation, gen_random_uuid(), 0, '{}');
         assert not (result->>'allowed')::boolean, 'reductions retain used counts';
       end loop;
       song := jsonb_build_object('id', song_id, 'owner_id', '${owner}', 'object_key', 'users/${owner}/' || song_id || '.mp3',
@@ -672,7 +685,7 @@ test('concurrent paid songs cannot exceed an edited monthly allowance', {
     update public.global_usage set usage_date = (clock_timestamp() at time zone 'UTC')::date, used = 0 where operation = 'generation';`);
   try {
     const results = await Promise.all(Array.from({ length: 10 }, () =>
-      query(`set role service_role; select public.reserve_usage('${owner}', 'generation', '${randomUUID()}', 0, '{}', '${globalLimits}');`).then(JSON.parse)));
+      query(`set role service_role; select public.reserve_usage('${owner}', 'generation', '${randomUUID()}', 0, '{}');`).then(JSON.parse)));
     assert.equal(results.filter(result => result.allowed).length, 2);
     assert.equal(await query(`select count(*) from public.usage_reservations where user_id = '${owner}' and billing_subscription_id = '${subscription}';`), '2');
   } finally {
@@ -709,7 +722,7 @@ test('a subscription change during a reservation keeps the selected billing peri
   let reservation;
   try {
     await waitFor(`select exists (select 1 from pg_stat_activity where application_name = '${lockTag}' and wait_event = 'PgSleep');`);
-    reservation = query(`set application_name = '${reserveTag}'; set role service_role; select public.reserve_usage('${owner}', 'generation', '${id}', 0, '{}', '${globalLimits}');`).then(JSON.parse);
+    reservation = query(`set application_name = '${reserveTag}'; set role service_role; select public.reserve_usage('${owner}', 'generation', '${id}', 0, '{}');`).then(JSON.parse);
     await waitFor(`select exists (select 1 from pg_stat_activity where application_name = '${reserveTag}' and wait_event_type = 'Lock');`);
     await query(`update public.paddle_subscriptions set status = 'canceled' where id = '${subscription}';`);
     assert.equal((await reservation).allowed, true);
@@ -754,7 +767,7 @@ test('lyrics reserve monthly attempts independently from chat and preserve billi
     const accepted = paid.find(result => result.allowed);
     assert.equal((await reserve(accepted.id)).created, false, 'replay does not charge twice');
     assert.deepEqual((await usage()).lyrics, { limit: 10, used: 10, remaining: 0 });
-    const chat = JSON.parse(await query(`set role service_role; select public.reserve_usage('${owner}', 'chat', '${randomUUID()}', 0, '{}', '${globalLimits}');`));
+    const chat = JSON.parse(await query(`set role service_role; select public.reserve_usage('${owner}', 'chat', '${randomUUID()}', 0, '{}');`));
     assert.equal(chat.allowed, true, 'exhausted lyrics do not block ordinary chat');
     await query("update public.plan_limits set lyrics_monthly = 11 where plan = 'starter';");
     assert.equal((await usage()).lyrics.remaining, 1, 'plan edits apply without resetting attempts');

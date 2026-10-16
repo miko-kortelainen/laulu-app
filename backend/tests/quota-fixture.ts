@@ -2,9 +2,6 @@ import assert from 'node:assert/strict';
 
 export function configureTestQuotas() {
   const previousKey = process.env.SUPABASE_SECRET_KEY;
-  const globalKeys = ['GLOBAL_CHAT_DAILY', 'GLOBAL_ANALYSIS_DAILY', 'GLOBAL_GENERATION_DAILY'];
-  const previousLimits = globalKeys.map((key) => process.env[key]);
-  for (const key of globalKeys) process.env[key] = '100';
   process.env.SUPABASE_SECRET_KEY = 'sb_secret_offline';
   const reservations = new Map<string, { userId: string; operation: string; storageBytes: number; status: 'reserved' | 'completed' | 'failed' }>();
   const failures: { unavailable: boolean; resource?: string; scope?: 'global'; invalid: boolean } = { unavailable: false, invalid: false };
@@ -20,9 +17,7 @@ export function configureTestQuotas() {
     if (failures.unavailable) return Response.json({ message: 'offline quota database failure' }, { status: 503 });
     if (failures.invalid) return Response.json({});
     if (name === 'reserve_usage' || name === 'reserve_lyrics') {
-      const limits = input.p_global_limits as Record<string, unknown>;
-      assert.ok(name === 'reserve_lyrics' || limits && ['chat', 'analysis', 'generation'].every((operation) =>
-        Number.isSafeInteger(limits[operation]) && Number(limits[operation]) >= 0));
+      assert.ok(!('p_global_limits' in input), 'global limits are configured in the database');
       if (failures.resource) return Response.json({ allowed: false, resource: failures.resource, scope: failures.scope,
         resetAt: failures.resource === 'storage' ? undefined : '2099-01-01T00:00:00Z' });
       assert.equal(typeof input.p_id, 'string');
@@ -56,9 +51,5 @@ export function configureTestQuotas() {
   return { reservations, failures, databaseResponse, restore() {
     if (previousKey === undefined) delete process.env.SUPABASE_SECRET_KEY;
     else process.env.SUPABASE_SECRET_KEY = previousKey;
-    globalKeys.forEach((key, index) => {
-      if (previousLimits[index] === undefined) delete process.env[key];
-      else process.env[key] = previousLimits[index];
-    });
   } };
 }
