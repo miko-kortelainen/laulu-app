@@ -305,8 +305,7 @@ Run commands from the repository root:
 ```bash
 npm run build
 npm --prefix frontend run lint
-npm --prefix frontend run test:all
-node frontend/e2e/run.mjs pricing
+npm --prefix frontend run test:e2e
 npm --prefix backend run test:auth
 npm --prefix backend run test:music
 npm --prefix backend run test:lyrics
@@ -315,7 +314,8 @@ npm --prefix backend run test:audio
 npm --prefix backend run test:songs
 ```
 
-Frontend checks require the `agent-browser` CLI. These checks use mocked services and make no paid AI calls.
+Frontend end-to-end checks use Playwright (`@playwright/test`, Chromium) in `frontend/e2e/` with a shared fixture in `frontend/e2e/fixtures.ts`. Install the browser once with `npx --prefix frontend playwright install chromium`, then run `npm --prefix frontend run test:e2e` (or `test:e2e:ui` for UI mode). These checks use mocked services and make no paid AI calls.
+Playwright builds and starts its own preview on port 5174 and refuses to reuse an existing server. Auth checks use mocked CAPTCHA and Supabase responses. To run one suite, use `npm --prefix frontend run test:e2e -- auth.spec.ts`.
 Audio checks require FFmpeg. Additional backend checks are listed in [backend/package.json](backend/package.json).
 Plan database checks use `npm --prefix backend run test:quotas:db` with `QUOTA_TEST_DATABASE_URL` set to a disposable, migrated localhost database.
 
