@@ -314,6 +314,10 @@ npm --prefix backend run test:lyrics
 npm --prefix backend run test:analysis
 npm --prefix backend run test:audio
 npm --prefix backend run test:songs
+npm --prefix backend run test:billing
+npm --prefix backend run test:gateway
+npm --prefix backend run test:local-audio
+npm --prefix backend run test:operations
 ```
 
 Frontend end-to-end checks use Playwright (`@playwright/test`, Chromium) in `frontend/e2e/` with a shared fixture in `frontend/e2e/fixtures.ts`. Install the browser once with `npx --prefix frontend playwright install chromium`, then run `npm --prefix frontend run test:e2e` (or `test:e2e:ui` for UI mode). These checks use mocked services and make no paid AI calls.

@@ -1,6 +1,6 @@
 import { authenticatedFetch } from "./api";
 
-export const TERMS_VERSION = "2026-10-13";
+const TERMS_VERSION = "2026-10-13";
 
 const pendingKey = "terms-acceptance-pending";
 

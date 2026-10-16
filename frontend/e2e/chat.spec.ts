@@ -10,11 +10,25 @@ test.describe("chat (studio)", () => {
 
     await expect(page.getByText("0 / 16")).toBeVisible();
     const prompt = page.getByLabel("Prompt message");
+    await expect(page.getByRole("button", { name: "Send prompt" })).toBeDisabled();
+    await expect(prompt).toHaveAttribute("placeholder", "chat with laulu");
+    const bounds = (await prompt.boundingBox())!;
+    await prompt.click({ position: { x: bounds.width - 70, y: 20 } });
+    await expect(prompt).toBeFocused();
+    await prompt.fill("word ".repeat(300));
+    await expect.poll(() => prompt.evaluate((input) => input.clientHeight)).toBeGreaterThan(46);
+    expect(await prompt.evaluate((input) => input.clientHeight)).toBeLessThanOrEqual(178);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await prompt.fill("   ");
+    await expect(page.getByRole("button", { name: "Send prompt" })).toBeDisabled();
     await prompt.fill("hello laulu");
     await page.getByRole("button", { name: "Send prompt" }).click();
 
     await expect(page.getByText("e2e reply")).toBeVisible();
     await expect(page.getByText("hello laulu")).toBeVisible();
+    await expect(prompt).toHaveValue("");
+    await expect.poll(() => prompt.evaluate((input) => input.clientHeight)).toBe(46);
   });
 
   test("generates a song through a polled operation", async ({ authedPage: page }) => {

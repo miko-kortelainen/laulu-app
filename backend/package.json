@@ -16,6 +16,10 @@
     "test:deployment": "node --test tests/deployment.test.mjs",
     "test:agent": "node --import tsx tests/agent.test.ts",
     "test:songs": "node --import tsx --test tests/songs.test.ts",
+    "test:billing": "node --import tsx --test tests/billing.test.ts",
+    "test:gateway": "node --import tsx --test tests/gateway.test.ts",
+    "test:local-audio": "node --import tsx --test tests/local-audio.test.ts",
+    "test:operations": "node --import tsx --test tests/operations.test.ts",
     "test:quotas:db": "node --test tests/quotas-db.test.mjs",
     "start": "node dist/index.js"
   },

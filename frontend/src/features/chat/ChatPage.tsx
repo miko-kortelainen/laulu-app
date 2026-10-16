@@ -1,13 +1,11 @@
 import { useEffect, useRef } from "react";
-import { AiInput } from "@/components/ui/ai-input";
 import { AudioPlayer } from "@/components/ui/audio-player";
 import { cn } from "@/lib/utils";
 import { ChatMessage } from "./ChatMessage";
+import { ChatInput } from "./ChatInput";
 import type { useChat } from "./useChat";
 import { MusicPromptFields } from "@/components/MusicPromptFields";
 import { isMusicPrompt } from "@/lib/music-prompt";
-
-const MODELS = ["nvidia/nemotron-3-super-120b-a12b"];
 
 export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
   const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, songTitle, musicError, pendingSongId, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, changeSongTitle, upload, removeAudio } = chat;
@@ -77,30 +75,7 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
             )}
             {uploadError && <p role="alert" className="text-xs text-red-400">{uploadError}</p>}
           </div>
-          <AiInput
-            placeholder="chat with laulu"
-            placeholderContent={
-              <>
-                chat with{" "}
-                <span className="bg-clip-text text-transparent"
-                  style={{ backgroundImage: "linear-gradient(to right, #f87171 0%, #fb923c 33%, #fde047 67%, #4ade80 100%)" }}>
-                  laulu
-                </span>
-              </>
-            }
-            onSubmit={(text) => send(text)}
-            models={MODELS}
-            selectedModel={MODELS[0]}
-            allowAttachments={false}
-            allowEffortSelect={false}
-            allowModelSelect={false}
-            allowVoice={false}
-            disabled={loading}
-            minWidth="100%"
-            maxWidth="100%"
-            variant="default"
-            className="mx-auto w-full"
-          />
+          <ChatInput onSubmit={send} disabled={loading} />
         </footer>
       </section>
       <aside aria-labelledby="music-heading" className="min-h-0 min-w-0 space-y-4 border-t border-white/10 pt-4 lg:w-[26rem] lg:shrink-0 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:pl-6 lg:pr-2">
