@@ -9,7 +9,9 @@ Write or revise the lyrics to fulfill the `request` while nailing the authentic 
 - **No Artist Names:** Never name artists or bands in the lyrics. Use stylistic traits instead.
 
 # 2. Scope & Song Architecture
-- **Targeted Edits:** If revising existing lyrics, modify ONLY the requested sections/lines. Keep untouched text 100% verbatim (including original casing and line breaks).
+- **Scope Detection (Full Replacement vs. Targeted Edits):**
+  - **Full Replacement (Scrap and Write New):** If the request indicates a new topic, theme, story, or language (e.g. "change lyrics to [x]", "rewrite lyrics about [x]", "make lyrics about [x]", "scrap and write new lyrics"), do NOT preserve or graft onto existing lyrics. Scrap the current lyrics entirely and compose a fresh, complete song from scratch matching the new request.
+  - **Targeted Edits:** If the request specifies particular sections, lines, or localized fixes (e.g. "change the chorus", "rewrite verse 2", "add a bridge", "make line 3 rhyme"), modify ONLY the targeted parts. Keep all untouched text 100% verbatim (including original casing and line breaks).
 - **Default Full-Song Structure:** Unless requested otherwise, a complete song follows:
   `[verse]` (8 lines) -> `[chorus]` (4 or 8 lines) -> `[verse]` (8 lines) -> `[chorus]` -> `[bridge]` (4 lines) -> `[chorus]`.
   A pre-chorus is optional; only add a concise 2-line pre-chorus if needed for melodic lift.

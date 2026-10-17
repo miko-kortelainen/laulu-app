@@ -1,55 +1,32 @@
 # Music form tool: update_music_form
 
-This tool fills or revises the visible song form for Lyria 3.5 batch generation.
-It does not generate audio or make a paid Lyria call.
+This tool updates or drafts the visible song form for Lyria music generation. It does not generate audio or make a paid call.
 
 ## When to call
 
-- You MUST call this tool for a song draft or a change to any form field.
-- For revisions, start with the current form. Preserve fields that the user did not ask to change.
-- Send the complete brief each time. Do not use references to earlier drafts in field values.
+- Call this tool for any song draft or revision to any form field.
+- For revisions, start with the current form and change only the requested fields. Keep untouched fields unchanged.
+- Send the complete brief in each call. Do not use relative references to prior versions.
+- For new briefs, choose coherent musical details for unspecified preferences.
 - For general advice, do not call this tool.
 
-## Field content
+## Musical & style constraints
 
-- `genre`: Name only the primary genre or style, era, or region. Never include an artist or band name, including parenthetical references or artist-inspired labels.
-- `mood`: Describe the emotion, energy, groove, and feel with concrete terms.
-- `key`: If useful or requested, state the musical key.
-- `bpm`: If useful or requested, state the tempo and rhythmic feel.
-- `duration`: Include the requested duration. If unspecified, leave this field empty.
-- `instruments`: Describe instrument roles and textures, not only instrument names.
-- `vocals`: Specify the lyric language, vocal timbre, and delivery. If relevant, add harmonies or range.
-- `production`: Describe the recording character, texture, space, and mix.
-- `lyrics`: Include current or supplied lyrics without changes. For new lyrics, leave this field empty and set `lyricRequest`.
-- `lyricRequest`: Optional instructions for the dedicated lyric agent. Include the subject, language, scope, and sections to preserve.
+- Never include artist or band names in any field or `lyricRequest` (including parenthetical references or "inspired by" labels). Translate all artist references into concrete musical traits: genre, instruments, rhythm, vocal delivery, and production character.
+- Describe only what is musically present. Never write negative instructions, exclusions, or avoidance notes (such as "avoiding lo-fi" or "no sub bass") into any field.
+- Choose diverse, genre-appropriate production and bass elements instead of defaulting to "lo-fi" or "deep sub bass". Include those tags only when explicitly requested or distinctly characteristic of the style.
+- For instrumental music: state "instrumental only, no vocals" in `vocals`, set `lyrics` to an empty string, and omit `lyricRequest`.
 
-For new briefs, choose coherent details for unspecified preferences.
-Preserve explicit musical choices, but translate artist and band references into musical traits.
-Write musical directions in the requested lyric language. Otherwise, use the user's language.
-Do not add artist or band names to any form field or `lyricRequest`.
-Describe artist or band references with genre, instruments, rhythm, vocal delivery, and production traits instead.
-Before calling the tool, check every field for artist and band names, including parenthetical references, and replace them with musical descriptions.
+## Lyrics contract
 
-## Lyrics and vocals
-
-- If the user supplies lyrics, preserve their exact text, casing, line breaks, and section tags.
-- Keep `lyrics` within 3,000 characters, including spaces, section tags, and line breaks. If supplied lyrics exceed the limit, report the limit instead of silently cutting text.
-- If the user requests a lyric revision, put the requested change in `lyricRequest`. Keep current lyrics unchanged in `lyrics`.
-- If you choose to write lyrics for a new brief, describe that request in `lyricRequest`.
-- Do not write lyric text yourself. The tool calls a dedicated lyric agent and fills `lyrics` with its result.
-- If no lyric change is requested, omit `lyricRequest` to avoid an extra model call.
-- If lyric generation fails, report the failure. Do not retry with self-written lyrics or claim the form changed.
-- Only one lyric generation attempt is allowed per user message. After a failure, stop calling this tool for lyrics and report the error.
-- If Lyria will write the lyrics, set `lyrics` to an empty string.
-- In that case, describe the narrative, emotion, and hook in `vocals`.
-- For instrumental music, state instrumental only, no vocals in `vocals`.
-- For instrumental music, set `lyrics` to an empty string.
-- For instrumental music or lyrics left to Lyria, omit `lyricRequest`.
+- Do not compose lyrics yourself. To write new lyrics or revise existing ones, set `lyricRequest` for the dedicated lyric agent. Specify whether to generate a completely new song (when changing topics, themes, or languages, e.g. "change lyrics to y") or perform a targeted edit on specific lines/sections.
+- If no lyric change is requested, omit `lyricRequest`.
+- If the user supplies lyrics, preserve their exact text, casing, line breaks, and section tags in `lyrics` (up to 3,000 characters).
+- If Lyria should write lyrics, set `lyrics` to an empty string and describe the narrative, emotion, and vocal hook in `vocals`.
+- Only one lyric generation attempt is allowed per user message. If generation fails, report the error and do not retry with self-written lyrics.
 
 ## Output requirements
 
-- Include every required schema field as a string. Use an empty string for a field that does not apply.
-- Keep the complete song brief within 10,000 characters, including labels and spacing.
-- Use plain text in field values. Lyric section tags and line breaks are permitted.
-- Keep explanations, chat acknowledgments, and Markdown formatting outside the fields.
-- Do not add RealTime weights or streaming controls.
+- Include every required schema field as a plain-text string. Use an empty string for a field that does not apply.
+- Keep the complete song brief within 10,000 characters.
+- Keep explanations, chat acknowledgments, and Markdown formatting outside the tool arguments.
