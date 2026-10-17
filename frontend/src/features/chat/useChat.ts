@@ -226,7 +226,8 @@ export function useChat(userId: string) {
     pendingChatId.current = id;
     saveDraft(userId, { musicPrompt, musicModel, songTitle, pendingAudio: attachment, pendingSongId,
       currentAudio: currentAudio.current, pendingChatId: id });
-    const result = await sendMessage(message, currentAudio.current, musicPrompt, setActivity, requests.current.signal, id).catch(
+    const result = await sendMessage({ message, audioUrl: currentAudio.current, musicPrompt },
+      { onStatus: setActivity, signal: requests.current.signal, operationId: id }).catch(
       (error: unknown) => ({ reply: `Error: ${errorMessage(error)}`, failed: true, operationId: error instanceof OperationError ? error.operationId : undefined }),
     );
 
@@ -294,7 +295,8 @@ export function useChat(userId: string) {
 
     busy.current = true;
     setActivity(pendingSongId ? 'saving track...' : 'generating track...');
-    const result = await (pendingSongId ? retrySongStorage(pendingSongId) : generateMusic(musicPrompt, musicModel, songTitle, setActivity, requests.current.signal))
+    const result = await (pendingSongId ? retrySongStorage(pendingSongId) : generateMusic(
+      { fields: musicPrompt, model: musicModel, title: songTitle }, { onStatus: setActivity, signal: requests.current.signal }))
       .catch((error: unknown) => error instanceof Error ? error : new Error(errorMessage(error)));
     if (requests.current.signal.aborted) return;
     if (result instanceof Error) {

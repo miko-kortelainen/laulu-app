@@ -131,6 +131,31 @@ test.describe("chat (studio)", () => {
     await expect(page.getByText("invalid conversation context response.")).toHaveCount(0);
   });
 
+  test("rejects malformed responses and keeps the draft usable", async ({ authedPage: page }) => {
+    await page.route(/\/api\/chat$/, (route) => fulfillJson(route, { reply: "untrusted reply", musicPrompt: { genre: "incomplete" } }));
+    await page.route(/\/api\/audio\?name=/, (route) => fulfillJson(route, { audio: { url: "https://example.com/reference.wav", name: "reference.wav" } }));
+    let track: unknown = { url: "/api/music/00000000-0000-0000-0000-000000000000.mp3", lyrics: "retained lyrics", title: null };
+    await page.route(/\/api\/music$/, (route) => fulfillJson(route, { track }));
+    await page.route(/\/api\/music\/[^/]+\.mp3$/, (route) => route.fulfill({ contentType: "audio/mpeg", body: "" }));
+    await page.goto("/");
+    await page.getByLabel("genre / style").fill("retained style");
+    await page.getByLabel("Prompt message").fill("keep my draft");
+    await page.getByRole("button", { name: "Send prompt" }).click();
+    await expect(page.getByText("Error: Invalid chat response.", { exact: true })).toBeVisible();
+    await expect(page.getByText("untrusted reply", { exact: true })).toHaveCount(0);
+    await page.getByLabel("upload audio", { exact: true }).setInputFiles({ name: "reference.wav", mimeType: "audio/wav", buffer: wavBuffer() });
+    await expect(page.getByRole("alert")).toHaveText("Invalid audio upload response.");
+    await expect(page.getByText("attached to your next message")).toHaveCount(0);
+    await page.getByRole("button", { name: "generate song", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Invalid music response." })).toBeVisible();
+    await expect(page.getByText("your track is ready.")).toHaveCount(0);
+    await expect(page.getByLabel("genre / style")).toHaveValue("retained style");
+    track = { url: "/api/music/00000000-0000-0000-0000-000000000000.mp3", lyrics: "retained lyrics" };
+    await page.getByRole("button", { name: "generate song", exact: true }).click();
+    await expect(page.getByText("your track is ready.")).toBeVisible();
+    await expect(page.getByText("untitled", { exact: true })).toBeVisible();
+  });
+
   test("keeps attachments after failed replacement, send, and reset, then clears on success", async ({ authedPage: page }) => {
     const audioUrl = "/api/audio/44444444-4444-4444-4444-444444444444.wav";
     const wav = wavBuffer();

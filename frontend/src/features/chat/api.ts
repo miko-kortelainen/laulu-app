@@ -2,8 +2,29 @@ import { formatMusicPrompt, isMusicPrompt, type MusicPrompt } from "@/lib/music-
 import { authenticatedFetch } from "@/lib/api";
 import { formatDate } from "@/lib/date";
 
-function formatResetDate(message: string, data: object): string {
-  return "resetAt" in data && typeof data.resetAt === "string" && Number.isFinite(Date.parse(data.resetAt))
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readObject(value: unknown, message: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new Error(message);
+  return value;
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
+}
+
+function isCount(value: unknown, minimum: number): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum;
+}
+
+function stringOrEmpty(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function formatResetDate(message: string, data: Record<string, unknown>): string {
+  return typeof data.resetAt === "string" && Number.isFinite(Date.parse(data.resetAt))
     ? message.replace(data.resetAt, formatDate(data.resetAt, true)) : message;
 }
 
@@ -21,10 +42,8 @@ export interface ChatContext {
 export async function getChatContext(): Promise<ChatContext> {
   const response = await authenticatedFetch("/api/context");
   if (!response.ok) throw new Error("could not load conversation context.");
-  const data: unknown = await response.json();
-  if (!data || typeof data !== "object" ||
-      !("messages" in data) || typeof data.messages !== "number" || !Number.isSafeInteger(data.messages) || data.messages < 0 ||
-      !("limit" in data) || typeof data.limit !== "number" || !Number.isSafeInteger(data.limit) || data.limit <= 0) {
+  const data = readObject(await response.json(), "invalid conversation context response.");
+  if (!isCount(data.messages, 0) || !isCount(data.limit, 1)) {
     throw new Error("invalid conversation context response.");
   }
   return { messages: data.messages, limit: data.limit };
@@ -69,22 +88,30 @@ export interface Operation {
 }
 
 function readOperation(value: unknown): Operation {
-  if (!value || typeof value !== "object" || !("id" in value) || typeof value.id !== "string" ||
-      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value.id) ||
-      !("kind" in value) || typeof value.kind !== "string" || !["music", "chat"].includes(value.kind) ||
-      !("state" in value) || typeof value.state !== "string" || !["queued", "running", "completed", "failed", "unknown"].includes(value.state) ||
-      !("status" in value) || typeof value.status !== "string" || !("result" in value) ||
-      (value.result !== null && (typeof value.result !== "object" || Array.isArray(value.result)))) {
-    throw new Error("invalid operation response.");
-  }
-  return value as Operation;
+  const data = readObject(value, "invalid operation response.");
+  if (!isOperation(data)) throw new Error("invalid operation response.");
+  return data;
+}
+
+function isOperation(data: Record<string, unknown>): data is Record<string, unknown> & Operation {
+  return isUuid(data.id) && ["music", "chat"].some(kind => kind === data.kind) &&
+    ["queued", "running", "completed", "failed", "unknown"].some(state => state === data.state) &&
+    typeof data.status === "string" && (data.result === null || isRecord(data.result));
+}
+
+async function readOperationResponse(response: Response, id: string): Promise<Operation> {
+  if (!response.ok) throw new Error("could not recover this request. reload before trying again.");
+  const data = readObject(await response.json(), "invalid operation response.");
+  const operation = readOperation(data.operation);
+  if (operation.id !== id) throw new Error("invalid operation response.");
+  return operation;
 }
 
 export async function getOperations(signal: AbortSignal, onStatus: (status: string) => void): Promise<Operation[]> {
   const response = await fetchOperation("/api/operations", { signal }, onStatus);
   if (!response.ok) throw new Error("could not recover requests. reload to try again.");
-  const data: unknown = await response.json();
-  if (!data || typeof data !== "object" || !("operations" in data) || !Array.isArray(data.operations)) {
+  const data = readObject(await response.json(), "invalid operation response.");
+  if (!Array.isArray(data.operations)) {
     throw new Error("invalid operation response.");
   }
   return data.operations.map(readOperation);
@@ -124,14 +151,12 @@ export async function waitForOperation(id: string, onStatus: (status: string) =>
     const response = await fetchOperation(`/api/operations/${id}`, { signal }, onStatus);
     if (response.status === 404 && missing++ < 10) {
       onStatus("recovering your request...");
-    } else {
-      if (!response.ok) throw new Error("could not recover this request. reload before trying again.");
-      const data: unknown = await response.json();
-      const operation = readOperation(data && typeof data === "object" && "operation" in data ? data.operation : undefined);
-      if (operation.id !== id) throw new Error("invalid operation response.");
-      if (operation.state !== "queued" && operation.state !== "running") return operation;
-      onStatus(operation.status || "working...");
+      await pause(signal);
+      continue;
     }
+    const operation = await readOperationResponse(response, id);
+    if (!["queued", "running"].includes(operation.state)) return operation;
+    onStatus(operation.status || "working...");
     await pause(signal);
   }
   signal.throwIfAborted();
@@ -144,57 +169,58 @@ export async function readOperationResult(operation: Operation): Promise<ChatRep
   return operation.kind === "music" ? readMusicResponse(response) : readChatReply(response);
 }
 
-async function startRequest(url: string, body: Record<string, unknown>, onStatus: (status: string) => void,
-  signal: AbortSignal, id: string = crypto.randomUUID()): Promise<Response> {
+interface RequestOptions {
+  onStatus: (status: string) => void;
+  signal: AbortSignal;
+  operationId?: string;
+}
+
+async function startRequest(url: string, body: Record<string, unknown>,
+  { onStatus, signal, operationId: id = crypto.randomUUID() }: RequestOptions): Promise<Response> {
   const response = await authenticatedFetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...body, operationId: id }), signal,
   }).catch((error: unknown) => { signal.throwIfAborted(); return error instanceof Error ? error : new Error("connection lost."); });
   if (!(response instanceof Error) && response.status !== 202) return response;
   if (!(response instanceof Error)) {
-    const data: unknown = await response.json();
-    const operation = readOperation(data && typeof data === "object" && "operation" in data ? data.operation : undefined);
-    if (operation.id !== id) throw new Error("invalid operation response.");
+    await readOperationResponse(response, id);
   }
   const operation = await waitForOperation(id, onStatus, signal);
   return Response.json(operation.result, { status: operation.state === "completed" ? 200 : 502, headers: { "X-Operation-ID": id } });
 }
 
-export async function sendMessage(message: string, audioUrl: string | undefined, musicPrompt: MusicPrompt,
-  onStatus: (status: string) => void, signal: AbortSignal, operationId: string): Promise<ChatReply> {
-  const response = await startRequest("/api/chat", { message, audioUrl, musicPrompt: JSON.stringify(musicPrompt) }, onStatus, signal, operationId);
+export async function sendMessage(request: { message: string; audioUrl?: string; musicPrompt: MusicPrompt },
+  options: RequestOptions & { operationId: string }): Promise<ChatReply> {
+  const response = await startRequest("/api/chat", { ...request, musicPrompt: JSON.stringify(request.musicPrompt) }, options);
   return readChatReply(response);
 }
 
 async function readChatReply(response: Response): Promise<ChatReply> {
-  const data: unknown = await response.json();
-
-  if (!data || typeof data !== "object") {
-    throw new Error("Invalid chat response.");
-  }
-
-  const reply = "reply" in data && typeof data.reply === "string" ? data.reply : "";
-  const error = "error" in data && typeof data.error === "string" ? data.error : "";
+  const data = readObject(await response.json(), "Invalid chat response.");
+  const reply = stringOrEmpty(data.reply);
+  const error = stringOrEmpty(data.error);
+  const operationId = response.headers.get("X-Operation-ID") ?? undefined;
 
   if (!response.ok || error) {
-    throw new OperationError(formatResetDate(error || reply || "Chat request failed.", data), response.headers.get("X-Operation-ID") ?? undefined);
+    throw new OperationError(formatResetDate(error || reply || "Chat request failed.", data), operationId);
   }
 
-  if (!reply || ("musicPrompt" in data && data.musicPrompt !== undefined &&
-      !isMusicPrompt(data.musicPrompt))) {
-    throw new Error("Invalid chat response.");
-  }
-
+  if (!reply) throw new Error("Invalid chat response.");
   return {
-    operationId: response.headers.get("X-Operation-ID") ?? undefined,
+    operationId,
     reply,
-    musicPrompt: "musicPrompt" in data && isMusicPrompt(data.musicPrompt)
-      ? data.musicPrompt : undefined,
+    musicPrompt: readMusicPrompt(data.musicPrompt),
   };
 }
 
+function readMusicPrompt(value: unknown): MusicPrompt | undefined {
+  if (value === undefined) return undefined;
+  if (!isMusicPrompt(value)) throw new Error("Invalid chat response.");
+  return value;
+}
+
 export async function uploadAudio(file: File): Promise<AudioTrack> {
-  if (!/\.(mp3|wav|flac|ogg)$/i.test(file.name) || !file.size || file.size > 50 * 1024 * 1024) {
+  if (!isUploadableAudio(file)) {
     throw new Error("Choose an MP3, WAV, FLAC, or OGG file up to 50 MB.");
   }
   const response = await authenticatedFetch(`/api/audio?name=${encodeURIComponent(file.name)}`, {
@@ -202,32 +228,38 @@ export async function uploadAudio(file: File): Promise<AudioTrack> {
     headers: { "Content-Type": "application/octet-stream" },
     body: file,
   });
-  const data: unknown = await response.json();
-  if (!data || typeof data !== "object") throw new Error("Invalid audio upload response.");
+  const data = readObject(await response.json(), "Invalid audio upload response.");
   if (!response.ok) {
-    throw new Error("error" in data && typeof data.error === "string" ? data.error : "Audio upload failed.");
+    throw new Error(typeof data.error === "string" ? data.error : "Audio upload failed.");
   }
-  const audio = "audio" in data ? data.audio : undefined;
-  if (!audio || typeof audio !== "object" ||
-      !("url" in audio) || typeof audio.url !== "string" ||
-      !/^\/api\/audio\/[0-9a-f-]{36}\.(mp3|wav|flac|ogg)$/.test(audio.url) ||
-      !("name" in audio) || typeof audio.name !== "string") {
+  return readAudioTrack(data.audio);
+}
+
+function isUploadableAudio(file: File): boolean {
+  return /\.(mp3|wav|flac|ogg)$/i.test(file.name) && file.size > 0 && file.size <= 50 * 1024 * 1024;
+}
+
+function readAudioTrack(value: unknown): AudioTrack {
+  const audio = readObject(value, "Invalid audio upload response.");
+  if (typeof audio.url !== "string") throw new Error("Invalid audio upload response.");
+  if (!/^\/api\/audio\/[0-9a-f-]{36}\.(mp3|wav|flac|ogg)$/.test(audio.url) || typeof audio.name !== "string") {
     throw new Error("Invalid audio upload response.");
   }
   return { url: audio.url, name: audio.name };
 }
 
-export async function generateMusic(fields: MusicPrompt, model: string, title: string, onStatus: (status: string) => void, signal: AbortSignal): Promise<MusicTrack> {
+export async function generateMusic({ fields, model, title }: { fields: MusicPrompt; model: string; title: string },
+  options: RequestOptions): Promise<MusicTrack> {
   const prompt = formatMusicPrompt(fields);
   if (!prompt.trim() || prompt.length > 10_000) {
     throw new Error("Music prompt must contain 1–10,000 characters.");
   }
-  const response = await startRequest("/api/music", { prompt, model, title }, onStatus, signal);
+  const response = await startRequest("/api/music", { prompt, model, title }, options);
   return readMusicResponse(response);
 }
 
 export async function retrySongStorage(songId: string): Promise<MusicTrack> {
-  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(songId)) {
+  if (!isUuid(songId)) {
     throw new Error("invalid song reference.");
   }
   const response = await authenticatedFetch(`/api/songs/${songId}/retry`, { method: "POST" });
@@ -235,27 +267,31 @@ export async function retrySongStorage(songId: string): Promise<MusicTrack> {
 }
 
 async function readMusicResponse(response: Response): Promise<MusicTrack> {
-  const data: unknown = await response.json();
-  if (!data || typeof data !== "object") throw new Error("Invalid music response.");
-  if (!response.ok || ("error" in data && typeof data.error === "string")) {
-    const message = formatResetDate("error" in data && typeof data.error === "string" ? data.error : "Music request failed.", data);
-    if ("songId" in data && typeof data.songId === "string" &&
-        /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(data.songId)) {
-      throw new SongStorageError(data.songId, message, response.headers.get("X-Operation-ID") ?? undefined);
+  const data = readObject(await response.json(), "Invalid music response.");
+  const operationId = response.headers.get("X-Operation-ID") ?? undefined;
+  if (!response.ok || typeof data.error === "string") {
+    const message = formatResetDate(typeof data.error === "string" ? data.error : "Music request failed.", data);
+    if (isUuid(data.songId)) {
+      throw new SongStorageError(data.songId, message, operationId);
     }
-    throw new OperationError(message, response.headers.get("X-Operation-ID") ?? undefined);
+    throw new OperationError(message, operationId);
   }
-  const track = "track" in data ? data.track : undefined;
-  if (!track || typeof track !== "object" ||
-      !("url" in track) || typeof track.url !== "string" ||
-      !/^\/api\/music\/[0-9a-f-]{36}\.mp3$/.test(track.url) ||
-      ("title" in track && (typeof track.title !== "string" || track.title.length > 200)) ||
-      !("lyrics" in track) || typeof track.lyrics !== "string") {
+  return { ...readMusicTrack(data.track), operationId };
+}
+
+function readMusicTrack(value: unknown): Omit<MusicTrack, "operationId"> {
+  const track = readObject(value, "Invalid music response.");
+  if (typeof track.url !== "string") throw new Error("Invalid music response.");
+  if (!/^\/api\/music\/[0-9a-f-]{36}\.mp3$/.test(track.url) || typeof track.lyrics !== "string") {
     throw new Error("Invalid music response.");
   }
-  return { url: track.url, lyrics: track.lyrics,
-    title: "title" in track && typeof track.title === "string" ? track.title.trim() || "untitled" : "untitled",
-    operationId: response.headers.get("X-Operation-ID") ?? undefined };
+  return { url: track.url, lyrics: track.lyrics, title: readSongTitle(track.title) };
+}
+
+function readSongTitle(value: unknown): string {
+  if (value === undefined) return "untitled";
+  if (typeof value !== "string" || value.length > 200) throw new Error("Invalid music response.");
+  return value.trim() || "untitled";
 }
 
 export async function resetChat(): Promise<void> {
@@ -263,8 +299,9 @@ export async function resetChat(): Promise<void> {
     method: "POST",
   });
 
-  const data: unknown = response.ok ? await response.json() : undefined;
-  if (!data || typeof data !== "object" || !("status" in data) || data.status !== "ok") {
+  if (!response.ok) throw new Error("Conversation reset failed.");
+  const data = readObject(await response.json(), "Conversation reset failed.");
+  if (data.status !== "ok") {
     throw new Error("Conversation reset failed.");
   }
 }
