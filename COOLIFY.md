@@ -32,12 +32,14 @@ These steps follow the [Coolify Compose guide](https://coolify.io/docs/applicati
 | `R2_BUCKET_NAME` | Existing private song bucket |
 | `R2_ACCESS_KEY_ID` | R2 access key ID |
 | `R2_SECRET_ACCESS_KEY` | R2 secret access key |
-| `GLOBAL_CHAT_DAILY` | Your configured shared chat cap |
-| `GLOBAL_ANALYSIS_DAILY` | Your configured shared analysis cap |
-| `GLOBAL_GENERATION_DAILY` | Your configured shared generation attempt cap |
 
-Keep your existing production caps. The repository examples use `200`, `30`, and `20`.
-Zero or a missing shared cap disables the corresponding paid operation. Missing credentials cause the corresponding operation to fail.
+Set shared daily attempt limits in Supabase Table Editor → `public.global_usage` → `daily_limit` for `chat`, `analysis`, and `generation`.
+Set an operation's `daily_limit` to `0` to disable it. Changes apply to the next reservation without a redeploy.
+Keep `used` and `usage_date` unchanged. Usage resets at midnight UTC.
+The old `GLOBAL_*` environment variables are ignored. Remove them from deployment settings.
+See [usage quota setup](README.md#configure-usage-quotas) for the required migration and initial limits.
+
+Missing credentials cause the corresponding operation to fail.
 The backend supplies the existing defaults for optional model IDs, provider slugs, personal allowances, and audio limits.
 Set `CF_AI_GATEWAY_NEBIUS_SLUG=nebius-token-factory` to use the provider from the working local setup.
 

@@ -6,7 +6,7 @@ export function PrivacyPage() {
       <article className="space-y-7 text-sm leading-relaxed text-zinc-300" aria-labelledby="privacy-title">
         <header>
           <h1 id="privacy-title" className="text-2xl font-semibold text-zinc-100">privacy and beta limits</h1>
-          <p className="mt-2 text-xs text-zinc-400">lau.lu beta · updated 14 October 2026</p>
+          <p className="mt-2 text-xs text-zinc-400">lau.lu beta · updated 17 October 2026</p>
         </header>
         <section className="space-y-2" aria-labelledby="privacy-storage">
           <h2 id="privacy-storage" className="text-base font-semibold text-zinc-100">what is stored</h2>
@@ -30,7 +30,7 @@ export function PrivacyPage() {
         </section>
         <section className="space-y-2" aria-labelledby="privacy-limits">
           <h2 id="privacy-limits" className="text-base font-semibold text-zinc-100">beta limits</h2>
-          <p>Open my profile to see your allowances and reset times. Free accounts have 10 songs and 20 lyric requests per UTC calendar month. Starter, pro, and ultra have 30, 80, and 180 songs per month, with no rollover. Yearly subscriptions keep the same monthly song and lyric allowances. Chat and audio analysis keep their daily limits. Shared daily limits and song storage limits also apply, so requests can stop even when you have song allowance left.</p>
+          <p>See <Link to="/pricing" className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-300">pricing</Link> for current plan allowances. Open my profile to see your remaining allowances and reset times. Song and lyric allowances reset monthly, with no rollover. Yearly subscriptions keep the same monthly allowances. Chat and audio analysis have daily limits. Shared daily limits and song storage limits also apply, so requests can stop even when you have allowance left.</p>
           <p>A completed song uses one generation allowance. A confirmed generation failure restores personal allowance; an unknown outcome keeps it reserved. Retrying a failed save does not generate another song. Deleting a song does not restore generation allowance.</p>
           <p>Uploads must be MP3, WAV, FLAC, or OGG, up to 50 MiB and ten minutes long. The beta can have interruptions. Download songs you want to keep.</p>
         </section>

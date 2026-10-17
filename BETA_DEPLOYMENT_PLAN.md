@@ -209,10 +209,11 @@ If disk and remote storage both fail, memory-only audio recovery still requires 
 - [x] Reject oversized uploads before they exhaust server memory or disk.
 - [x] Restrict API origins to the intended production and development origins.
 
-The example configuration currently lists global daily caps of 200 chats, 30 analyses, and 20 generation attempts.
-These are example values. The user reports that production spending controls are configured.
+The database migration initializes shared daily caps to 200 chats, 30 analyses, and 20 generation attempts.
+The user reports that production spending controls are configured.
 This change does not inspect their actual settings.
-The backend defaults missing global limits to zero, which disables paid operations.
+Shared daily caps use `public.global_usage.daily_limit` in Supabase. Set an operation's limit to `0` to disable it.
+Changes apply to the next reservation without a redeploy. The old `GLOBAL_*` environment variables are ignored.
 Personal allowances never override global safety limits.
 The interface shows daily allowances and states that shared daily limits also apply.
 
