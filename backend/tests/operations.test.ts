@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, randomUUID, sign } from 'node:crypto';
-import { once } from 'node:events';
+import { generateKeyPairSync, randomUUID, sign, type KeyObject } from 'node:crypto';
 import { access, mkdir, rm, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { startTestServer } from './http-fixture.js';
 import { configureTestOperations } from './operation-fixture.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 import { cleanupSongRecovery, musicDirectory, saveSong, SongStorageError } from '../src/songs.js';
@@ -55,19 +55,8 @@ test('durable operations survive lost start responses and deletion locks survive
     return originalFetch(input, options);
   };
   const { app } = await import('../src/index.js');
-  const server = app.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const address = server.address();
-  assert.ok(address && typeof address !== 'string');
-  const base = `http://127.0.0.1:${address.port}`;
-  function headers(userId = owner) {
-    const header = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid: 'offline' })).toString('base64url');
-    const claims = Buffer.from(JSON.stringify({ iss: `${process.env.SUPABASE_URL}/auth/v1`, aud: 'authenticated',
-      role: 'authenticated', sub: userId, exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url');
-    const body = `${header}.${claims}`;
-    return { Authorization: `Bearer ${body}.${sign('sha256', Buffer.from(body), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url')}`,
-      'Content-Type': 'application/json' };
-  }
+  const { server, url: base } = await startTestServer(app);
+  const headers = (userId: string = owner) => operationHeaders(privateKey, userId);
   const start = (signal?: AbortSignal) => fetch(`${base}/api/music`, { method: 'POST', headers: headers(), signal,
     body: JSON.stringify({ operationId: id, prompt: 'offline folk', title: 'quiet morning' }) });
   t.after(async () => {
@@ -94,30 +83,15 @@ test('durable operations survive lost start responses and deletion locks survive
   let operation = await getOperation(owner, id);
   while (operation.state === 'running') { await new Promise((resolve) => setTimeout(resolve, 10)); operation = await getOperation(owner, id); }
   assert.equal(operation.state, 'completed');
-  assert.equal((operation.result?.track as { title: string }).title, 'quiet morning');
-  assert.equal((operation.result?.track as { url: string }).url, `/api/music/${id}.mp3`);
+  assert.ok(operation.result?.track);
+  assert.equal((operation.result.track as { title: string }).title, 'quiet morning');
+  assert.equal((operation.result.track as { url: string }).url, `/api/music/${id}.mp3`);
   assert.equal(generations, 1);
   assert.equal((await start()).status, 202);
   assert.equal(generations, 1, 'same operation ID cannot dispatch paid work twice');
 
-  const deleteStarted = gate();
-  const deleteResult = gate();
-  const send = S3Client.prototype.send.bind(S3Client.prototype);
-  const deletion = t.mock.method(S3Client.prototype, 'send', async (command: unknown) => {
-    if (command instanceof DeleteObjectCommand) { deleteStarted.release(); await deleteResult.promise; }
-    return send(command as never);
-  });
-  const abortDelete = new AbortController();
-  const pendingDelete = fetch(`${base}/api/songs/${id}`, { method: 'DELETE', headers: headers(), signal: abortDelete.signal })
-    .catch((error: unknown) => error);
-  await deleteStarted.promise;
-  abortDelete.abort(); await pendingDelete;
-  assert.equal((await fetch(`${base}/api/reset`, { method: 'POST', headers: headers() })).status, 409);
-  deleteResult.release();
-  while (sessionBusy(owner)) await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal((await fetch(`${base}/api/reset`, { method: 'POST', headers: headers() })).status, 200);
-  assert.equal(storage.rows.has(id), false);
-  deletion.mock.restore();
+  await assertDeletionLock({ t, owner, id, base, headers, storage });
+
 });
 
 test('restart reconciliation restores saved audio, journaled answers, and uncertain reservations without paid retries', async (t) => {
@@ -133,15 +107,11 @@ test('restart reconciliation restores saved audio, journaled answers, and uncert
     return response;
   };
   t.after(async () => { globalThis.fetch = originalFetch; storage.restore(); await resetAgentSession(owner); await rm(directory, { recursive: true, force: true }); await rm(uploads, { recursive: true, force: true }); });
-  const interrupted = (id: string, kind = 'music') => {
-    const row = { id, kind, owner_id: owner, state: 'running', status: 'working...', result: null, acknowledged: false, created_at: new Date().toISOString() };
-    storage.operations.set(id, row);
-    return row;
-  };
+  const interrupted = (id: string, kind = 'music') => interruptedOperation(storage, owner, id, kind);
   const savedId = await reserveUsage(owner, 'generation', 100);
   interrupted(savedId);
   storage.failures.put = true;
-  await assert.rejects(saveSong(owner, Buffer.from('ID3-recovery'), 'folk', 'lyria-3.5', 'words', savedId), SongStorageError);
+  await assert.rejects(saveSong(owner, Buffer.from('ID3-recovery'), { prompt: 'folk', model: 'lyria-3.5', lyrics: 'words', id: savedId }), SongStorageError);
   storage.failures.put = false;
   assert.equal((await getOperation(owner, savedId)).state, 'completed');
   assert.equal(storage.quotas.reservations.get(savedId)?.status, 'completed');
@@ -192,9 +162,49 @@ test('restart reconciliation restores saved audio, journaled answers, and uncert
   await endUploadSession(owner).catch(() => undefined);
   await assert.rejects(access(attachment), /ENOENT/);
 
+  await assertExpiredRecovery({ owner, directory, storage });
+
+});
+
+function operationHeaders(privateKey: KeyObject, userId: string): Record<string, string> {
+  const header = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT', kid: 'offline' })).toString('base64url');
+  const claims = Buffer.from(JSON.stringify({ iss: `${process.env.SUPABASE_URL}/auth/v1`, aud: 'authenticated',
+    role: 'authenticated', sub: userId, exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url');
+  const body = `${header}.${claims}`;
+  return { Authorization: `Bearer ${body}.${sign('sha256', Buffer.from(body), { key: privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url')}`,
+    'Content-Type': 'application/json' };
+}
+
+async function assertDeletionLock({ t, owner, id, base, headers, storage }: {
+  t: TestContext; owner: string; id: string; base: string;
+  headers: (userId?: string) => Record<string, string>; storage: ReturnType<typeof configureTestOperations>;
+}): Promise<void> {
+  const deleteStarted = gate();
+  const deleteResult = gate();
+  const send = S3Client.prototype.send.bind(S3Client.prototype);
+  const deletion = t.mock.method(S3Client.prototype, 'send', async (command: unknown) => {
+    if (command instanceof DeleteObjectCommand) { deleteStarted.release(); await deleteResult.promise; }
+    return send(command as never);
+  });
+  const abortDelete = new AbortController();
+  const pendingDelete = fetch(`${base}/api/songs/${id}`, { method: 'DELETE', headers: headers(), signal: abortDelete.signal })
+    .catch((error: unknown) => error);
+  await deleteStarted.promise;
+  abortDelete.abort(); await pendingDelete;
+  assert.equal((await fetch(`${base}/api/reset`, { method: 'POST', headers: headers() })).status, 409);
+  deleteResult.release();
+  while (sessionBusy(owner)) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal((await fetch(`${base}/api/reset`, { method: 'POST', headers: headers() })).status, 200);
+  assert.equal(storage.rows.has(id), false);
+  deletion.mock.restore();
+}
+
+async function assertExpiredRecovery({ owner, directory, storage }: {
+  owner: string; directory: string; storage: ReturnType<typeof configureTestOperations>;
+}): Promise<void> {
   const expiredId = await reserveUsage(owner, 'generation', 100);
   storage.failures.put = true;
-  await assert.rejects(saveSong(owner, Buffer.from('ID3-expired'), 'folk', 'lyria-3.5', '', expiredId), SongStorageError);
+  await assert.rejects(saveSong(owner, Buffer.from('ID3-expired'), { prompt: 'folk', model: 'lyria-3.5', lyrics: '', id: expiredId }), SongStorageError);
   const expiredMetadata = path.join(directory, `${expiredId}.json`);
   await utimes(expiredMetadata, new Date(0), new Date(0));
   storage.failures.deleteRow = true;
@@ -213,4 +223,10 @@ test('restart reconciliation restores saved audio, journaled answers, and uncert
   await cleanupSongRecovery((userId) => userId === owner ? () => {} : undefined);
   await assert.rejects(access(oldTemporary), /ENOENT/);
   await access(freshTemporary);
-});
+}
+
+function interruptedOperation(storage: ReturnType<typeof configureTestOperations>, owner: string, id: string, kind: string) {
+  const row = { id, kind, owner_id: owner, state: 'running', status: 'working...', result: null, acknowledged: false, created_at: new Date().toISOString() };
+  storage.operations.set(id, row);
+  return row;
+}

@@ -2,6 +2,7 @@ import { readdir, rm, rmdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { userDirectory } from './user-files.js';
+import { hasErrorCode, isCount } from './validation.js';
 
 export const audioDirectory = fileURLToPath(new URL('../uploaded-audio/', import.meta.url));
 export const localAudioLimit = 1024 * 1024 * 1024;
@@ -39,32 +40,38 @@ export function retainLocalAudio(filename: string): () => void {
 
 async function scanLocalAudio(directory: string): Promise<number> {
   const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
+    if (hasErrorCode(error, 'ENOENT')) return [];
     throw error;
   });
   let bytes = 0;
   for (const entry of entries) {
     const filename = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      bytes += await scanLocalAudio(filename);
-      const active = [...readers.keys(), ...reservations.keys()].some((file) => contains(filename, file));
-      if (!active) await rmdir(filename).catch((error: unknown) => {
-        if (!(error instanceof Error && 'code' in error && (error.code === 'ENOTEMPTY' || error.code === 'ENOENT'))) throw error;
-      });
-    } else if (entry.isFile()) {
-      const file = await stat(filename).catch((error: unknown) => {
-        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
-        throw error;
-      });
-      if (!file) continue;
-      const reserved = [...reservations.keys()].some((directory) => contains(directory, filename));
-      const retained = [...readers.keys()].some((directory) => contains(directory, filename));
-      if (!retained && !reserved) {
-        await rm(filename, { force: true });
-      } else if (!reserved) bytes += file.size;
-    }
+    if (entry.isDirectory()) bytes += await scanAudioDirectory(filename);
+    else if (entry.isFile()) bytes += await scanAudioFile(filename);
   }
   return bytes;
+}
+
+async function scanAudioDirectory(directory: string): Promise<number> {
+  const bytes = await scanLocalAudio(directory);
+  const active = [...readers.keys(), ...reservations.keys()].some(file => contains(directory, file));
+  if (active) return bytes;
+  await rmdir(directory).catch((error: unknown) => {
+    if (!hasErrorCode(error, 'ENOTEMPTY', 'ENOENT')) throw error;
+  });
+  return bytes;
+}
+
+async function scanAudioFile(filename: string): Promise<number> {
+  const file = await stat(filename).catch((error: unknown) => {
+    if (hasErrorCode(error, 'ENOENT')) return undefined;
+    throw error;
+  });
+  if (!file) return 0;
+  const reserved = [...reservations.keys()].some(directory => contains(directory, filename));
+  const retained = [...readers.keys()].some(directory => contains(directory, filename));
+  if (!retained && !reserved) await rm(filename, { force: true });
+  return !reserved && retained ? file.size : 0;
 }
 
 async function localAudioUsage(): Promise<number> {
@@ -82,19 +89,22 @@ export async function clearUploadedAudio(userId: string): Promise<void> {
   await serialized(async () => {
     await scanLocalAudio(directory);
     await rmdir(directory).catch((error: unknown) => {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+      if (!hasErrorCode(error, 'ENOENT')) throw error;
     });
   });
 }
 
 export async function reserveLocalAudio(filename: string, bytes: number): Promise<() => Promise<void>> {
   return serialized(async () => {
-    if (!Number.isSafeInteger(bytes) || bytes <= 0 || reservations.has(filename) ||
-        !contains(audioDirectory, filename)) {
+    if (!validReservation(filename, bytes)) {
       throw new Error('invalid local audio reservation.');
     }
     if ((await localAudioUsage()) + bytes > localAudioLimit) throw new LocalAudioLimitError();
     reservations.set(filename, bytes);
     return () => serialized(async () => { reservations.delete(filename); });
   });
+}
+
+function validReservation(filename: string, bytes: number): boolean {
+  return isCount(bytes) && bytes > 0 && !reservations.has(filename) && contains(audioDirectory, filename);
 }

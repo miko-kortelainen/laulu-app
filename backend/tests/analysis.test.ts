@@ -52,6 +52,14 @@ function completion(model: string, delta: unknown, finishReason = 'stop'): Respo
   });
 }
 
+function analysisReply({ model, mode, observation }: { model: string; mode: string; observation: string }): Response {
+  if (mode === 'http') return Response.json({ error: { message: 'offline quota exhausted' } }, { status: 429 });
+  if (mode === 'brokenStream') return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  return completion(model, mode === 'reasoning'
+    ? { role: 'assistant', reasoning_content: 'thinking only' }
+    : { role: 'assistant', content: mode === 'empty' ? '' : observation }, mode === 'truncated' ? 'length' : 'stop');
+}
+
 test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from failures', async () => {
   const originalFetch = globalThis.fetch;
   const restoreGateway = configureTestGateway();
@@ -97,11 +105,7 @@ test('Nemotron delegates audio to Qwen, traces without bytes, and recovers from 
       assert.deepEqual(Buffer.from(input.data.split(',')[1], 'base64'), audio);
       assert.ok(request.messages[0].content[0].text.includes(question));
       assert.equal(request.tools, undefined);
-      if (mode === 'http') return Response.json({ error: { message: 'offline quota exhausted' } }, { status: 429 });
-      if (mode === 'brokenStream') return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
-      return completion(request.model, mode === 'reasoning'
-        ? { role: 'assistant', reasoning_content: 'thinking only' }
-        : { role: 'assistant', content: mode === 'empty' ? '' : observation }, mode === 'truncated' ? 'length' : 'stop');
+      return analysisReply({ model: request.model, mode, observation });
     }
     assert.equal(request.model, getModelId());
     assert.ok(request.tools.some((entry: { function: { name: string } }) => entry.function.name === 'analyze_audio'));

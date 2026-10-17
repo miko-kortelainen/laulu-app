@@ -26,7 +26,7 @@ test('built server serves frontend routes and assets without exposing the API', 
       assert.equal(response.headers.get('cache-control'), 'no-cache');
       assert.equal(await response.text(), html);
     }
-    const script = /src="(\/assets\/[^\"]+\.js)"/.exec(html)?.[1];
+    const script = /src="(\/assets\/[^"]+\.js)"/.exec(html)?.[1];
     assert.ok(script, 'built frontend has a JavaScript bundle');
     const asset = await fetch(`${origin}${script}`);
     assert.equal(asset.status, 200);

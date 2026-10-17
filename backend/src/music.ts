@@ -4,6 +4,7 @@ import { traceable } from 'langsmith/traceable';
 import { readFileSync } from 'node:fs';
 import { generateLyrics } from './lyrics.js';
 import { getAiGateway } from './gateway.js';
+import { isCount, isRecord } from './validation.js';
 import { userDirectory } from './user-files.js';
 import { checkSongStorage, musicDirectory, saveSong, validateSongTitle, type SavedSong } from './songs.js';
 import { QuotaError, reserveUsage, settleGeneration, songOutputLimit } from './quotas.js';
@@ -23,9 +24,7 @@ export function validateMusicModel(value: unknown = 'lyria-3.5'): 'lyria-3.5' | 
 }
 
 function record(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
+  return isRecord(value) ? value : {};
 }
 
 function musicServiceError(error: unknown): string {
@@ -42,10 +41,14 @@ function musicServiceError(error: unknown): string {
 }
 
 export function validateMusicPrompt(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > 10_000) {
+  if (!validMusicPrompt(value)) {
     throw new Error('music prompt must contain 1–10,000 characters.');
   }
   return value.trim();
+}
+
+function validMusicPrompt(value: unknown): value is string {
+  return typeof value === 'string' && !!value.trim() && value.length <= 10_000;
 }
 
 const musicPromptProperties = {
@@ -74,29 +77,8 @@ export const updateMusicFormTool = tool({
   },
   callback: traceable(async (input: unknown, context: ToolContext) => {
     const fields = record(input);
-    const prompt: Record<string, string> = {};
-    for (const name of Object.keys(musicPromptProperties)) {
-      if (typeof fields[name] !== 'string') throw new Error(`music prompt field ${name} must be text.`);
-      prompt[name] = fields[name];
-    }
-    if (prompt.lyrics.length > 3_000) throw new Error('lyrics must contain at most 3,000 characters.');
-    validateMusicPrompt(Object.values(prompt).join('\n\n'));
-    if (fields.lyricRequest !== undefined &&
-        (typeof fields.lyricRequest !== 'string' || fields.lyricRequest.trim())) {
-      const request = validateMusicPrompt(fields.lyricRequest);
-      if (context.invocationState.lyricGenerationAttempted) {
-        throw new Error('only one lyric generation attempt is allowed per message. send a new message to try again.');
-      }
-      context.invocationState.lyricGenerationAttempted = true;
-      const userId = context.invocationState.userId;
-      if (typeof userId !== 'string') throw new Error('a verified user is required for lyrics.');
-      const lyrics = await generateLyrics(prompt, request, userId).catch((error: unknown) => {
-        if (error instanceof QuotaError) context.invocationState.quotaError = error;
-        throw error;
-      });
-      prompt.lyrics = validateMusicPrompt(lyrics.slice(0, 3_000));
-      validateMusicPrompt(Object.values(prompt).join('\n\n'));
-    }
+    const prompt = readMusicForm(fields);
+    await applyLyricRequest(prompt, fields.lyricRequest, context);
     context.invocationState.musicPrompt = prompt;
     return { status: 'awaiting_confirmation', prompt };
   }, {
@@ -106,12 +88,50 @@ export const updateMusicFormTool = tool({
   }),
 });
 
+function readMusicForm(fields: Record<string, unknown>): Record<string, string> {
+  const prompt: Record<string, string> = {};
+  for (const name of Object.keys(musicPromptProperties)) {
+    if (typeof fields[name] !== 'string') throw new Error(`music prompt field ${name} must be text.`);
+    prompt[name] = fields[name];
+  }
+  if (prompt.lyrics.length > 3_000) throw new Error('lyrics must contain at most 3,000 characters.');
+  validateMusicPrompt(Object.values(prompt).join('\n\n'));
+  return prompt;
+}
+
+async function applyLyricRequest(prompt: Record<string, string>, value: unknown, context: ToolContext): Promise<void> {
+  const request = readLyricRequest(value);
+  if (request === undefined) return;
+  if (context.invocationState.lyricGenerationAttempted) {
+    throw new Error('only one lyric generation attempt is allowed per message. send a new message to try again.');
+  }
+  context.invocationState.lyricGenerationAttempted = true;
+  const userId = context.invocationState.userId;
+  if (typeof userId !== 'string') throw new Error('a verified user is required for lyrics.');
+  const lyrics = await generateLyrics(prompt, request, userId).catch((error: unknown) => {
+    if (error instanceof QuotaError) context.invocationState.quotaError = error;
+    throw error;
+  });
+  prompt.lyrics = validateMusicPrompt(lyrics.slice(0, 3_000));
+  validateMusicPrompt(Object.values(prompt).join('\n\n'));
+}
+
+function readLyricRequest(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && !value.trim()) return undefined;
+  return validateMusicPrompt(value);
+}
+
+interface MusicRequest {
+  prompt: string;
+  modelId?: unknown;
+  userId: string;
+  operationId?: string;
+  title?: string;
+}
+
 export const generateMusic = traceable(async (
-  prompt: string,
-  modelId: unknown = 'lyria-3.5',
-  userId: string,
-  operationId?: string,
-  title: string = 'untitled',
+  { prompt, modelId = 'lyria-3.5', userId, operationId, title = 'untitled' }: MusicRequest,
   _traceConfig?: { metadata: { thread_id: string; ls_model_name?: string } },
 ): Promise<SavedSong> => {
   const input = validateMusicPrompt(prompt);
@@ -125,6 +145,49 @@ export const generateMusic = traceable(async (
     apiKey: 'byok',
     httpOptions: { baseUrl: gateway.baseURL, fetch: gateway.fetch },
   });
+  await checkMusicTokens(client, model, input);
+
+  const songId = await reserveUsage(userId, 'generation', songOutputLimit(), operationId);
+  let audio: Buffer | undefined;
+  let confirmedFailure = false;
+  let lyrics: string[] = [];
+  try {
+    const data = await client.interactions.create({
+      model, input, store: false,
+    }, { timeout: 300_000, maxRetries: 0 });
+    confirmedFailure = ['completed', 'failed', 'cancelled', 'incomplete', 'budget_exceeded'].includes(data.status);
+    ({ audio, lyrics } = completedMusic(data));
+  } catch (error: unknown) {
+    return failGeneration(error, { confirmedFailure, userId, songId });
+  }
+
+  const text = lyrics.join('\n')
+    .replace(/\[\[[^\]\r\n]*\]\]/g, '')
+    .replace(/^[ \t]*\[:\][ \t]*/gm, '')
+    .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n')
+    .trim();
+  return saveSong(userId, audio, { prompt: input, model, lyrics: text, id: songId, title: songTitle });
+}, {
+  name: 'generate_audio',
+  run_type: 'tool',
+  argsConfigPath: [1],
+  metadata: { ls_provider: 'google' },
+});
+
+function completedMusic(data: { status: string; steps?: unknown[]; errors?: unknown[] }): { audio: Buffer; lyrics: string[] } {
+  if (data.status !== 'completed' || !Array.isArray(data.steps)) {
+    throw musicOutputError(data.errors, 'music service did not return a completed track.');
+  }
+  const { audio, lyrics } = readMusicOutput(data.steps);
+  if (!audio?.length) throw musicOutputError(data.errors, 'music service returned no audio.');
+  return { audio, lyrics };
+}
+
+function musicOutputError(errors: unknown[] | undefined, fallback: string): Error {
+  return new Error(errors?.length ? JSON.stringify(errors) : fallback);
+}
+
+async function checkMusicTokens(client: GoogleGenAI, model: string, input: string): Promise<void> {
   const tokenData = await client.models.countTokens({
     model,
     contents: input,
@@ -134,70 +197,61 @@ export const generateMusic = traceable(async (
     throw new Error('could not check your prompt. generation was not started. try again later.');
   });
   const totalTokens = tokenData.totalTokens;
-  if (typeof totalTokens !== 'number' || !Number.isSafeInteger(totalTokens) || totalTokens < 0) {
+  if (!isCount(totalTokens)) {
     throw new Error('could not check your prompt. generation was not started. try again later.');
   }
   if (totalTokens > 131_072) {
     throw new MusicPromptTokenLimitError(`music prompt contains ${totalTokens.toLocaleString('en-US')} tokens; the ${model} input limit is 131,072. shorten the prompt and try again.`);
   }
 
-  const songId = await reserveUsage(userId, 'generation', songOutputLimit(), operationId);
-  let audio: Buffer | undefined;
-  let confirmedFailure = false;
-  const lyrics: string[] = [];
-  try {
-    const data = await client.interactions.create({
-      model, input, store: false,
-    }, { timeout: 300_000, maxRetries: 0 });
-    confirmedFailure = ['completed', 'failed', 'cancelled', 'incomplete', 'budget_exceeded'].includes(data.status);
-    if (data.status !== 'completed' || !Array.isArray(data.steps)) {
-      throw new Error(data.errors?.length ? JSON.stringify(data.errors) : 'music service did not return a completed track.');
-    }
+}
 
-    for (const value of data.steps) {
-      const step = record(value);
-      if (step.type !== 'model_output') continue;
-      if (step.error) throw new Error(JSON.stringify(step.error));
-      if (!Array.isArray(step.content)) continue;
-
-      for (const value of step.content) {
-        const block = record(value);
-        if (block.type === 'text' && typeof block.text === 'string') lyrics.push(block.text);
-        if (block.type !== 'audio') continue;
-        if ((block.mime_type !== 'audio/mpeg' && block.mime_type !== 'audio/mp3') ||
-            typeof block.data !== 'string' || !block.data ||
-            block.data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(block.data)) {
-          throw new Error('music service returned invalid MP3 audio.');
-        }
-        audio = Buffer.from(block.data, 'base64');
-      }
-    }
-    if (!audio?.length) throw new Error(data.errors?.length ? JSON.stringify(data.errors) : 'music service returned no audio.');
-  } catch (error: unknown) {
-    console.error('music generation failed:', error);
-    const rejected = error instanceof Error && 'status' in error && typeof error.status === 'number' &&
-      [400, 401, 403, 404, 422, 429].includes(error.status);
-    let settlementError: string | undefined;
-    if (confirmedFailure || rejected) {
-      await settleGeneration(userId, songId, 'failed').catch((cause: unknown) => {
-        console.error('could not refund failed generation:', cause);
-        settlementError = ' could not restore your song allowance. contact support.';
-      });
-    }
-    const message = confirmedFailure || rejected ? musicServiceError(error) : 'could not confirm whether your track finished.';
-    throw new MusicGenerationError(message +
-      (settlementError ?? (confirmedFailure || rejected ? '' : ' the outcome is unknown; your song allowance remains reserved.')), confirmedFailure || rejected);
+async function failGeneration(error: unknown, { confirmedFailure, userId, songId }: { confirmedFailure: boolean; userId: string; songId: string }): Promise<never> {
+  console.error('music generation failed:', error);
+  const failed = confirmedFailure || rejectedGeneration(error);
+  let settlementError: string | undefined;
+  if (failed) {
+    await settleGeneration(userId, songId, 'failed').catch((cause: unknown) => {
+      console.error('could not refund failed generation:', cause);
+      settlementError = ' could not restore your song allowance. contact support.';
+    });
   }
+  const message = failed ? musicServiceError(error) : 'could not confirm whether your track finished.';
+  throw new MusicGenerationError(message +
+    (settlementError ?? (failed ? '' : ' the outcome is unknown; your song allowance remains reserved.')), failed);
+}
 
-  const text = lyrics.join('\n')
-    .replace(/\[\[[^\]\r\n]*\]\]/g, '')
-    .replace(/^[ \t]*\[:\][ \t]*/gm, '')
-    .replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n')
-    .trim();
-  return saveSong(userId, audio, input, model, text, songId, songTitle);
-}, {
-  name: 'generate_audio',
-  run_type: 'tool',
-  argsConfigPath: [5],
-  metadata: { ls_provider: 'google' },
-});
+function rejectedGeneration(error: unknown): boolean {
+  return error instanceof Error && 'status' in error && typeof error.status === 'number' && [400, 401, 403, 404, 422, 429].includes(error.status);
+}
+
+function readMusicOutput(steps: unknown[]): { audio?: Buffer; lyrics: string[] } {
+  let audio: Buffer | undefined;
+  const lyrics: string[] = [];
+  for (const value of musicContent(steps)) {
+    const block = record(value);
+    if (block.type === 'text' && typeof block.text === 'string') lyrics.push(block.text);
+    if (block.type === 'audio') audio = readAudioBlock(block);
+  }
+  return { audio, lyrics };
+}
+
+function* musicContent(steps: unknown[]): Generator<unknown> {
+  for (const value of steps) {
+    const step = record(value);
+    if (step.type !== 'model_output') continue;
+    if (step.error) throw new Error(JSON.stringify(step.error));
+    if (Array.isArray(step.content)) yield* step.content;
+  }
+}
+
+function readAudioBlock(block: Record<string, unknown>): Buffer {
+  if (!['audio/mpeg', 'audio/mp3'].some(mime => mime === block.mime_type) || !validBase64(block.data)) {
+    throw new Error('music service returned invalid MP3 audio.');
+  }
+  return Buffer.from(block.data, 'base64');
+}
+
+function validBase64(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(value);
+}

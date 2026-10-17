@@ -92,11 +92,12 @@ async function validateAudio(source: string): Promise<void> {
   const stdout = await runProcessor('ffprobe', [...audioInputOptions, '-select_streams', 'a',
     '-show_entries', 'stream=channels:format=duration', '-of', 'json', source]);
   const info = JSON.parse(stdout) as { streams?: { channels?: number }[]; format?: { duration?: string } };
-  const channels = info.streams?.[0]?.channels;
+  if (!validAudioInfo(info)) throw new Error('audio must be mono or stereo and between 0 and 10 minutes long.');
+}
+
+function validAudioInfo(info: { streams?: { channels?: number }[]; format?: { duration?: string } }): boolean {
   const duration = Number(info.format?.duration);
-  if (info.streams?.length !== 1 || (channels !== 1 && channels !== 2) || !(duration > 0 && duration <= 600)) {
-    throw new Error('audio must be mono or stereo and between 0 and 10 minutes long.');
-  }
+  return info.streams?.length === 1 && [1, 2].includes(info.streams[0].channels ?? 0) && duration > 0 && duration <= 600;
 }
 
 export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): Promise<{ data: string; format: 'mp3' | 'wav' }> {
@@ -106,38 +107,41 @@ export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): 
     const file = await stat(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
     const extension = path.extname(source);
     // Leave room for the data URI prefix under the provider's 10 MB base64 limit.
-    if ((extension === '.mp3' || extension === '.wav') && file.size > 0 && file.size < 7_499_000) {
+    if (canInlineAudio(extension, file.size)) {
       return { data: (await readFile(source)).toString('base64'), format: extension === '.mp3' ? 'mp3' : 'wav' };
     }
-    const temporaryRoot = userDirectory(audioDirectory, userId);
-    await mkdir(temporaryRoot, { recursive: true });
-    const directory = await mkdtemp(path.join(temporaryRoot, '.analysis-'));
-    const releaseTemporary = retainLocalAudio(directory);
-    try {
-      const output = path.join(directory, 'analysis.mp3');
-      await validateAudio(source);
-      // 80 kbps keeps a full ten-minute track below the provider's base64 limit.
-      await runProcessor('ffmpeg', [...audioInputOptions, '-nostdin', '-xerror', '-i', source,
-        '-map', '0:a:0', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '80k', output]);
-      const data = (await readFile(output)).toString('base64');
-      if (!data || data.length + 13 >= 10_000_000) throw new Error('audio is too large to analyze. try a shorter track.');
-      return { data, format: 'mp3' };
-    } finally {
-      releaseTemporary();
-      await rm(directory, { recursive: true, force: true });
-    }
+    return await convertAnalysisAudio(source, userId);
   } finally {
     releaseSource();
     if (temporary) await rm(source, { force: true }).catch((error: unknown) => console.error('could not clear song processing file:', error));
   }
 }
 
+async function convertAnalysisAudio(source: string, userId: unknown): Promise<{ data: string; format: 'mp3' }> {
+  const temporaryRoot = userDirectory(audioDirectory, userId);
+  await mkdir(temporaryRoot, { recursive: true });
+  const directory = await mkdtemp(path.join(temporaryRoot, '.analysis-'));
+  const releaseTemporary = retainLocalAudio(directory);
+  try {
+    const output = path.join(directory, 'analysis.mp3');
+    await validateAudio(source);
+    // 80 kbps keeps a full ten-minute track below the provider's base64 limit.
+    await runProcessor('ffmpeg', [...audioInputOptions, '-nostdin', '-xerror', '-i', source,
+      '-map', '0:a:0', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '80k', output]);
+    const data = (await readFile(output)).toString('base64');
+    if (!data || data.length + 13 >= 10_000_000) throw new Error('audio is too large to analyze. try a shorter track.');
+    return { data, format: 'mp3' };
+  } finally {
+    releaseTemporary();
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 export async function uploadAudio(name: unknown, data: unknown, userId: unknown): Promise<AudioTrack> {
-  if (typeof name !== 'string' || !name.trim() || name.length > 255 ||
-      !audioExtensions.has(path.extname(name).toLowerCase())) {
+  if (!validUploadName(name)) {
     throw new Error('choose an MP3, WAV, FLAC, or OGG file.');
   }
-  if (!Buffer.isBuffer(data) || !data.length || data.length > 50 * 1024 * 1024) {
+  if (!validUploadData(data)) {
     throw new Error('audio upload must contain 1 byte to 50 MB.');
   }
   const filename = `${randomUUID()}${path.extname(name).toLowerCase()}`;
@@ -155,4 +159,17 @@ export async function uploadAudio(name: unknown, data: unknown, userId: unknown)
   } finally {
     await release();
   }
+}
+
+function canInlineAudio(extension: string, bytes: number): boolean {
+  return ['.mp3', '.wav'].includes(extension) && bytes > 0 && bytes < 7_499_000;
+}
+
+function validUploadName(name: unknown): name is string {
+  return typeof name === 'string' && !!name.trim() && name.length <= 255 &&
+    audioExtensions.has(path.extname(name).toLowerCase());
+}
+
+function validUploadData(data: unknown): data is Buffer {
+  return Buffer.isBuffer(data) && data.length > 0 && data.length <= 50 * 1024 * 1024;
 }

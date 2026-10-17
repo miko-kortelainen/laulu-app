@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { deleteSongObject, putSongObject, r2Storage, readSongObject } from './r2.js';
 import { userDirectory } from './user-files.js';
 import { database } from './database.js';
+import { hasErrorCode, isCount, isRecord, isTimestamp, isUuid } from './validation.js';
 import { checkAllowance, quotaRpc, settleGeneration, songOutputLimit } from './quotas.js';
 
 export const musicDirectory = fileURLToPath(new URL('../generated-music/', import.meta.url));
@@ -47,7 +48,7 @@ export function validateSongTitle(value: unknown = 'untitled'): string {
 }
 
 function songPath(userId: unknown, id: unknown): string {
-  if (typeof id !== 'string' || !uuid.test(id)) throw new SongNotFoundError('song not found.');
+  if (!isUuid(id)) throw new SongNotFoundError('song not found.');
   return path.join(userDirectory(musicDirectory, userId), `${id}.mp3`);
 }
 
@@ -71,7 +72,7 @@ export async function writeAtomic(filename: string, data: string | Buffer): Prom
   }
 }
 
-async function clearSongRecovery(userId: string, id: string): Promise<void> {
+async function clearSongRecovery({ owner_id: userId, id }: Pick<Song, 'owner_id' | 'id'>): Promise<void> {
   const filename = songPath(userId, id);
   memoryRecovery.delete(id);
   await Promise.all([filename, filename.replace(/\.mp3$/, '.json')].map(async (file) => {
@@ -96,7 +97,7 @@ function publicSong(song: Song): SavedSong {
   };
 }
 
-async function findSong(userId: string, id: string): Promise<Song | null> {
+async function findSong({ owner_id: userId, id }: Pick<Song, 'owner_id' | 'id'>): Promise<Song | null> {
   songPath(userId, id);
   if (!process.env.SUPABASE_SECRET_KEY) return null;
   const { data, error } = await database().from('songs').select('*').eq('owner_id', userId).eq('id', id).maybeSingle();
@@ -104,10 +105,10 @@ async function findSong(userId: string, id: string): Promise<Song | null> {
   return data as Song | null;
 }
 
-async function legacySongPath(userId: string, id: string): Promise<string> {
+async function legacySongPath({ owner_id: userId, id }: Pick<Song, 'owner_id' | 'id'>): Promise<string> {
   const filename = songPath(userId, id);
   const pending = await access(filename.replace(/\.mp3$/, '.json')).then(() => true).catch((error: unknown) => {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return false;
+    if (hasErrorCode(error, 'ENOENT')) return false;
     throw error;
   });
   if (pending) throw new SongNotFoundError('song is not saved yet. retry storage first.');
@@ -134,27 +135,35 @@ export async function setSongFavourite(userId: string, id: string, isFavourite: 
   if (!data) throw new SongNotFoundError('song not found.');
 }
 
+function readySong(song: Song | null, key: string): song is Song {
+  return song?.status === 'ready' && song.object_key === key;
+}
+
 export async function deleteSong(userId: string, id: string): Promise<void> {
-  const song = await findSong(userId, id);
+  const song = await findSong({ owner_id: userId, id });
   const key = `users/${userId}/${id}.mp3`;
-  if (!song || song.status !== 'ready' || song.object_key !== key) {
+  if (!readySong(song, key)) {
     throw new SongNotFoundError('song not found.');
   }
   await deleteSongObject(key).catch(() => { throw new Error('could not delete song audio. try deleting again.'); });
-  const filename = songPath(userId, id);
-  // Remove local copies before metadata so legacy playback cannot restore a deleted song.
-  await Promise.all([filename, filename.replace(/\.mp3$/, '.json')].map((file) => rm(file, { force: true })))
-    .catch(() => { throw new Error('could not delete local song files. try deleting again.'); });
-  memoryRecovery.delete(id);
+  await removeLocalSong(song);
   // Keep metadata until cleanup succeeds; deleting an absent R2 object is safe to retry.
   const { error } = await database().from('songs').delete().eq('owner_id', userId).eq('id', id);
   if (error) throw new Error('could not finish deleting the song. try deleting again.');
 }
 
+async function removeLocalSong(song: Song): Promise<void> {
+  const filename = songPath(song.owner_id, song.id);
+  // Remove local copies before metadata so legacy playback cannot restore a deleted song.
+  await Promise.all([filename, filename.replace(/\.mp3$/, '.json')].map((file) => rm(file, { force: true })))
+    .catch(() => { throw new Error('could not delete local song files. try deleting again.'); });
+  memoryRecovery.delete(song.id);
+}
+
 export async function listSongRecovery(userId: string): Promise<string[]> {
   const directory = userDirectory(musicDirectory, userId);
   const files = await readdir(directory).catch((error: unknown): string[] => {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return [];
+    if (hasErrorCode(error, 'ENOENT')) return [];
     throw error;
   });
   const ids = files.filter((name) => name.endsWith('.json') && uuid.test(name.slice(0, -5))).map((name) => name.slice(0, -5));
@@ -166,19 +175,9 @@ export async function listSongRecovery(userId: string): Promise<string[]> {
 
 async function persistSong(song: Song, audio: Buffer): Promise<SavedSong> {
   await settleGeneration(song.owner_id, song.id, 'completed');
-  const existing = await findSong(song.owner_id, song.id);
+  const existing = await findSong(song);
   if (existing?.status === 'ready') return publicSong(existing);
-  if (!existing) {
-    if (audio.length > songOutputLimit()) throw new Error('generated song exceeds MAX_GENERATED_SONG_BYTES. increase the limit before retrying storage.');
-    const result = await quotaRpc('prepare_song_save', { p_song: song, p_defaults: {} });
-    checkAllowance(result);
-    if (!result || typeof result !== 'object' || !('allowed' in result) || result.allowed !== true ||
-        !('song' in result) || !result.song || typeof result.song !== 'object' ||
-        !('id' in result.song) || result.song.id !== song.id ||
-        !('owner_id' in result.song) || result.song.owner_id !== song.owner_id) {
-      throw new Error('could not create song metadata.');
-    }
-  }
+  if (!existing) await prepareSongSave(song, audio);
   await putSongObject(song.object_key, audio);
   const { data, error } = await database().from('songs').update({ status: 'ready' })
     .eq('owner_id', song.owner_id).eq('id', song.id).eq('status', 'pending').select('*').single();
@@ -186,8 +185,22 @@ async function persistSong(song: Song, audio: Buffer): Promise<SavedSong> {
   return publicSong(data as Song);
 }
 
-export async function saveSong(userId: string, audio: Buffer, prompt: string, model: string, lyrics: string,
-  id: string = randomUUID(), title: string = 'untitled'): Promise<SavedSong> {
+async function prepareSongSave(song: Song, audio: Buffer): Promise<void> {
+  if (audio.length > songOutputLimit()) throw new Error('generated song exceeds MAX_GENERATED_SONG_BYTES. increase the limit before retrying storage.');
+  const result = await quotaRpc('prepare_song_save', { p_song: song, p_defaults: {} });
+  checkAllowance(result);
+  if (!validPreparedSong(result, song)) {
+    throw new Error('could not create song metadata.');
+  }
+}
+
+function validPreparedSong(value: unknown, song: Song): boolean {
+  return isRecord(value) && value.allowed === true && isRecord(value.song) &&
+    value.song.id === song.id && value.song.owner_id === song.owner_id;
+}
+
+export async function saveSong(userId: string, audio: Buffer,
+  { prompt, model, lyrics, id = randomUUID(), title = 'untitled' }: { prompt: string; model: string; lyrics: string; id?: string; title?: string }): Promise<SavedSong> {
   const filename = songPath(userId, id);
   const song: Song = {
     id, owner_id: userId, object_key: `users/${userId}/${id}.mp3`, title: validateSongTitle(title),
@@ -203,52 +216,66 @@ export async function saveSong(userId: string, audio: Buffer, prompt: string, mo
     console.error('local song recovery failed; keeping audio in memory:', error);
   }
   const track = await persistSong(song, audio).catch((error: unknown) => { throw new SongStorageError(id, memoryRecovery.has(id), error); });
-  await clearSongRecovery(userId, id);
+  await clearSongRecovery({ owner_id: userId, id });
   return track;
 }
 
 export async function retrySongStorage(userId: string, id: string): Promise<SavedSong> {
-  const filename = songPath(userId, id);
-  const saved = await findSong(userId, id);
+  const saved = await findSong({ owner_id: userId, id });
   if (saved?.status === 'ready') {
-    await clearSongRecovery(userId, id);
+    await clearSongRecovery({ owner_id: userId, id });
     return publicSong(saved);
   }
   const recovery = memoryRecovery.get(id);
-  if (recovery?.song.owner_id === userId) {
-    const track = await persistSong(recovery.song, recovery.audio).catch((error: unknown) => { throw new SongStorageError(id, true, error); });
-    await clearSongRecovery(userId, id);
-    return track;
-  }
+  if (recovery?.song.owner_id === userId) return retryRecovery(recovery, true);
+  return retryRecovery(await readLocalRecovery(userId, id), false);
+}
+
+async function readLocalRecovery(userId: string, id: string): Promise<{ song: Song; audio: Buffer }> {
+  const filename = songPath(userId, id);
   const json = await readFile(filename.replace(/\.mp3$/, '.json'), 'utf8')
     .catch(() => { throw new SongNotFoundError('unsaved song not found.'); });
-  const value: unknown = JSON.parse(json);
-  if (!value || typeof value !== 'object' ||
-      !('id' in value) || value.id !== id ||
-      !('owner_id' in value) || value.owner_id !== userId ||
-      !('object_key' in value) || value.object_key !== `users/${userId}/${id}.mp3` ||
-      !('prompt' in value) || typeof value.prompt !== 'string' ||
-      !('model' in value) || typeof value.model !== 'string' ||
-      !('lyrics' in value) || typeof value.lyrics !== 'string' ||
-      ('title' in value && (typeof value.title !== 'string' || value.title.trim().length > 200)) ||
-      !('size_bytes' in value) || typeof value.size_bytes !== 'number' || !Number.isSafeInteger(value.size_bytes) || value.size_bytes <= 0 ||
-      !('status' in value) || value.status !== 'pending' ||
-      !('created_at' in value) || typeof value.created_at !== 'string' || !Number.isFinite(Date.parse(value.created_at))) {
-    throw new SongNotFoundError('unsaved song not found.');
-  }
-  const song: Song = { id, owner_id: userId, object_key: value.object_key, title: validateSongTitle('title' in value ? value.title : undefined),
-    prompt: value.prompt, model: value.model, is_favourite: false,
-    lyrics: value.lyrics, size_bytes: value.size_bytes, status: 'pending', created_at: value.created_at };
+  const song = readRecoverySong(JSON.parse(json), { owner_id: userId, id });
   const audio = await readFile(filename);
   if (audio.length !== song.size_bytes) throw new Error('unsaved song audio is incomplete.');
-  const track = await persistSong(song, audio).catch((error: unknown) => { throw new SongStorageError(id, false, error); });
-  await clearSongRecovery(userId, id);
+  return { song, audio };
+}
+
+async function retryRecovery({ song, audio }: { song: Song; audio: Buffer }, inMemory: boolean): Promise<SavedSong> {
+  const track = await persistSong(song, audio).catch((error: unknown) => { throw new SongStorageError(song.id, inMemory, error); });
+  await clearSongRecovery(song);
   return track;
 }
 
+function readRecoverySong(value: unknown, { owner_id: userId, id }: Pick<Song, 'owner_id' | 'id'>): Song {
+  if (!isRecord(value)) throw new SongNotFoundError('unsaved song not found.');
+  if (!validRecoveryOwner(value, { owner_id: userId, id })) throw new SongNotFoundError('unsaved song not found.');
+  if (!validRecoveryContent(value) || !validRecoverySize(value)) {
+    throw new SongNotFoundError('unsaved song not found.');
+  }
+  return {
+    id, owner_id: userId, object_key: `users/${userId}/${id}.mp3`, title: validateSongTitle(value.title),
+    prompt: value.prompt, model: value.model, lyrics: value.lyrics, is_favourite: false,
+    size_bytes: value.size_bytes, status: 'pending', created_at: value.created_at,
+  };
+}
+
+function validRecoveryOwner(value: Record<string, unknown>, { owner_id: userId, id }: Pick<Song, 'owner_id' | 'id'>): boolean {
+  return value.id === id && value.owner_id === userId && value.object_key === `users/${userId}/${id}.mp3` && value.status === 'pending';
+}
+
+function validRecoveryContent(value: Record<string, unknown>): value is Record<string, unknown> & Pick<Song, 'prompt' | 'model' | 'lyrics'> {
+  return typeof value.prompt === 'string' && typeof value.model === 'string' && typeof value.lyrics === 'string' &&
+    (!('title' in value) || (typeof value.title === 'string' && value.title.trim().length <= 200));
+}
+
+function validRecoverySize(value: Record<string, unknown>): value is Record<string, unknown> & Pick<Song, 'size_bytes' | 'created_at'> {
+  return isCount(value.size_bytes) && value.size_bytes > 0 && isTimestamp(value.created_at);
+}
+
 export async function readSong(userId: string, id: string, range?: string): Promise<{ audio: Buffer; contentRange?: string } | { filename: string }> {
-  const song = await findSong(userId, id);
-  if (!song) return { filename: await legacySongPath(userId, id) };
+  const song = await findSong({ owner_id: userId, id });
+  if (!song) return { filename: await legacySongPath({ owner_id: userId, id }) };
   if (song.status !== 'ready') throw new SongNotFoundError('song not found.');
   const key = `users/${userId}/${id}.mp3`;
   if (song.object_key !== key) throw new SongNotFoundError('song not found.');
@@ -257,9 +284,9 @@ export async function readSong(userId: string, id: string, range?: string): Prom
 
 export async function localSongPath(userId: string, id: string): Promise<{ filename: string; temporary: boolean }> {
   const source = songPath(userId, id);
-  const song = await findSong(userId, id);
-  if (!song) return { filename: await legacySongPath(userId, id), temporary: false };
-  if (song.status !== 'ready' || song.object_key !== `users/${userId}/${id}.mp3`) {
+  const song = await findSong({ owner_id: userId, id });
+  if (!song) return { filename: await legacySongPath({ owner_id: userId, id }), temporary: false };
+  if (!readySong(song, `users/${userId}/${id}.mp3`)) {
     throw new SongNotFoundError('song not found.');
   }
   const { audio } = await readSongObject(song.object_key);
@@ -267,13 +294,13 @@ export async function localSongPath(userId: string, id: string): Promise<{ filen
   await mkdir(path.dirname(source), { recursive: true });
   const filename = `${source}.${randomUUID()}.cache.mp3`;
   await writeAtomic(filename, audio);
-  await clearSongRecovery(userId, id);
+  await clearSongRecovery({ owner_id: userId, id });
   return { filename, temporary: true };
 }
 
 export async function cleanupSongRecovery(holdSession: (userId: string) => (() => void) | undefined, now = Date.now()): Promise<void> {
   const owners = await readdir(musicDirectory, { withFileTypes: true }).catch((error: unknown) => {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
+    if (hasErrorCode(error, 'ENOENT')) return [];
     throw error;
   });
   let removed = 0;
@@ -285,7 +312,7 @@ export async function cleanupSongRecovery(holdSession: (userId: string) => (() =
     try {
       const directory = userDirectory(musicDirectory, ownerId);
       const files = await readdir(directory).catch((error: unknown): string[] => {
-        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return [];
+        if (hasErrorCode(error, 'ENOENT')) return [];
         throw error;
       });
       for (const [id, recovery] of memoryRecovery) {
@@ -293,45 +320,65 @@ export async function cleanupSongRecovery(holdSession: (userId: string) => (() =
       }
       for (const filename of new Set(files)) {
         if (removed >= 100) return;
-        const metadata = uuid.test(filename.replace(/\.json$/, '')) && filename.endsWith('.json');
-        const temporary = /\.(tmp|cache\.mp3|operation\.json)$/.test(filename);
-        if (!metadata && !temporary) continue;
-        const file = path.join(directory, filename);
-        const info = await stat(file).catch((error: unknown) => {
-          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
-          throw error;
-        });
-        const modified = info?.mtimeMs ?? Date.parse(memoryRecovery.get(filename.slice(0, -5))?.song.created_at ?? '');
-        if (!Number.isFinite(modified)) continue;
-        const age = now - modified;
-        if (age < (metadata || filename.endsWith('.operation.json') ? 7 * 86_400_000 : 3_600_000)) continue;
-        if (metadata) {
-          const id = filename.slice(0, -5);
-          // Delete object and recovery before metadata, just as for saved-song deletion.
-          const song = await findSong(ownerId, id);
-          if (song?.status === 'pending') await deleteSongObject(song.object_key);
-          await rm(songPath(ownerId, id), { force: true });
-          if (song?.status === 'pending') {
-            const { error } = await database().from('songs').delete().eq('owner_id', ownerId).eq('id', id).eq('status', 'pending');
-            if (error) throw new Error('could not clear expired song metadata.');
-          }
-          await rm(file, { force: true });
-          memoryRecovery.delete(id);
-          await quotaRpc('release_song_reservation', { p_user_id: ownerId, p_id: id });
-        } else {
-          if (filename.endsWith('.operation.json')) {
-            const id = filename.slice(0, -15);
-            const { data, error } = await database().from('operations').select('acknowledged')
-              .eq('owner_id', ownerId).eq('id', id).maybeSingle();
-            if (error) throw new Error('could not check expired operation recovery.');
-            if (data && !data.acknowledged) continue;
-          }
-          await rm(file, { force: true });
-        }
-        removed++;
+        if (await cleanupRecoveryFile({ ownerId, directory, filename, now })) removed++;
       }
     } finally {
       release();
     }
   }
+}
+
+async function cleanupRecoveryFile({ ownerId, directory, filename, now }: {
+  ownerId: string; directory: string; filename: string; now: number;
+}): Promise<boolean> {
+  const metadata = uuid.test(filename.replace(/\.json$/, '')) && filename.endsWith('.json');
+  const temporary = /\.(tmp|cache\.mp3|operation\.json)$/.test(filename);
+  if (!metadata && !temporary) return false;
+  const file = path.join(directory, filename);
+  if (!await recoveryExpired({ file, filename, metadata, now })) return false;
+  if (!metadata) return removeTemporaryRecovery({ ownerId, filename, file });
+  await removePendingRecovery({ ownerId, id: filename.slice(0, -5), file });
+  return true;
+}
+
+async function recoveryExpired({ file, filename, metadata, now }: {
+  file: string; filename: string; metadata: boolean; now: number;
+}): Promise<boolean> {
+  const modified = await recoveryModified({ file, filename });
+  if (!Number.isFinite(modified)) return false;
+  return now - modified >= (metadata || filename.endsWith('.operation.json') ? 7 * 86_400_000 : 3_600_000);
+}
+
+async function recoveryModified({ file, filename }: { file: string; filename: string }): Promise<number> {
+  const info = await stat(file).catch((error: unknown) => {
+    if (hasErrorCode(error, 'ENOENT')) return undefined;
+    throw error;
+  });
+  return info?.mtimeMs ?? Date.parse(memoryRecovery.get(filename.slice(0, -5))?.song.created_at ?? '');
+}
+
+async function removePendingRecovery({ ownerId, id, file }: { ownerId: string; id: string; file: string }): Promise<void> {
+  // Delete object and recovery before metadata, just as for saved-song deletion.
+  const song = await findSong({ owner_id: ownerId, id });
+  if (song?.status === 'pending') await deleteSongObject(song.object_key);
+  await rm(songPath(ownerId, id), { force: true });
+  if (song?.status === 'pending') {
+    const { error } = await database().from('songs').delete().eq('owner_id', ownerId).eq('id', id).eq('status', 'pending');
+    if (error) throw new Error('could not clear expired song metadata.');
+  }
+  await rm(file, { force: true });
+  memoryRecovery.delete(id);
+  await quotaRpc('release_song_reservation', { p_user_id: ownerId, p_id: id });
+}
+
+async function removeTemporaryRecovery({ ownerId, filename, file }: { ownerId: string; filename: string; file: string }): Promise<boolean> {
+  if (filename.endsWith('.operation.json')) {
+    const id = filename.slice(0, -15);
+    const { data, error } = await database().from('operations').select('acknowledged')
+      .eq('owner_id', ownerId).eq('id', id).maybeSingle();
+    if (error) throw new Error('could not check expired operation recovery.');
+    if (data && !data.acknowledged) return false;
+  }
+  await rm(file, { force: true });
+  return true;
 }

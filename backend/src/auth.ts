@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { RequestHandler } from 'express';
 import 'dotenv/config';
+import { isUuid } from './validation.js';
 
 const url = process.env.SUPABASE_URL?.replace(/\/$/, '');
 const key = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -25,11 +26,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
     return;
   }
   const claims = result?.data?.claims;
-  if (result?.error || !claims || claims.iss !== `${url}/auth/v1` ||
-      claims.role !== 'authenticated' || claims.is_anonymous === true ||
-      !(Array.isArray(claims.aud) ? claims.aud.includes('authenticated') : claims.aud === 'authenticated') ||
-      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(claims.sub) ||
-      !Number.isFinite(claims.exp) || claims.exp <= Date.now() / 1000) {
+  if (result.error || !claims || !validClaims(claims)) {
     res.status(401).json({ error: 'your session expired. log in again.' });
     return;
   }
@@ -37,3 +34,16 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   res.locals.userId = claims.sub;
   next();
 };
+
+function validClaims(claims: Record<string, unknown>): boolean {
+  return claims.iss === `${url}/auth/v1` && claims.role === 'authenticated' && claims.is_anonymous !== true &&
+    validAudience(claims.aud) && isUuid(claims.sub) && validExpiry(claims.exp);
+}
+
+function validAudience(audience: unknown): boolean {
+  return Array.isArray(audience) ? audience.includes('authenticated') : audience === 'authenticated';
+}
+
+function validExpiry(expiry: unknown): boolean {
+  return typeof expiry === 'number' && Number.isFinite(expiry) && expiry > Date.now() / 1000;
+}

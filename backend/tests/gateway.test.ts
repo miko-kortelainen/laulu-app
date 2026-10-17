@@ -7,6 +7,7 @@ import { getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { analyzeAudio } from '../src/analysis.js';
 import { audioDirectory } from '../src/audio.js';
 import { getAiGateway } from '../src/gateway.js';
+import { hasErrorCode } from '../src/validation.js';
 import { generateLyrics } from '../src/lyrics.js';
 import { getModelConfig } from '../src/model.js';
 import { generateMusic, musicDirectory } from '../src/music.js';
@@ -93,7 +94,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
   try {
     for (const name of variables) delete process.env[name];
     assert.throws(() => getAiGateway('nebius'), /set CF_AI_GATEWAY_ACCOUNT_ID/);
-    await assert.rejects(generateMusic('instrumental folk', undefined, session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+    await assert.rejects(generateMusic({ prompt: 'instrumental folk', userId: session }), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     await assert.rejects(generateLyrics({ genre: 'folk' }, 'write a verse', session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
     assert.throws(() => getOrCreateAgent(session), /set CF_AI_GATEWAY_ACCOUNT_ID/);
@@ -113,7 +114,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     process.env.LYRICS_MODEL = 'Qwen/Qwen3.8-27B';
     assert.equal(await generateLyrics({ genre: 'folk' }, 'write a verse', session), 'offline answer');
 
-    const track = await generateMusic('instrumental folk', undefined, session);
+    const track = await generateMusic({ prompt: 'instrumental folk', userId: session });
     musicPath = `${musicDirectory}${session}/${track.url.split('/').at(-1)}`;
     assert.deepEqual(storage.objects.get(`users/${session}/${track.url.split('/').at(-1)}`), bytes);
     await assert.rejects(readFile(musicPath), /ENOENT/);
@@ -123,8 +124,9 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     assert.equal(await analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), 'offline answer');
     assert.equal(calls.length, 5);
 
+
     fail = true;
-    await assert.rejects(generateMusic('instrumental folk', undefined, session), /could not check your prompt/);
+    await assert.rejects(generateMusic({ prompt: 'instrumental folk', userId: session }), /could not check your prompt/);
     assert.equal(calls.length, 6);
     await assert.rejects(analyzeAudio(`/api/audio/${audioName}`, 'describe this', session), /offline gateway failure/);
     assert.equal(calls.length, 7);
@@ -135,6 +137,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     await unknownModel.fetch(`${unknownModel.baseURL}/chat/completions`, {
       method: 'POST',
       body: JSON.stringify({ model: 'unpriced-model', stream: true }),
+
     });
   } finally {
     resetAgentSession(session);
@@ -148,7 +151,7 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     }
     if (musicPath) await unlink(musicPath);
     await unlink(audioPath).catch((error: unknown) => {
-      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+      if (!hasErrorCode(error, 'ENOENT')) throw error;
     });
   }
 });

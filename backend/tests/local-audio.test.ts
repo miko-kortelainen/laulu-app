@@ -11,8 +11,8 @@ test('local audio retention protects readers and concurrent writes share the dis
   await writeFile(path.join(directory, 'package.json'), '{"type":"module"}');
   await mkdir(path.join(directory, 'src'));
   const modulePath = path.join(directory, 'src/local-audio.ts');
-  await copyFile(new URL('../src/user-files.ts', import.meta.url), path.join(directory, 'src/user-files.ts'));
-  await copyFile(new URL('../src/local-audio.ts', import.meta.url), modulePath);
+  await Promise.all(['user-files.ts', 'validation.ts', 'local-audio.ts'].map(filename =>
+    copyFile(new URL(`../src/${filename}`, import.meta.url), path.join(directory, 'src', filename))));
   const storage: typeof import('../src/local-audio.js') = await import(pathToFileURL(modulePath).href);
   const root = storage.audioDirectory;
   const expired: string[] = [];

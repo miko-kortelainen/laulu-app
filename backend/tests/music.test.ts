@@ -8,7 +8,7 @@ import { configureTestSongStorage } from './song-fixture.js';
 import { retrySongStorage, SongStorageError } from '../src/songs.js';
 
 const userId = '10000000-0000-4000-8000-000000000001';
-const generateMusic = (prompt: string, model?: unknown) => generateUserMusic(prompt, model, userId);
+const generateMusic = (prompt: string, model?: unknown) => generateUserMusic({ prompt, modelId: model, userId });
 
 test('music waits for confirmation, validates responses, and saves only valid audio', async () => {
   const prompt = 'Indie folk, warm acoustic guitar and soft brushed drums, relaxed at 82 BPM in G major. ' +
@@ -26,112 +26,23 @@ test('music waits for confirmation, validates responses, and saves only valid au
   };
   const restoreGateway = configureTestGateway();
   const storage = configureTestSongStorage();
-  let calls = 0;
-  let tokenCalls = 0;
-  let expectedModel = 'lyria-3.5';
-  let tokenResponse = async () => Response.json({ totalTokens: 100 });
-  let response = new Response();
-  let providerError: Error | undefined;
-  let refundUnavailable = false;
-  globalThis.fetch = async (url, options) => {
-    const request = new Request(url, options);
-    const database = await storage.databaseResponse(request);
-    if (database) return database;
-    assert.equal(request.method, 'POST');
-    const headers = request.headers;
-    assert.equal(headers.get('content-type'), 'application/json');
-    assert.equal(headers.has('x-goog-api-key'), false);
-    assert.equal(headers.get('cf-aig-authorization'), 'Bearer offline-gateway-token');
-    if (request.url === `${testGatewayURL}/google-ai-studio/v1beta/models/${expectedModel}:countTokens`) {
-      tokenCalls++;
-      assert.deepEqual(JSON.parse(await request.text()), {
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      });
-      return tokenResponse();
-    }
-    calls++;
-    assert.equal(request.url, `${testGatewayURL}/google-ai-studio/v1beta/interactions`);
-    assert.deepEqual(JSON.parse(await request.text()), {
-      model: expectedModel, input: prompt, store: false,
-    });
-    if (providerError) throw providerError;
-    if (refundUnavailable) storage.quotas.failures.unavailable = true;
-    return response;
-  };
+  const provider = configureMusicProvider(prompt, storage);
   let savedPath: string | undefined;
 
   try {
     process.env.LANGSMITH_TRACING = 'false';
-    const invocationState: Record<string, unknown> = {};
-    const context = { invocationState } as ToolContext;
-    const maximumLyrics = { ...fields, lyrics: 'a'.repeat(3_000) };
-    assert.deepEqual(await updateMusicFormTool.invoke(maximumLyrics, context), {
-      status: 'awaiting_confirmation', prompt: maximumLyrics,
-    });
-    assert.deepEqual(await updateMusicFormTool.invoke(fields, context), {
-      status: 'awaiting_confirmation', prompt: fields,
-    });
-    assert.deepEqual(invocationState.musicPrompt, fields);
-    assert.equal(calls, 0);
-    assert.equal(tokenCalls, 0);
-    await assert.rejects(updateMusicFormTool.invoke({ ...fields, bpm: 82 }, context), /music prompt field bpm/);
-    for (const lyricRequest of [null, 0, false, {}, 'a'.repeat(10_001)]) {
-      await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyricRequest }, context), /music prompt/);
-    }
-    await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyrics: 'a'.repeat(3_001) }, context), /3,000/);
-    await assert.rejects(updateMusicFormTool.invoke(Object.fromEntries(Object.keys(fields).map((key) => [key, ''])), context), /music prompt/);
-    assert.deepEqual(invocationState.musicPrompt, fields);
-    assert.equal(calls, 0);
-    await assert.rejects(generateMusic(' '.repeat(2)), /music prompt/);
-    await assert.rejects(generateMusic('a'.repeat(10_001)), /music prompt/);
-    for (const model of ['unsupported-model', '', null, 35]) {
-      await assert.rejects(generateMusic(prompt, model), /choose Lyria/);
-    }
-    assert.equal(tokenCalls, 0);
-    delete process.env.CF_AI_GATEWAY_TOKEN;
-    await assert.rejects(generateMusic(prompt), /set CF_AI_GATEWAY_ACCOUNT_ID/);
-    assert.equal(calls, 0);
-    assert.equal(tokenCalls, 0);
-    process.env.CF_AI_GATEWAY_TOKEN = 'offline-gateway-token';
+    await assertMusicForm(fields);
+    assert.equal(provider.calls, 0);
+    assert.equal(provider.tokenCalls, 0);
+    await assertGenerationPreflight(prompt, provider, storage);
 
-    delete process.env.R2_SECRET_ACCESS_KEY;
-    await assert.rejects(generateMusic(prompt), /configure R2/);
-    process.env.R2_SECRET_ACCESS_KEY = 'offline-secret';
-    storage.failures.read = true;
-    await assert.rejects(generateMusic(prompt), /generation was not started/);
-    storage.failures.read = false;
-    assert.equal(calls, 0);
-    assert.equal(tokenCalls, 0);
-
-    tokenResponse = async () => Response.json({ totalTokens: 131_073 });
-    await assert.rejects(generateMusic(prompt), (error: unknown) => {
-      assert.ok(error instanceof MusicPromptTokenLimitError, String(error));
-      assert.match(error.message, /131,073.*131,072/);
-      return true;
-    });
-    assert.equal(tokenCalls, 1);
-    assert.equal(calls, 0);
-
-    tokenResponse = async () => new Response('{}', { status: 429 });
-    await assert.rejects(generateMusic(prompt), /could not check your prompt.*generation was not started/);
-    tokenResponse = async () => new Response('invalid JSON');
-    await assert.rejects(generateMusic(prompt), /could not check your prompt/);
-    for (const totalTokens of [undefined, null, '100', -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
-      tokenResponse = async () => Response.json({ totalTokens });
-      await assert.rejects(generateMusic(prompt), /could not check your prompt/);
-    }
-    tokenResponse = async () => { throw new TypeError('offline'); };
-    await assert.rejects(generateMusic(prompt), /generation was not started/);
-    tokenResponse = async () => { throw new DOMException('timeout', 'TimeoutError'); };
-    await assert.rejects(generateMusic(prompt), /generation was not started/);
-    assert.equal(calls, 0);
-    tokenResponse = async () => Response.json({ totalTokens: 100 });
+    await assertTokenPreflight(prompt, provider);
 
     for (const resource of ['generation', 'storage']) {
       storage.quotas.failures.resource = resource;
-      const beforeDenied = calls;
+      const beforeDenied = provider.calls;
       await assert.rejects(generateMusic(prompt), /allowance exhausted/);
-      assert.equal(calls, beforeDenied, 'quota denial never reaches paid generation');
+      assert.equal(provider.calls, beforeDenied, 'quota denial never reaches paid generation');
     }
     storage.quotas.failures.resource = undefined;
     storage.quotas.failures.unavailable = true;
@@ -139,65 +50,12 @@ test('music waits for confirmation, validates responses, and saves only valid au
     storage.quotas.failures.unavailable = false;
     assert.equal(storage.quotas.reservations.size, 0, 'local preflight and quota failures never consume usage');
 
-    response = Response.json({ error: { code: 400, message: 'Prompt rejected by music service.', status: 'INVALID_ARGUMENT' } }, { status: 400 });
-    const previousErrorCalls = calls;
-    await assert.rejects(generateMusic(prompt), { message: 'the music service could not use this prompt. edit the prompt or lyrics and try again.' });
-    assert.equal(calls, previousErrorCalls + 1);
-    assert.equal(storage.quotas.reservations.size, 1);
-    assert.equal([...storage.quotas.reservations.values()][0].storageBytes, 0);
-    assert.equal([...storage.quotas.reservations.values()][0].status, 'failed', 'confirmed rejection refunds personal usage');
+    await assertConfirmedFailures(prompt, provider, storage);
 
-    const moderationMessage = 'this prompt was blocked by music safety checks. edit the prompt or lyrics and try again.';
-    for (const status of [400, 403]) {
-      response = Response.json({ error: { code: status, message: 'Prompt blocked by safety filters. Technical details: request_id=private-id' } }, { status });
-      await assert.rejects(generateMusic(prompt), { message: moderationMessage });
-      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'failed');
-    }
-    response = Response.json({ status: 'failed', errors: [{ code: 'content_filter', message: 'Prompt rejected by moderation.' }], steps: [] });
-    await assert.rejects(generateMusic(prompt), { message: moderationMessage });
-    response = Response.json({ status: 'completed', steps: [{ type: 'model_output', error: { code: 3, message: 'Audio blocked by safety filters.' } }] });
-    await assert.rejects(generateMusic(prompt), { message: moderationMessage });
-    response = Response.json({ error: { message: 'Rate limit exceeded: private-id' } }, { status: 429 });
-    await assert.rejects(generateMusic(prompt), { message: 'the music service is busy. try again in a few minutes.' });
-    response = Response.json({ error: { message: 'Invalid API key: private-id' } }, { status: 403 });
-    await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
-    refundUnavailable = true;
-    response = Response.json({ status: 'failed', steps: [] });
-    await assert.rejects(generateMusic(prompt), /could not restore your song allowance/);
-    assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved', 'failed refund keeps the reservation');
-    storage.quotas.failures.unavailable = false;
-    refundUnavailable = false;
-    for (const status of ['failed', 'cancelled', 'incomplete']) {
-      response = Response.json({ status, steps: [] });
-      await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
-      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'failed');
-    }
-    for (const status of [408, 500, 502, 504]) {
-      response = Response.json({ error: { message: 'uncertain outcome' } }, { status });
-      await assert.rejects(generateMusic(prompt), /outcome is unknown/);
-      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved');
-      assert.ok([...storage.quotas.reservations.values()].at(-1)!.storageBytes > 0);
-    }
-    for (const error of [new TypeError('offline'), new DOMException('timeout', 'TimeoutError'), new DOMException('disconnected', 'AbortError')]) {
-      providerError = error;
-      await assert.rejects(generateMusic(prompt), /outcome is unknown/);
-      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved');
-    }
-    providerError = undefined;
-    response = Response.json({ status: 'in_progress', steps: [] });
-    await assert.rejects(generateMusic(prompt), /outcome is unknown/);
-    assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'reserved');
-    response = Response.json({ status: 'completed', steps: [] });
-    await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
-    for (const data of ['invalid!', 'AAAAA', 'A===', 'AA=A', 'AA==AAAA']) {
-      response = Response.json({ status: 'completed', steps: [{
-        type: 'model_output', content: [{ type: 'audio', mime_type: 'audio/mpeg', data }],
-      }] });
-      await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
-    }
+    await assertUnknownOutcomes(prompt, provider, storage);
 
     const bytes = Buffer.concat([Buffer.from('ID3-offline-audio-fixture'), Buffer.alloc(4 * 1024 * 1024)]);
-    response = Response.json({ status: 'completed', steps: [
+    provider.response = Response.json({ status: 'completed', steps: [
       { type: 'thought', content: [{ type: 'text', text: 'ignore this' }] },
       { type: 'model_output', content: [{ type: 'text', text: '[[A0]]\n[[B1]]\n[:] Tiny paws in the morning dew,\n[:] A world of green and a sky of blue.\n[[C2]]' }] },
       { type: 'model_output', content: [
@@ -205,17 +63,17 @@ test('music waits for confirmation, validates responses, and saves only valid au
         { type: 'audio', mime_type: 'audio/mpeg', data: bytes.toString('base64') },
       ] },
     ] });
-    tokenResponse = async () => Response.json({ totalTokens: 131_072 });
-    const completedResponse = response;
+    provider.tokenResponse = async () => Response.json({ totalTokens: 131_072 });
+    const completedResponse = provider.response;
     for (const model of [undefined, 'lyria-3-clip-preview']) {
-      expectedModel = model ?? 'lyria-3.5';
-      response = completedResponse.clone();
-      const previousTokenCalls = tokenCalls;
-      const previousCalls = calls;
+      provider.expectedModel = model ?? 'lyria-3.5';
+      provider.response = completedResponse.clone();
+      const previousTokenCalls = provider.tokenCalls;
+      const previousCalls = provider.calls;
       const track = await generateMusic(`  ${prompt}  `, model);
-      assert.equal([...storage.quotas.reservations.values()].at(-1)?.status, 'completed');
-      assert.equal(tokenCalls, previousTokenCalls + 1);
-      assert.equal(calls, previousCalls + 1);
+      assert.equal(lastReservation(storage).status, 'completed');
+      assert.equal(provider.tokenCalls, previousTokenCalls + 1);
+      assert.equal(provider.calls, previousCalls + 1);
       assert.match(track.url, /^\/api\/music\/[0-9a-f-]{36}\.mp3$/);
       savedPath = `${musicDirectory}${userId}/${track.url.split('/').at(-1)}`;
       assert.deepEqual(storage.objects.get(`users/${userId}/${track.url.split('/').at(-1)}`), bytes);
@@ -224,33 +82,8 @@ test('music waits for confirmation, validates responses, and saves only valid au
       savedPath = undefined;
     }
 
-    const previousOutputLimit = process.env.MAX_GENERATED_SONG_BYTES;
-    try {
-      process.env.MAX_GENERATED_SONG_BYTES = String(bytes.length - 1);
-      response = completedResponse.clone();
-      const beforeOversize = calls;
-      const beforeWrites = storage.writes;
-      let oversizedId = '';
-      await assert.rejects(generateMusic(prompt, expectedModel), (error: unknown) => {
-        assert.ok(error instanceof SongStorageError);
-        assert.match(error.message, /MAX_GENERATED_SONG_BYTES/);
-        oversizedId = error.songId;
-        return true;
-      });
-      assert.equal(calls, beforeOversize + 1);
-      assert.equal(storage.writes, beforeWrites, 'oversized output never reaches R2');
-      assert.equal(storage.quotas.reservations.get(oversizedId)?.storageBytes, bytes.length - 1);
-      assert.equal(storage.quotas.reservations.get(oversizedId)?.status, 'completed', 'storage failure never refunds completed generation');
-      assert.deepEqual(await readFile(`${musicDirectory}${userId}/${oversizedId}.mp3`), bytes, 'paid output remains recoverable');
-      process.env.MAX_GENERATED_SONG_BYTES = String(bytes.length);
-      const retried = await retrySongStorage(userId, oversizedId);
-      assert.equal(retried.id, oversizedId);
-      assert.equal(calls, beforeOversize + 1, 'size recovery never regenerates');
-      assert.equal(storage.quotas.reservations.get(oversizedId)?.storageBytes, 0);
-    } finally {
-      if (previousOutputLimit === undefined) delete process.env.MAX_GENERATED_SONG_BYTES;
-      else process.env.MAX_GENERATED_SONG_BYTES = previousOutputLimit;
-    }
+    await assertOversizeRecovery({ prompt, provider, storage, bytes, completedResponse });
+
   } finally {
     globalThis.fetch = originalFetch;
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
@@ -260,3 +93,220 @@ test('music waits for confirmation, validates responses, and saves only valid au
     if (savedPath) await unlink(savedPath).catch(() => undefined);
   }
 });
+
+async function assertMusicForm(fields: Record<string, string>): Promise<void> {
+  const invocationState: Record<string, unknown> = {};
+  const context = { invocationState } as ToolContext;
+  const maximumLyrics = { ...fields, lyrics: 'a'.repeat(3_000) };
+  assert.deepEqual(await updateMusicFormTool.invoke(maximumLyrics, context), {
+    status: 'awaiting_confirmation', prompt: maximumLyrics,
+  });
+  assert.deepEqual(await updateMusicFormTool.invoke(fields, context), {
+    status: 'awaiting_confirmation', prompt: fields,
+  });
+  assert.deepEqual(invocationState.musicPrompt, fields);
+  await assert.rejects(updateMusicFormTool.invoke({ ...fields, bpm: 82 }, context), /music prompt field bpm/);
+  for (const lyricRequest of [null, 0, false, {}, 'a'.repeat(10_001)]) {
+    await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyricRequest }, context), /music prompt/);
+  }
+  await assert.rejects(updateMusicFormTool.invoke({ ...fields, lyrics: 'a'.repeat(3_001) }, context), /3,000/);
+  await assert.rejects(updateMusicFormTool.invoke(Object.fromEntries(Object.keys(fields).map((key) => [key, ''])), context), /music prompt/);
+  assert.deepEqual(invocationState.musicPrompt, fields);
+}
+
+function configureMusicProvider(prompt: string, storage: ReturnType<typeof configureTestSongStorage>): MusicProvider {
+  const provider: MusicProvider = {
+    calls: 0, tokenCalls: 0, expectedModel: 'lyria-3.5',
+    tokenResponse: async () => Response.json({ totalTokens: 100 }),
+    response: new Response(), providerError: undefined as Error | undefined, refundUnavailable: false,
+  };
+  globalThis.fetch = async (url, options) => {
+    const request = new Request(url, options);
+    const database = await storage.databaseResponse(request);
+    if (database) return database;
+    assert.equal(request.method, 'POST');
+    const headers = request.headers;
+    assert.equal(headers.get('content-type'), 'application/json');
+    assert.equal(headers.has('x-goog-api-key'), false);
+    assert.equal(headers.get('cf-aig-authorization'), 'Bearer offline-gateway-token');
+    if (request.url === `${testGatewayURL}/google-ai-studio/v1beta/models/${provider.expectedModel}:countTokens`) {
+      provider.tokenCalls++;
+      assert.deepEqual(JSON.parse(await request.text()), {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      });
+      return provider.tokenResponse();
+    }
+    provider.calls++;
+    assert.equal(request.url, `${testGatewayURL}/google-ai-studio/v1beta/interactions`);
+    assert.deepEqual(JSON.parse(await request.text()), {
+      model: provider.expectedModel, input: prompt, store: false,
+    });
+    if (provider.providerError) throw provider.providerError;
+    if (provider.refundUnavailable) storage.quotas.failures.unavailable = true;
+    return provider.response;
+  };
+  return provider;
+}
+
+function lastReservation(storage: ReturnType<typeof configureTestSongStorage>) {
+  const reservation = [...storage.quotas.reservations.values()].at(-1);
+  assert.ok(reservation);
+  return reservation;
+}
+
+async function assertTokenPreflight(prompt: string, provider: ReturnType<typeof configureMusicProvider>): Promise<void> {
+  provider.tokenResponse = async () => Response.json({ totalTokens: 131_073 });
+  await assert.rejects(generateMusic(prompt), (error: unknown) => {
+    assert.ok(error instanceof MusicPromptTokenLimitError, String(error));
+    assert.match(error.message, /131,073.*131,072/);
+    return true;
+  });
+  assert.equal(provider.tokenCalls, 1);
+  assert.equal(provider.calls, 0);
+
+  provider.tokenResponse = async () => new Response('{}', { status: 429 });
+  await assert.rejects(generateMusic(prompt), /could not check your prompt.*generation was not started/);
+  provider.tokenResponse = async () => new Response('invalid JSON');
+  await assert.rejects(generateMusic(prompt), /could not check your prompt/);
+  for (const totalTokens of [undefined, null, '100', -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    provider.tokenResponse = async () => Response.json({ totalTokens });
+    await assert.rejects(generateMusic(prompt), /could not check your prompt/);
+  }
+  provider.tokenResponse = async () => { throw new TypeError('offline'); };
+  await assert.rejects(generateMusic(prompt), /generation was not started/);
+  provider.tokenResponse = async () => { throw new DOMException('timeout', 'TimeoutError'); };
+  await assert.rejects(generateMusic(prompt), /generation was not started/);
+  assert.equal(provider.calls, 0);
+  provider.tokenResponse = async () => Response.json({ totalTokens: 100 });
+
+}
+
+async function assertOversizeRecovery({ prompt, provider, storage, bytes, completedResponse }: {
+  prompt: string; provider: ReturnType<typeof configureMusicProvider>; storage: ReturnType<typeof configureTestSongStorage>;
+  bytes: Buffer; completedResponse: Response;
+}): Promise<void> {
+  const previousOutputLimit = process.env.MAX_GENERATED_SONG_BYTES;
+  try {
+    process.env.MAX_GENERATED_SONG_BYTES = String(bytes.length - 1);
+    provider.response = completedResponse.clone();
+    const beforeOversize = provider.calls;
+    const beforeWrites = storage.writes;
+    let oversizedId = '';
+    await assert.rejects(generateMusic(prompt, provider.expectedModel), (error: unknown) => {
+      assert.ok(error instanceof SongStorageError);
+      assert.match(error.message, /MAX_GENERATED_SONG_BYTES/);
+      oversizedId = error.songId;
+      return true;
+    });
+    assert.equal(provider.calls, beforeOversize + 1);
+    assert.equal(storage.writes, beforeWrites, 'oversized output never reaches R2');
+    assert.equal(storage.quotas.reservations.get(oversizedId)?.storageBytes, bytes.length - 1);
+    assert.equal(storage.quotas.reservations.get(oversizedId)?.status, 'completed', 'storage failure never refunds completed generation');
+    assert.deepEqual(await readFile(`${musicDirectory}${userId}/${oversizedId}.mp3`), bytes, 'paid output remains recoverable');
+    process.env.MAX_GENERATED_SONG_BYTES = String(bytes.length);
+    const retried = await retrySongStorage(userId, oversizedId);
+    assert.equal(retried.id, oversizedId);
+    assert.equal(provider.calls, beforeOversize + 1, 'size recovery never regenerates');
+    assert.equal(storage.quotas.reservations.get(oversizedId)?.storageBytes, 0);
+  } finally {
+    if (previousOutputLimit === undefined) delete process.env.MAX_GENERATED_SONG_BYTES;
+    else process.env.MAX_GENERATED_SONG_BYTES = previousOutputLimit;
+  }
+}
+
+async function assertGenerationPreflight(prompt: string, provider: ReturnType<typeof configureMusicProvider>, storage: ReturnType<typeof configureTestSongStorage>): Promise<void> {
+  await assert.rejects(generateMusic(' '.repeat(2)), /music prompt/);
+  await assert.rejects(generateMusic('a'.repeat(10_001)), /music prompt/);
+  for (const model of ['unsupported-model', '', null, 35]) {
+    await assert.rejects(generateMusic(prompt, model), /choose Lyria/);
+  }
+  assert.equal(provider.tokenCalls, 0);
+  delete process.env.CF_AI_GATEWAY_TOKEN;
+  await assert.rejects(generateMusic(prompt), /set CF_AI_GATEWAY_ACCOUNT_ID/);
+  assert.equal(provider.calls, 0);
+  assert.equal(provider.tokenCalls, 0);
+  process.env.CF_AI_GATEWAY_TOKEN = 'offline-gateway-token';
+
+  delete process.env.R2_SECRET_ACCESS_KEY;
+  await assert.rejects(generateMusic(prompt), /configure R2/);
+  process.env.R2_SECRET_ACCESS_KEY = 'offline-secret';
+  storage.failures.read = true;
+  await assert.rejects(generateMusic(prompt), /generation was not started/);
+  storage.failures.read = false;
+  assert.equal(provider.calls, 0);
+  assert.equal(provider.tokenCalls, 0);
+
+}
+
+async function assertConfirmedFailures(prompt: string, provider: ReturnType<typeof configureMusicProvider>, storage: ReturnType<typeof configureTestSongStorage>): Promise<void> {
+  provider.response = Response.json({ error: { code: 400, message: 'Prompt rejected by music service.', status: 'INVALID_ARGUMENT' } }, { status: 400 });
+  const previousErrorCalls = provider.calls;
+  await assert.rejects(generateMusic(prompt), { message: 'the music service could not use this prompt. edit the prompt or lyrics and try again.' });
+  assert.equal(provider.calls, previousErrorCalls + 1);
+  assert.equal(storage.quotas.reservations.size, 1);
+  assert.equal([...storage.quotas.reservations.values()][0].storageBytes, 0);
+  assert.equal([...storage.quotas.reservations.values()][0].status, 'failed', 'confirmed rejection refunds personal usage');
+
+  const moderationMessage = 'this prompt was blocked by music safety checks. edit the prompt or lyrics and try again.';
+  for (const status of [400, 403]) {
+    provider.response = Response.json({ error: { code: status, message: 'Prompt blocked by safety filters. Technical details: request_id=private-id' } }, { status });
+    await assert.rejects(generateMusic(prompt), { message: moderationMessage });
+    assert.equal(lastReservation(storage).status, 'failed');
+  }
+  provider.response = Response.json({ status: 'failed', errors: [{ code: 'content_filter', message: 'Prompt rejected by moderation.' }], steps: [] });
+  await assert.rejects(generateMusic(prompt), { message: moderationMessage });
+  provider.response = Response.json({ status: 'completed', steps: [{ type: 'model_output', error: { code: 3, message: 'Audio blocked by safety filters.' } }] });
+  await assert.rejects(generateMusic(prompt), { message: moderationMessage });
+  provider.response = Response.json({ error: { message: 'Rate limit exceeded: private-id' } }, { status: 429 });
+  await assert.rejects(generateMusic(prompt), { message: 'the music service is busy. try again in a few minutes.' });
+  provider.response = Response.json({ error: { message: 'Invalid API key: private-id' } }, { status: 403 });
+  await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
+  provider.refundUnavailable = true;
+  provider.response = Response.json({ status: 'failed', steps: [] });
+  await assert.rejects(generateMusic(prompt), /could not restore your song allowance/);
+  assert.equal(lastReservation(storage).status, 'reserved', 'failed refund keeps the reservation');
+  storage.quotas.failures.unavailable = false;
+  provider.refundUnavailable = false;
+  for (const status of ['failed', 'cancelled', 'incomplete']) {
+    provider.response = Response.json({ status, steps: [] });
+    await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
+    assert.equal(lastReservation(storage).status, 'failed');
+  }
+}
+
+async function assertUnknownOutcomes(prompt: string, provider: ReturnType<typeof configureMusicProvider>, storage: ReturnType<typeof configureTestSongStorage>): Promise<void> {
+  for (const status of [408, 500, 502, 504]) {
+    provider.response = Response.json({ error: { message: 'uncertain outcome' } }, { status });
+    await assert.rejects(generateMusic(prompt), /outcome is unknown/);
+    assert.equal(lastReservation(storage).status, 'reserved');
+    assert.ok(lastReservation(storage).storageBytes > 0);
+  }
+  for (const error of [new TypeError('offline'), new DOMException('timeout', 'TimeoutError'), new DOMException('disconnected', 'AbortError')]) {
+    provider.providerError = error;
+    await assert.rejects(generateMusic(prompt), /outcome is unknown/);
+    assert.equal(lastReservation(storage).status, 'reserved');
+  }
+  provider.providerError = undefined;
+  provider.response = Response.json({ status: 'in_progress', steps: [] });
+  await assert.rejects(generateMusic(prompt), /outcome is unknown/);
+  assert.equal(lastReservation(storage).status, 'reserved');
+  provider.response = Response.json({ status: 'completed', steps: [] });
+  await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
+  for (const data of ['invalid!', 'AAAAA', 'A===', 'AA=A', 'AA==AAAA']) {
+    provider.response = Response.json({ status: 'completed', steps: [{
+      type: 'model_output', content: [{ type: 'audio', mime_type: 'audio/mpeg', data }],
+    }] });
+    await assert.rejects(generateMusic(prompt), { message: 'could not generate your track. try again later.' });
+  }
+
+}
+
+interface MusicProvider {
+  calls: number;
+  tokenCalls: number;
+  expectedModel: string;
+  tokenResponse: () => Promise<Response>;
+  response: Response;
+  providerError?: Error;
+  refundUnavailable: boolean;
+}

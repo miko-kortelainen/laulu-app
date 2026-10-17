@@ -4,6 +4,7 @@ import { userDirectory } from './user-files.js';
 import { MusicGenerationError } from './music.js';
 import { retainUploadSession } from './agent.js';
 import { database } from './database.js';
+import { hasErrorCode, isRecord, isUuid } from './validation.js';
 import { cleanupSongRecovery, musicDirectory, retrySongStorage, SongNotFoundError, SongStorageError, writeAtomic } from './songs.js';
 import { QuotaError, quotaRpc, settleGeneration } from './quotas.js';
 
@@ -29,7 +30,7 @@ export function sessionBusy(userId: string): boolean {
 }
 
 export function operationId(value: unknown): string {
-  if (typeof value !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)) {
+  if (!isUuid(value)) {
     throw new Error('invalid operation reference.');
   }
   return value;
@@ -48,20 +49,9 @@ async function persist(operation: Operation): Promise<void> {
 
 export async function getOperation(userId: string, id: string): Promise<Operation> {
   operationId(id);
-  const { data, error } = await database().from('operations').select('*')
-    .eq('owner_id', userId).eq('id', id).abortSignal(AbortSignal.timeout(10_000)).maybeSingle();
-  if (error) throw unavailable();
-  if (!data) throw new SongNotFoundError('operation not found.');
+  const data = await findOperation(userId, id);
   const running = active.get(id);
-  if (running?.owner_id === userId) {
-    if (pendingPersistence.has(id)) {
-      await persist(running);
-      active.delete(id);
-      pendingPersistence.delete(id);
-      return running;
-    }
-    return running.state === 'running' ? running : { ...running, state: 'running', status: 'saving result...', result: null };
-  }
+  if (running?.owner_id === userId) return runningOperation(running);
   const existing = reconciliation.get(id);
   if (existing) return existing;
   if (sessionBusy(userId)) return data as Operation;
@@ -72,6 +62,24 @@ export async function getOperation(userId: string, id: string): Promise<Operatio
   });
   reconciliation.set(id, recovery);
   return recovery;
+}
+
+async function findOperation(userId: string, id: string): Promise<Operation> {
+  const { data, error } = await database().from('operations').select('*')
+    .eq('owner_id', userId).eq('id', id).abortSignal(AbortSignal.timeout(10_000)).maybeSingle();
+  if (error) throw unavailable();
+  if (!data) throw new SongNotFoundError('operation not found.');
+  return data as Operation;
+}
+
+async function runningOperation(running: Operation): Promise<Operation> {
+  if (pendingPersistence.has(running.id)) {
+    await persist(running);
+    active.delete(running.id);
+    pendingPersistence.delete(running.id);
+    return running;
+  }
+  return running.state === 'running' ? running : { ...running, state: 'running', status: 'saving result...', result: null };
 }
 
 export async function listOperations(userId: string): Promise<Operation[]> {
@@ -155,55 +163,11 @@ async function writeJournal(operation: Operation): Promise<void> {
 }
 
 async function reconcile(operation: Operation): Promise<Operation> {
-  if (operation.kind === 'music' && operation.result?.generationStatus === 'failed') {
-    await settleGeneration(operation.owner_id, operation.id, 'failed');
-  }
-  if (operation.state !== 'queued' && operation.state !== 'running' && operation.state !== 'unknown') return operation;
-  const journal = journalPath(operation);
-  const json = await readFile(journal, 'utf8').catch((error: unknown) => {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
-    throw error;
-  });
-  if (json) {
-    const recovered: unknown = JSON.parse(json);
-    if (!recovered || typeof recovered !== 'object' || !('id' in recovered) || recovered.id !== operation.id ||
-        !('owner_id' in recovered) || recovered.owner_id !== operation.owner_id ||
-        !('kind' in recovered) || recovered.kind !== operation.kind ||
-        !('state' in recovered) || !['completed', 'failed', 'unknown'].includes(String(recovered.state)) ||
-        !('result' in recovered) || !recovered.result || typeof recovered.result !== 'object') {
-      throw new Error('invalid operation recovery file.');
-    }
-    operation.state = recovered.state as Operation['state'];
-    operation.result = recovered.result as Record<string, unknown>;
-    operation.status = '';
-    if (operation.kind === 'music' && operation.result?.generationStatus === 'failed') {
-      await settleGeneration(operation.owner_id, operation.id, 'failed');
-    }
-    await persist(operation);
-    await rm(journal, { force: true });
-    return operation;
-  }
-  if (operation.kind === 'music') {
-    // A saved song or complete local recovery proves completion without another provider call.
-    const track = await retrySongStorage(operation.owner_id, operation.id).catch((error: unknown) => {
-      if (error instanceof SongStorageError) return error;
-      if (error instanceof SongNotFoundError || (error instanceof Error && 'code' in error && error.code === 'ENOENT')) return undefined;
-      throw error;
-    });
-    if (track) {
-      operation.state = track instanceof SongStorageError ? 'failed' : 'completed';
-      operation.result = track instanceof SongStorageError ? operationFailure(track) : { track };
-    } else {
-      const { data, error } = await database().from('usage_reservations').select('generation_status')
-        .eq('user_id', operation.owner_id).eq('id', operation.id).maybeSingle();
-      if (error) throw unavailable();
-      const uncertain = data?.generation_status === 'reserved';
-      operation.state = uncertain ? 'unknown' : 'failed';
-      operation.result = { error: uncertain
-        ? 'generation was interrupted and its outcome is unknown. your allowance remains reserved. no automatic generation retry was made.'
-        : 'request was interrupted. no recoverable audio was found.' };
-    }
-  } else {
+  await settleFailedGeneration(operation);
+  if (!['queued', 'running', 'unknown'].includes(operation.state)) return operation;
+  if (await restoreJournal(operation)) return operation;
+  if (operation.kind === 'music') await reconcileMusic(operation);
+  else {
     operation.state = 'unknown';
     operation.result = { error: 'chat was interrupted by a backend restart. no automatic paid retry was made. send a new message to continue.' };
   }
@@ -212,11 +176,63 @@ async function reconcile(operation: Operation): Promise<Operation> {
   return operation;
 }
 
-export async function recoverOperations(): Promise<void> {
-  for (const id of [...pendingPersistence].slice(0, 100)) {
-    const operation = active.get(id);
-    if (operation) await getOperation(operation.owner_id, id);
+async function settleFailedGeneration(operation: Operation): Promise<void> {
+  if (operation.kind === 'music' && operation.result?.generationStatus === 'failed') {
+    await settleGeneration(operation.owner_id, operation.id, 'failed');
   }
+}
+
+async function restoreJournal(operation: Operation): Promise<boolean> {
+  const journal = journalPath(operation);
+  const json = await readFile(journal, 'utf8').catch((error: unknown) => {
+    if (hasErrorCode(error, 'ENOENT')) return undefined;
+    throw error;
+  });
+  if (!json) return false;
+  const recovered: unknown = JSON.parse(json);
+  if (!validJournal(recovered, operation)) throw new Error('invalid operation recovery file.');
+  operation.state = recovered.state;
+  operation.result = recovered.result;
+  operation.status = '';
+  await settleFailedGeneration(operation);
+  await persist(operation);
+  await rm(journal, { force: true });
+  return true;
+}
+
+function validJournal(value: unknown, operation: Operation): value is Pick<Operation, 'state' | 'result'> {
+  return isRecord(value) && value.id === operation.id && value.owner_id === operation.owner_id &&
+    value.kind === operation.kind && ['completed', 'failed', 'unknown'].some(state => state === value.state) &&
+    isRecord(value.result);
+}
+
+async function reconcileMusic(operation: Operation): Promise<void> {
+  // A saved song or complete local recovery proves completion without another provider call.
+  const track = await retrySongStorage(operation.owner_id, operation.id).catch(recoverableSongError);
+  if (!track) return markInterruptedGeneration(operation);
+  operation.state = track instanceof SongStorageError ? 'failed' : 'completed';
+  operation.result = track instanceof SongStorageError ? operationFailure(track) : { track };
+}
+
+function recoverableSongError(error: unknown): SongStorageError | undefined {
+  if (error instanceof SongStorageError) return error;
+  if (error instanceof SongNotFoundError || hasErrorCode(error, 'ENOENT')) return undefined;
+  throw error;
+}
+
+async function markInterruptedGeneration(operation: Operation): Promise<void> {
+  const { data, error } = await database().from('usage_reservations').select('generation_status')
+    .eq('user_id', operation.owner_id).eq('id', operation.id).maybeSingle();
+  if (error) throw unavailable();
+  const uncertain = data?.generation_status === 'reserved';
+  operation.state = uncertain ? 'unknown' : 'failed';
+  operation.result = { error: uncertain
+    ? 'generation was interrupted and its outcome is unknown. your allowance remains reserved. no automatic generation retry was made.'
+    : 'request was interrupted. no recoverable audio was found.' };
+}
+
+export async function recoverOperations(): Promise<void> {
+  await recoverPendingPersistence();
   const { data, error } = await database().from('operations').select('*')
     .in('state', ['queued', 'running', 'unknown']).order('state').order('created_at').limit(100);
   if (error) throw unavailable();
@@ -229,4 +245,11 @@ export async function recoverOperations(): Promise<void> {
     return () => { busySessions.delete(userId); };
   });
   await quotaRpc('cleanup_operations', {});
+}
+
+async function recoverPendingPersistence(): Promise<void> {
+  for (const id of [...pendingPersistence].slice(0, 100)) {
+    const operation = active.get(id);
+    if (operation) await getOperation(operation.owner_id, id);
+  }
 }

@@ -296,6 +296,8 @@ Unknown provider outcomes retain their allowance charge and never trigger automa
 | `frontend/src/features/` | Chat, authentication, saved songs, profile, and pricing |
 | `frontend/src/components/ui/` | Shared UI components |
 | `backend/src/` | HTTP API, agents, audio, storage, and quotas |
+| `backend/src/validation.ts` | Shared checks for API data, counts, timestamps, IDs, and file errors |
+| `backend/tests/` | Offline regression scenarios and fixtures; `http-fixture.ts` starts isolated HTTP servers |
 | `backend/prompts/` | Chat, song brief, lyrics, and analysis instructions |
 | `supabase/migrations/` | Database migrations |
 

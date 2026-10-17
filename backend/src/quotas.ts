@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { database } from './database.js';
+import { isCount, isRecord, isTimestamp } from './validation.js';
 
 export type PaidOperation = 'chat' | 'analysis' | 'generation';
 
@@ -14,16 +15,10 @@ export class QuotaError extends Error {
   }
 }
 
-function configuredLimit(name: string, fallback: number, maximum = Number.MAX_SAFE_INTEGER): number {
-  const value = process.env[name] === undefined ? fallback : Number(process.env[name]);
-  if (!Number.isSafeInteger(value) || value < 0 || value > maximum || process.env[name]?.trim() === '') {
-    throw new QuotaError(`invalid server setting ${name}.`, 503);
-  }
-  return value;
-}
-
 export function songOutputLimit(): number {
-  const limit = configuredLimit('MAX_GENERATED_SONG_BYTES', 25 * 1024 * 1024);
+  const setting = process.env.MAX_GENERATED_SONG_BYTES;
+  const limit = setting === undefined ? 25 * 1024 * 1024 : Number(setting);
+  if (setting?.trim() === '' || !isCount(limit)) throw new QuotaError('invalid server setting MAX_GENERATED_SONG_BYTES.', 503);
   if (!limit) throw new QuotaError('MAX_GENERATED_SONG_BYTES must be positive.', 503);
   return limit;
 }
@@ -40,21 +35,34 @@ export async function quotaRpc(name: string, parameters: Record<string, unknown>
 }
 
 export function checkAllowance(data: unknown): void {
-  if (data && typeof data === 'object' && 'allowed' in data && data.allowed === false) {
-    if (!('resource' in data) || typeof data.resource !== 'string' ||
-        !['chat', 'analysis', 'generation', 'lyrics', 'storage'].includes(data.resource)) {
-      throw new QuotaError('invalid quota response. operation was not started.', 503);
-    }
-    const resetAt = 'resetAt' in data && typeof data.resetAt === 'string' ? data.resetAt : undefined;
-    if (data.resource !== 'storage' && (!resetAt || !Number.isFinite(Date.parse(resetAt)))) {
-      throw new QuotaError('invalid quota response. operation was not started.', 503);
-    }
-    const global = 'scope' in data && data.scope === 'global';
-    throw new QuotaError(data.resource === 'storage'
-      ? 'song storage allowance exhausted. delete a saved song and try again.'
-      : `${global ? 'app-wide daily' : 'your'} ${data.resource} allowance exhausted. try again after ${resetAt}.`,
-    429, data.resource, resetAt);
+  if (!isRecord(data) || data.allowed !== false) return;
+  const resource = data.resource;
+  if (!validResource(resource)) {
+    throw new QuotaError('invalid quota response. operation was not started.', 503);
   }
+  const resetAt = allowanceReset(data);
+  throw new QuotaError(allowanceMessage({ resource, resetAt, scope: data.scope }), 429, resource, resetAt);
+}
+
+function allowanceReset(data: Record<string, unknown>): string | undefined {
+  const resetAt = typeof data.resetAt === 'string' ? data.resetAt : undefined;
+  if (data.resource !== 'storage' && !isTimestamp(resetAt)) {
+    throw new QuotaError('invalid quota response. operation was not started.', 503);
+  }
+  return resetAt;
+}
+
+function validResource(value: unknown): value is string {
+  return ['chat', 'analysis', 'generation', 'lyrics', 'storage'].some(resource => resource === value);
+}
+
+function allowanceMessage({ resource, resetAt, scope }: { resource: string; resetAt?: string; scope?: unknown }): string {
+  if (resource === 'storage') return 'song storage allowance exhausted. delete a saved song and try again.';
+  return `${scope === 'global' ? 'app-wide daily' : 'your'} ${resource} allowance exhausted. try again after ${resetAt}.`;
+}
+
+function reservationCreated(data: unknown, id: string): boolean {
+  return isRecord(data) && data.allowed === true && data.id === id && data.created === true;
 }
 
 export async function reserveUsage(userId: string, operation: PaidOperation, storageBytes = 0, id: string = randomUUID()): Promise<string> {
@@ -63,8 +71,7 @@ export async function reserveUsage(userId: string, operation: PaidOperation, sto
     p_storage_bytes: storageBytes, p_defaults: {},
   });
   checkAllowance(data);
-  if (!data || typeof data !== 'object' || !('allowed' in data) || data.allowed !== true ||
-      !('id' in data) || data.id !== id || !('created' in data) || data.created !== true) {
+  if (!reservationCreated(data, id)) {
     throw new QuotaError('could not reserve usage. operation was not started.', 503);
   }
   return id;
@@ -78,8 +85,7 @@ export async function reserveLyrics(userId: string): Promise<void> {
   const id = randomUUID();
   const data = await quotaRpc('reserve_lyrics', { p_user_id: userId, p_id: id });
   checkAllowance(data);
-  if (!data || typeof data !== 'object' || !('allowed' in data) || data.allowed !== true ||
-      !('id' in data) || data.id !== id || !('created' in data) || data.created !== true) {
+  if (!reservationCreated(data, id)) {
     throw new QuotaError('could not reserve lyrics usage. operation was not started.', 503);
   }
 }
@@ -98,20 +104,19 @@ export interface Usage {
 
 export async function getUsage(userId: string): Promise<Usage> {
   const data = await quotaRpc('get_usage', { p_user_id: userId, p_defaults: {} });
-  if (!data || typeof data !== 'object' || !('resetAt' in data) || typeof data.resetAt !== 'string' ||
-      !Number.isFinite(Date.parse(data.resetAt))) throw new QuotaError('invalid usage response.', 503);
-  if (!('generationResetAt' in data) || typeof data.generationResetAt !== 'string' ||
-      !Number.isFinite(Date.parse(data.generationResetAt)) || !('plan' in data) ||
-      !['free', 'starter', 'pro', 'ultra'].includes(String(data.plan))) throw new QuotaError('invalid usage response.', 503);
+  if (!isRecord(data) || !validUsagePeriod(data)) throw new QuotaError('invalid usage response.', 503);
   for (const name of ['chat', 'analysis', 'generation', 'lyrics', 'storage'] as const) {
-    const value = name in data ? (data as Record<string, unknown>)[name] : undefined;
-    if (!value || typeof value !== 'object') throw new QuotaError('invalid usage response.', 503);
-    for (const field of name === 'storage' ? ['limit', 'used', 'remaining', 'reserved'] : ['limit', 'used', 'remaining']) {
-      const count = (value as Record<string, unknown>)[field];
-      if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
-        throw new QuotaError('invalid usage response.', 503);
-      }
-    }
+    const fields = name === 'storage' ? ['limit', 'used', 'remaining', 'reserved'] : ['limit', 'used', 'remaining'];
+    if (!validAllowance(data[name], fields)) throw new QuotaError('invalid usage response.', 503);
   }
-  return data as Usage;
+  return data as unknown as Usage;
+}
+
+function validUsagePeriod(data: Record<string, unknown>): boolean {
+  return isTimestamp(data.resetAt) && isTimestamp(data.generationResetAt) &&
+    ['free', 'starter', 'pro', 'ultra'].some(plan => plan === data.plan);
+}
+
+function validAllowance(value: unknown, fields: string[]): boolean {
+  return isRecord(value) && fields.every(field => isCount(value[field]));
 }

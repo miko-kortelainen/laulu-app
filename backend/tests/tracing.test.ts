@@ -76,28 +76,13 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     const result = await agent.invoke('prepare a folk song');
     assert.deepEqual(result.invocationState.musicPrompt, prompt);
     assert.equal(modelCalls, 2);
-    const root = runs.find((run) => run.name === 'musical-copilot');
-    assert.ok(root?.id);
-    assert.equal(root.extra?.metadata?.thread_id, sessionId);
-    const children = runs.filter((run) => run.parent_run_id === root.id);
-    assert.equal(children.filter((run) => run.run_type === 'llm').length, 2);
-    const tool = children.find((run) => run.name === 'update_music_form');
-    assert.ok(tool?.id);
-    assert.deepEqual(tool.inputs, prompt);
-    assert.equal(tool.extra?.metadata?.thread_id, sessionId);
-    assert.equal(updates.get(root.id)?.outputs?.outputs?.stopReason, 'endTurn');
-    assert.equal(updates.get(root.id)?.outputs?.outputs?.lastMessage?.content?.[0]?.text, result.toString());
-    assert.deepEqual(updates.get(tool.id)?.outputs, { status: 'awaiting_confirmation', prompt });
-    for (const model of children.filter((run) => run.run_type === 'llm')) {
-      assert.equal(model.extra?.metadata?.thread_id, sessionId);
-      assert.equal(updates.get(model.id!)?.outputs?.usage_metadata?.total_tokens, 15);
-    }
+    assertChatTrace({ runs, updates, sessionId, prompt, reply: result.toString() });
 
     const revision = await agent.invoke('change only the BPM to 140\n\ncurrent music form:\n' + JSON.stringify({ ...prompt, key: 'D minor' }));
     assert.deepEqual(revision.invocationState.musicPrompt, revisedPrompt);
     assert.equal(modelCalls, 4);
 
-    await assert.rejects(generateMusic('', 'lyria-3.5', sessionId, undefined, undefined, { metadata: { thread_id: sessionId } }), /music prompt/);
+    await assert.rejects(generateMusic({ prompt: '', modelId: 'lyria-3.5', userId: sessionId }, { metadata: { thread_id: sessionId } }), /music prompt/);
     const audio = runs.find((run) => run.name === 'generate_audio');
     assert.ok(audio?.id);
     assert.equal(audio.extra?.metadata?.thread_id, sessionId);
@@ -126,3 +111,37 @@ test('agent traces contain model and tool runs, errors, and conversation metadat
     else process.env.LANGSMITH_TRACING = originalTracing;
   }
 });
+
+function assertChatTrace({ runs, updates, sessionId, prompt, reply }: {
+  runs: Parameters<Client['createRun']>[0][];
+  updates: Map<string, Parameters<Client['updateRun']>[1]>;
+  sessionId: string; prompt: Record<string, string>; reply: string;
+}): void {
+  const root = runs.find((run) => run.name === 'musical-copilot');
+  assert.ok(root?.id);
+  assertThread(root, sessionId);
+  const children = runs.filter((run) => run.parent_run_id === root.id);
+  assert.equal(children.filter((run) => run.run_type === 'llm').length, 2);
+  const tool = children.find((run) => run.name === 'update_music_form');
+  assert.ok(tool?.id);
+  assert.deepEqual(tool.inputs, prompt);
+  assertThread(tool, sessionId);
+  assert.equal(traceOutputs(updates, root.id).outputs.stopReason, 'endTurn');
+  assert.equal(traceOutputs(updates, root.id).outputs.lastMessage.content[0].text, reply);
+  assert.deepEqual(traceOutputs(updates, tool.id), { status: 'awaiting_confirmation', prompt });
+  for (const model of children.filter((run) => run.run_type === 'llm')) {
+    assertThread(model, sessionId);
+    assert.equal(traceOutputs(updates, model.id).usage_metadata.total_tokens, 15);
+  }
+}
+
+function assertThread(run: Parameters<Client['createRun']>[0], sessionId: string): void {
+  assert.equal(run.extra?.metadata?.thread_id, sessionId);
+}
+
+function traceOutputs(updates: Map<string, Parameters<Client['updateRun']>[1]>, id: string | undefined): NonNullable<Parameters<Client['updateRun']>[1]['outputs']> {
+  assert.ok(id);
+  const update = updates.get(id);
+  assert.ok(update?.outputs);
+  return update.outputs;
+}

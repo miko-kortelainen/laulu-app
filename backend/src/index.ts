@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
 import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from './agent.js';
 import { getModelConfig } from './model.js';
+import { isTimestamp, isUuid } from './validation.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
@@ -158,11 +159,15 @@ app.get('/api/music/:filename', async (req, res) => {
   res.send(result.audio);
 });
 
+function validSongCursor(before: string[]): boolean {
+  return before.length === 2 &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(before[0]) &&
+    isTimestamp(before[0]) && isUuid(before[1]);
+}
+
 app.get('/api/songs', async (req, res) => {
   const before = typeof req.query.before === 'string' ? req.query.before.split(',') : [];
-  if (req.query.before !== undefined && (before.length !== 2 ||
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(before[0]) ||
-      !Number.isFinite(Date.parse(before[0])) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(before[1]))) {
+  if (req.query.before !== undefined && !validSongCursor(before)) {
     return res.status(400).json({ error: 'invalid song page. reload your songs and try again.' });
   }
   if (req.query.favourites !== undefined && req.query.favourites !== 'true') {
@@ -353,12 +358,12 @@ app.post('/api/music', requireTerms, locked(async (req: Request, res: Response) 
 
   if (req.body?.operationId !== undefined) {
     const operation = await startOperation(sessionId, req.body.operationId, 'music', async () => ({
-      track: await generateMusic(prompt, model, sessionId, req.body.operationId, title, { metadata: { thread_id: sessionId, ls_model_name: model } }),
+      track: await generateMusic({ prompt, modelId: model, userId: sessionId, operationId: req.body.operationId, title }, { metadata: { thread_id: sessionId, ls_model_name: model } }),
     })).catch((error: unknown) => storageFailure(res, error));
     if (operation) res.status(202).json({ operation });
     return;
   }
-  const track = await generateMusic(prompt, model, sessionId, undefined, title, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
+  const track = await generateMusic({ prompt, modelId: model, userId: sessionId, title }, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
     if (error instanceof QuotaError || error instanceof SongStorageError) return storageFailure(res, error);
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
       .json({ error: error instanceof Error ? error.message : 'music generation failed.' });

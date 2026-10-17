@@ -114,16 +114,16 @@ test('annual checkout and tier changes use yearly prices, previews, and renewal 
     await assert.rejects(createCheckout(userId, 'starter', 'year'), /billing plan is unavailable/);
     interval = 'year';
     assert.equal(await createCheckout(userId, 'starter', 'year'), transactionId);
-    assert.deepEqual(writes.at(-1)?.body.items, [{ price_id: annualPrices[0], quantity: 1 }]);
+    assert.deepEqual(latestBillingWrite(writes).items, [{ price_id: annualPrices[0], quantity: 1 }]);
     await assert.rejects(changeSubscription(userId, 'starter', updatedAt, 'month'), /current billing frequency/);
     const preview = await previewPlanChange(userId, 'starter', 'year');
     assert.equal(preview.billingInterval, 'year');
     assert.equal(preview.recurringTotal, '$99.00');
     assert.equal(preview.effectiveAt, '2027-10-14T12:00:00Z');
     await changeSubscription(userId, 'starter', updatedAt, 'year');
-    assert.equal(writes.at(-1)?.body.proration_billing_mode, 'do_not_bill');
+    assert.equal(latestBillingWrite(writes).proration_billing_mode, 'do_not_bill');
     await changeSubscription(userId, 'ultra', updatedAt, 'year');
-    assert.deepEqual(writes.at(-1)?.body, { items: [{ price_id: annualPrices[2], quantity: 1 }],
+    assert.deepEqual(latestBillingWrite(writes), { items: [{ price_id: annualPrices[2], quantity: 1 }],
       proration_billing_mode: 'prorated_immediately', on_payment_failure: 'prevent_change' });
   } finally {
     globalThis.fetch = originalFetch;
@@ -200,64 +200,13 @@ test('checkout blocks a completed payment until its subscription is confirmed ca
   const price = { id: priceId, status: 'active', billing_cycle: { interval: 'month', frequency: 1 },
     trial_period: null, unit_price: { amount: '900', currency_code: 'USD' }, quantity: { minimum: 1, maximum: 1 } };
   const originalFetch = globalThis.fetch;
-  const scenarios = [
-    { status: 'completed', subscriptionId, mirroredStatus: null, result: 'blocked' },
-    ...['active', 'trialing', 'paused', 'past_due'].map(mirroredStatus =>
-      ({ status: 'completed', subscriptionId, mirroredStatus, result: 'blocked' })),
-    { status: 'completed', subscriptionId, mirroredStatus: 'canceled', result: 'created' },
-    { status: 'paid', subscriptionId: null, mirroredStatus: null, result: 'blocked' },
-    { status: 'completed', subscriptionId: null, mirroredStatus: null, result: 'blocked' },
-    { status: 'draft', subscriptionId: null, mirroredStatus: null, result: 'reused' },
-    { status: 'ready', subscriptionId: null, mirroredStatus: null, result: 'reused' },
-    { status: 'canceled', subscriptionId: null, mirroredStatus: null, result: 'created' },
-    { status: 'completed', subscriptionId, mirroredStatus: 'database-error', result: 'database-error' },
-  ];
+  const scenarios = checkoutScenarios(subscriptionId);
   try {
     for (const scenario of scenarios) {
-      let created = 0;
-      let registered = 0;
-      const transaction = { id: previousId, status: scenario.status, subscription_id: scenario.subscriptionId,
-        items: [{ price, quantity: 1 }], payments: [] };
-      globalThis.fetch = async (input, options) => {
-        const request = new Request(input, options);
-        const url = new URL(request.url);
-        if (url.hostname === 'sandbox-api.paddle.com') {
-          if (url.pathname === `/prices/${priceId}`) return Response.json({ data: price });
-          if (url.pathname === `/transactions/${previousId}`) return Response.json({ data: transaction });
-          assert.equal(url.pathname, '/transactions');
-          assert.equal(request.method, 'POST');
-          created++;
-          return Response.json({ data: { ...transaction, id: nextId, subscription_id: null, status: 'draft' } });
-        }
-        assert.equal(url.hostname, 'offline-billing.supabase.co');
-        if (url.pathname === '/rest/v1/rpc/get_billing') {
-          return Response.json({ plan: null, status: null, paidAccess: false, periodEnd: null, billingInterval: null, scheduledChange: null, transactionId: null });
-        }
-        if (url.pathname === '/rest/v1/paddle_transactions') {
-          assert.equal(url.searchParams.get('user_id'), `eq.${userId}`);
-          assert.equal(url.searchParams.has('subscription_id'), false, 'completed payments must remain visible');
-          return Response.json([{ id: previousId }]);
-        }
-        if (url.pathname === '/rest/v1/paddle_subscriptions') {
-          assert.equal(url.searchParams.get('id'), `eq.${subscriptionId}`);
-          assert.equal(url.searchParams.get('user_id'), `eq.${userId}`);
-          if (scenario.mirroredStatus === 'database-error') return Response.json({ message: 'offline database failure' }, { status: 500 });
-          return Response.json(scenario.mirroredStatus ? [{ status: scenario.mirroredStatus }] : []);
-        }
-        assert.equal(url.pathname, '/rest/v1/rpc/register_paddle_checkout');
-        assert.deepEqual(await request.json(), { p_transaction_id: nextId, p_user_id: userId });
-        registered++;
-        return Response.json(null);
-      };
-      if (scenario.result === 'blocked') {
-        await assert.rejects(createCheckout(userId, 'starter'), /previous payment is processing/);
-      } else if (scenario.result === 'database-error') {
-        await assert.rejects(createCheckout(userId, 'starter'), /could not check previous subscription/);
-      } else {
-        assert.equal(await createCheckout(userId, 'starter'), scenario.result === 'reused' ? previousId : nextId);
-      }
-      assert.equal(created, scenario.result === 'created' ? 1 : 0);
-      assert.equal(registered, created, 'every new transaction is bound before returning it');
+      const calls = configureCheckoutScenario({ scenario, priceId, previousId, nextId, userId, subscriptionId, price });
+      await assertCheckoutOutcome({ result: scenario.result, userId, previousId, nextId });
+      assert.equal(calls.created, scenario.result === 'created' ? 1 : 0);
+      assert.equal(calls.registered, calls.created, 'every new transaction is bound before returning it');
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -298,12 +247,13 @@ test('subscription dispatch maps actual purchased prices, including trialing ite
           const hmac = createHmac('sha256', secret).update(`${timestamp}:${body}`).digest('hex');
           await processPaddleEvent(await getPaddle().webhooks.unmarshal(body, secret, `ts=${timestamp};h1=${hmac}`));
           const write = writes.at(-1);
-          assert.equal(write?.plan, name);
-          assert.equal(write?.billing_interval, interval);
-          assert.equal('song_limit' in (write ?? {}), false, 'allowances come from the plan table');
-          assert.equal(write?.status, status);
-          assert.equal('user_id' in (write ?? {}), false);
-          assert.deepEqual(write?.scheduled_change, { action: 'cancel', effectiveAt: '2026-11-13T12:00:00Z', resumeAt: null });
+          assert.ok(write);
+          assert.equal(write.plan, name);
+          assert.equal(write.billing_interval, interval);
+          assert.equal('song_limit' in write, false, 'allowances come from the plan table');
+          assert.equal(write.status, status);
+          assert.equal('user_id' in write, false);
+          assert.deepEqual(write.scheduled_change, { action: 'cancel', effectiveAt: '2026-11-13T12:00:00Z', resumeAt: null });
         }
       }
     }
@@ -311,3 +261,81 @@ test('subscription dispatch maps actual purchased prices, including trialing ite
     globalThis.fetch = originalFetch;
   }
 });
+
+async function assertCheckoutOutcome({ result, userId, previousId, nextId }: {
+  result: string; userId: string; previousId: string; nextId: string;
+}): Promise<void> {
+  if (result === 'blocked') {
+    await assert.rejects(createCheckout(userId, 'starter'), /previous payment is processing/);
+  } else if (result === 'database-error') {
+    await assert.rejects(createCheckout(userId, 'starter'), /could not check previous subscription/);
+  } else {
+    assert.equal(await createCheckout(userId, 'starter'), result === 'reused' ? previousId : nextId);
+  }
+}
+
+function checkoutScenarios(subscriptionId: string) {
+  return [
+    { status: 'completed', subscriptionId, mirroredStatus: null, result: 'blocked' },
+    ...['active', 'trialing', 'paused', 'past_due'].map(mirroredStatus =>
+      ({ status: 'completed', subscriptionId, mirroredStatus, result: 'blocked' })),
+    { status: 'completed', subscriptionId, mirroredStatus: 'canceled', result: 'created' },
+    { status: 'paid', subscriptionId: null, mirroredStatus: null, result: 'blocked' },
+    { status: 'completed', subscriptionId: null, mirroredStatus: null, result: 'blocked' },
+    { status: 'draft', subscriptionId: null, mirroredStatus: null, result: 'reused' },
+    { status: 'ready', subscriptionId: null, mirroredStatus: null, result: 'reused' },
+    { status: 'canceled', subscriptionId: null, mirroredStatus: null, result: 'created' },
+    { status: 'completed', subscriptionId, mirroredStatus: 'database-error', result: 'database-error' },
+  ];
+}
+
+function configureCheckoutScenario({ scenario, priceId, previousId, nextId, userId, subscriptionId, price }: {
+  scenario: ReturnType<typeof checkoutScenarios>[number]; priceId: string; previousId: string;
+  nextId: string; userId: string; subscriptionId: string; price: unknown;
+}) {
+  const calls = { created: 0, registered: 0 };
+  const transaction = { id: previousId, status: scenario.status, subscription_id: scenario.subscriptionId,
+    items: [{ price, quantity: 1 }], payments: [] };
+  globalThis.fetch = async (input, options) => {
+    const request = new Request(input, options);
+    const url = new URL(request.url);
+    if (url.hostname === 'sandbox-api.paddle.com') {
+      if (url.pathname === `/prices/${priceId}`) return Response.json({ data: price });
+      if (url.pathname === `/transactions/${previousId}`) return Response.json({ data: transaction });
+      assert.equal(url.pathname, '/transactions');
+      assert.equal(request.method, 'POST');
+      calls.created++;
+      return Response.json({ data: { ...transaction, id: nextId, subscription_id: null, status: 'draft' } });
+    }
+    assert.equal(url.hostname, 'offline-billing.supabase.co');
+    if (url.pathname === '/rest/v1/rpc/get_billing') {
+      return Response.json({ plan: null, status: null, paidAccess: false, periodEnd: null, billingInterval: null, scheduledChange: null, transactionId: null });
+    }
+    if (url.pathname === '/rest/v1/paddle_transactions') {
+      assert.equal(url.searchParams.get('user_id'), `eq.${userId}`);
+      assert.equal(url.searchParams.has('subscription_id'), false, 'completed payments must remain visible');
+      return Response.json([{ id: previousId }]);
+    }
+    if (url.pathname === '/rest/v1/paddle_subscriptions') return subscriptionMirror({ url, userId, subscriptionId, scenario });
+    assert.equal(url.pathname, '/rest/v1/rpc/register_paddle_checkout');
+    assert.deepEqual(await request.json(), { p_transaction_id: nextId, p_user_id: userId });
+    calls.registered++;
+    return Response.json(null);
+  };
+  return calls;
+}
+
+function subscriptionMirror({ url, userId, subscriptionId, scenario }: {
+  url: URL; userId: string; subscriptionId: string; scenario: ReturnType<typeof checkoutScenarios>[number];
+}): Response {
+  assert.equal(url.searchParams.get('id'), `eq.${subscriptionId}`);
+  assert.equal(url.searchParams.get('user_id'), `eq.${userId}`);
+  if (scenario.mirroredStatus === 'database-error') return Response.json({ message: 'offline database failure' }, { status: 500 });
+  return Response.json(scenario.mirroredStatus ? [{ status: scenario.mirroredStatus }] : []);
+}
+
+function latestBillingWrite(writes: { body: Record<string, unknown> }[]): Record<string, unknown> {
+  const write = writes.at(-1);
+  assert.ok(write);
+  return write.body;
+}

@@ -70,27 +70,7 @@ export function getOrCreateAgent(sessionId: string): Agent {
     retryStrategy: null,
     conversationManager,
   });
-  agent.addHook(BeforeModelCallEvent, async event => {
-    const calls = typeof event.invocationState.chatModelCalls === 'number' ? event.invocationState.chatModelCalls : 0;
-    const usage = event.agent.metrics.latestAgentInvocation?.usage;
-    const outputRemaining = chatOutputTokens - (usage?.outputTokens ?? 0);
-    let input: number | undefined;
-    let totalRemaining: number;
-    do {
-      input = await model.countTokens(agent.messages, {
-        systemPrompt: agent.systemPrompt, toolSpecs: agent.tools.map(tool => tool.toolSpec),
-      }).catch(() => undefined);
-      totalRemaining = chatTotalTokens - (usage?.totalTokens ?? 0) - (input ?? chatTotalTokens);
-    } while (calls < 3 && outputRemaining > 0 && input !== undefined && Number.isFinite(input) && input >= 0 &&
-      totalRemaining < outputRemaining && conversationManager.reduce({ agent, model }));
-    if (calls >= 3 || input === undefined || !Number.isFinite(input) || input < 0 || outputRemaining < 1 || totalRemaining < 1) {
-      event.cancel = 'this request reached its token budget. shorten your message or start a new chat to continue.';
-      return;
-    }
-    event.invocationState.chatModelCalls = calls + 1;
-    // shortcut: input sizing is estimated; use native token counting when Nebius supports it.
-    model.updateConfig({ maxTokens: Math.min(chatOutputTokens, outputRemaining, Math.floor(totalRemaining)) });
-  });
+  configureTokenBudget(agent, model, conversationManager);
 
   const session: AgentSession = existing ?? { activeInvocations: 0 };
   session.agent = agent;
@@ -119,36 +99,77 @@ export function getOrCreateAgent(sessionId: string): Agent {
   return agent;
 }
 
+function canInvokeModel({ calls, outputRemaining, input }: { calls: number; outputRemaining: number; input: number | undefined }): boolean {
+  return calls < 3 && outputRemaining >= 1 && input !== undefined && Number.isFinite(input) && input >= 0;
+}
+
+function shouldReduceContext(budget: { calls: number; outputRemaining: number; input: number | undefined; totalRemaining: number }): boolean {
+  return canInvokeModel(budget) && budget.totalRemaining < budget.outputRemaining;
+}
+
+function invocationBudget(event: BeforeModelCallEvent): { calls: number; outputRemaining: number; usedTokens: number } {
+  const usage = event.agent.metrics.latestAgentInvocation?.usage;
+  return {
+    calls: typeof event.invocationState.chatModelCalls === 'number' ? event.invocationState.chatModelCalls : 0,
+    outputRemaining: chatOutputTokens - (usage?.outputTokens ?? 0),
+    usedTokens: usage?.totalTokens ?? 0,
+  };
+}
+
+function configureTokenBudget(agent: Agent, model: ReturnType<typeof createNebiusModel>,
+  conversationManager: SlidingWindowConversationManager): void {
+  agent.addHook(BeforeModelCallEvent, async event => {
+    const { calls, outputRemaining, usedTokens } = invocationBudget(event);
+    let input: number | undefined;
+    let totalRemaining: number;
+    do {
+      input = await model.countTokens(agent.messages, {
+        systemPrompt: agent.systemPrompt, toolSpecs: agent.tools.map(tool => tool.toolSpec),
+      }).catch(() => undefined);
+      totalRemaining = chatTotalTokens - usedTokens - (input ?? chatTotalTokens);
+    } while (shouldReduceContext({ calls, outputRemaining, input, totalRemaining }) && conversationManager.reduce({ agent, model }));
+    if (!canInvokeModel({ calls, outputRemaining, input }) || totalRemaining < 1) {
+      event.cancel = 'this request reached its token budget. shorten your message or start a new chat to continue.';
+      return;
+    }
+    event.invocationState.chatModelCalls = calls + 1;
+    // shortcut: input sizing is estimated; use native token counting when Nebius supports it.
+    model.updateConfig({ maxTokens: Math.min(chatOutputTokens, outputRemaining, Math.floor(totalRemaining)) });
+  });
+}
+
 export async function endUploadSession(sessionId: string): Promise<void> {
   const session = agents.get(sessionId);
-  if (session?.closing) throw new Error('wait for the session cleanup to finish.');
-  if (session?.activeInvocations) {
+  if (!session) return clearUploadedAudio(sessionId);
+  if (session.closing) throw new Error('wait for the session cleanup to finish.');
+  if (session.activeInvocations) {
     session.uploadsEnded = true;
     return;
   }
-  const releaseUploads = session?.releaseUploads;
-  if (session) session.closing = true;
+  const releaseUploads = session.releaseUploads;
+  session.closing = true;
   releaseUploads?.();
   await clearUploadedAudio(sessionId).catch((error: unknown) => {
-    if (session) {
-      if (releaseUploads) session.releaseUploads = retainLocalAudio(userDirectory(audioDirectory, sessionId));
-      session.uploadsEnded = false;
-      session.closing = false;
-      scheduleExpiration(sessionId, session);
-    }
+    restoreUploadSession({ sessionId, session, hadUploads: !!releaseUploads });
     throw error;
   });
-  if (session) {
-    session.releaseUploads = undefined;
-    session.uploadsEnded = false;
-    session.closing = false;
-  }
+  session.releaseUploads = undefined;
+  session.uploadsEnded = false;
+  session.closing = false;
+}
+
+function restoreUploadSession({ sessionId, session, hadUploads }: { sessionId: string; session: AgentSession; hadUploads: boolean }): void {
+  if (hadUploads) session.releaseUploads = retainLocalAudio(userDirectory(audioDirectory, sessionId));
+  session.uploadsEnded = false;
+  session.closing = false;
+  scheduleExpiration(sessionId, session);
 }
 
 export async function resetAgentSession(sessionId: string): Promise<void> {
   const session = agents.get(sessionId);
-  if (session?.activeInvocations || session?.closing) throw new Error('wait for the current action to finish.');
-  clearTimeout(session?.idleTimer);
-  if (session?.releaseUploads) await endUploadSession(sessionId);
+  if (!session) return;
+  if (session.activeInvocations || session.closing) throw new Error('wait for the current action to finish.');
+  clearTimeout(session.idleTimer);
+  if (session.releaseUploads) await endUploadSession(sessionId);
   agents.delete(sessionId);
 }
