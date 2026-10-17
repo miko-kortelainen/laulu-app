@@ -18,6 +18,10 @@ export function getModelId(): string {
   return (process.env.NEBIUS_MODEL || 'nvidia/nemotron-3-super-120b-a12b').trim();
 }
 
+export function getLyricsModelId(): string {
+  return process.env.LYRICS_MODEL?.trim() || 'Qwen/Qwen3.8-27B';
+}
+
 export function getModelConfig() {
   return {
     baseURL: getAiGateway('nebius').baseURL,

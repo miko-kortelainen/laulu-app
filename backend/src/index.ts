@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
 import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from './agent.js';
-import { getModelConfig } from './model.js';
+import { getLyricsModelId, getModelConfig } from './model.js';
 import { isTimestamp, isUuid } from './validation.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
@@ -404,6 +404,7 @@ if (process.env.NODE_ENV !== 'test') {
     const config = getModelConfig();
     console.log(`Backend running on http://localhost:${PORT}`);
     console.log(`Nebius Model: ${config.model}`);
+    console.log(`Lyrics Model: ${getLyricsModelId()}`);
     console.log(`AI Gateway: ${config.baseURL}`);
   });
 }

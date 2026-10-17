@@ -6,8 +6,26 @@ import { Client } from 'langsmith';
 import { getChatContext, getOrCreateAgent, resetAgentSession } from '../src/agent.js';
 import { getModelId } from '../src/model.js';
 import { updateMusicFormTool } from '../src/music.js';
+import { countLyricCharacters, countLyricLines, lyricSections, validateLyricOutput } from '../src/lyrics.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 import { configureTestQuotas } from './quota-fixture.js';
+
+test('lyric contract counts sections without enforcing ambiguous section requirements', () => {
+  const valid = '[Verse 1]\n' + Array(8).fill('Keep This Exact Line.').join('\n') +
+    '\n\n[chorus]\n' + Array(4).fill('a short hook.').join('\n');
+  assert.equal(countLyricCharacters(valid), valid.length);
+  assert.equal(countLyricLines(valid), 12);
+  assert.deepEqual(lyricSections(valid).map(({ name, lines }) => [name, lines.length]), [['verse', 8], ['chorus', 4]]);
+  assert.equal(validateLyricOutput(valid), valid, 'valid supplied-style text survives unchanged');
+  assert.equal(validateLyricOutput('No Tags Here\nKeep Me'), 'No Tags Here\nKeep Me', 'untagged text stays advisory');
+  assert.equal(validateLyricOutput('[bridge]\nonly one line.'), '[bridge]\nonly one line.');
+  const partialVerse = '[verse]\nline.\nline.\nline.';
+  assert.equal(validateLyricOutput(partialVerse), partialVerse, 'usable partial sections remain accepted');
+  const customChorus = '[chorus]\nline.\nline.';
+  assert.equal(validateLyricOutput(customChorus), customChorus, 'custom section lengths remain advisory');
+  assert.throws(() => validateLyricOutput(' \n\t '), /generated lyrics are empty/);
+  assert.throws(() => validateLyricOutput('a'.repeat(3_001)), /exceed 3,000 characters/);
+});
 
 test('only lyric requests use the Qwen fallback, preserve form values, and commit completed lyrics', { timeout: 15_000 }, async () => {
   const originalFetch = globalThis.fetch;
@@ -32,6 +50,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
   const requests: { model: string; max_completion_tokens: number; messages: { role: string; content: string }[] }[] = [];
   let lyricRequest: string | undefined = 'write lyrics about waiting for someone';
   let failure: 'http' | 'empty' | 'truncated' | 'truncatedEmpty' | 'long' | undefined;
+  let lyricOutput: string | undefined;
   let currentBrief = brief;
   let mainCalls = 0;
   let mainTurnCycle = 2;
@@ -73,7 +92,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
           function: { name: 'update_music_form', arguments: JSON.stringify({ ...currentBrief, lyricRequest }) },
         })) }
       : { role: 'assistant', content: isLyrics
-          ? failure === 'empty' || failure === 'truncatedEmpty' ? '' : failure === 'long' ? 'a'.repeat(10_001) : lyricRequest?.startsWith('change') ? revisedLyrics : lyrics
+          ? failure === 'empty' || failure === 'truncatedEmpty' ? '' : failure === 'long' ? 'a'.repeat(10_001) : lyricOutput ?? (lyricRequest?.startsWith('change') ? revisedLyrics : lyrics)
           : 'the form is updated.' };
     const base = { id: `completion-${requests.length}`, object: 'chat.completion.chunk', created: 0, model: request.model };
     const chunks = [
@@ -116,6 +135,36 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     const revision = await agent.invoke(lyricRequest);
     assert.deepEqual(revision.invocationState.musicPrompt, { ...currentBrief, lyrics: revisedLyrics });
 
+    const savedBrief = currentBrief;
+    const preservedVerse = '[Verse 1]\r\n' + Array(6).fill('Keep This EXACT Line!').join('\r\n');
+    const fourLineChorus = '[chorus]\n' + Array(4).fill('a short hook.').join('\n');
+    const sixLineChorus = '[chorus]\n' + Array(6).fill('a new hook.').join('\n');
+    const longTaggedLyrics = '[verse]\n' + Array(8).fill('v'.repeat(300)).join('\n') +
+      '\n[chorus]\n' + Array(4).fill('c'.repeat(200)).join('\n');
+    assert.ok(longTaggedLyrics.length > 3_000);
+    for (const example of [
+      { request: 'change only the chorus, preserve the verse', output: preservedVerse + '\n' + fourLineChorus },
+      { request: 'write a six-line chorus', output: preservedVerse + '\n' + sixLineChorus },
+      { request: 'preserve verse, chorus 6 lines', supplied: lyrics, output: lyrics.split('\n[chorus]')[0] + '\n' + sixLineChorus },
+      { request: 'kirjoita kuuden rivin kertosäe', output: preservedVerse + '\n' + sixLineChorus },
+      { request: 'write lyrics about waiting', output: '[verse]\nline.\nline.\nline.', truncated: true },
+      { request: 'write lyrics about waiting', output: longTaggedLyrics },
+    ]) {
+      currentBrief = { ...savedBrief, lyrics: example.supplied ?? preservedVerse + '\n' + fourLineChorus };
+      const invocationState = { musicPrompt: currentBrief, userId: sessionId };
+      lyricRequest = example.request;
+      lyricOutput = example.output;
+      failure = example.truncated ? 'truncated' : undefined;
+      const requestCount = requests.length;
+      await updateMusicFormTool.invoke({ ...currentBrief, lyricRequest }, { invocationState } as ToolContext);
+      assert.deepEqual(invocationState.musicPrompt, { ...currentBrief, lyrics: example.output.slice(0, 3_000) }, example.request);
+      assert.equal(requests.length - requestCount, 1, 'accept the output without another lyric attempt');
+    }
+    currentBrief = savedBrief;
+    lyricRequest = 'change only the chorus, preserve the verse';
+    lyricOutput = undefined;
+    failure = undefined;
+
     // Usable text is accepted once, even when it exceeds the character or token limit.
     for (const mode of ['long', 'truncated'] as const) {
       const invocationState = { musicPrompt: currentBrief, userId: sessionId };
@@ -132,7 +181,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
       const invocationState = { musicPrompt: currentBrief, userId: sessionId };
       failure = mode;
       await assert.rejects(updateMusicFormTool.invoke({ ...currentBrief, lyricRequest }, { invocationState } as ToolContext),
-        mode === 'http' ? /offline lyric failure/ : mode === 'empty' ? /music prompt/ : /maximum token limit/);
+        mode === 'http' ? /offline lyric failure/ : mode === 'empty' ? /generated lyrics are empty/ : /maximum token limit/);
       assert.deepEqual(invocationState.musicPrompt, currentBrief);
       const requestCount = requests.length;
       await assert.rejects(updateMusicFormTool.invoke({ ...currentBrief, lyricRequest }, { invocationState } as ToolContext),

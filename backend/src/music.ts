@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { tool, type ToolContext } from '@strands-agents/sdk';
 import { traceable } from 'langsmith/traceable';
 import { readFileSync } from 'node:fs';
-import { generateLyrics } from './lyrics.js';
+import { generateLyrics, validateLyricOutput } from './lyrics.js';
 import { getAiGateway } from './gateway.js';
 import { isCount, isRecord } from './validation.js';
 import { userDirectory } from './user-files.js';
@@ -112,7 +112,8 @@ async function applyLyricRequest(prompt: Record<string, string>, value: unknown,
     if (error instanceof QuotaError) context.invocationState.quotaError = error;
     throw error;
   });
-  prompt.lyrics = validateMusicPrompt(lyrics.slice(0, 3_000));
+  // shortcut: preserve usable partial lyrics, even mid-section; change only with an explicit replacement policy.
+  prompt.lyrics = validateLyricOutput(lyrics.slice(0, 3_000));
   validateMusicPrompt(Object.values(prompt).join('\n\n'));
 }
 
