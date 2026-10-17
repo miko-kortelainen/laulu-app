@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>lyric evaluator</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main>
+    <h1>lyric evaluator</h1>
+    <p id="setup" hidden></p>
+    <form id="review-form">
+      <fieldset id="fields">
+        <label for="brief">brief</label>
+        <textarea id="brief" name="brief" rows="3" maxlength="10000" required></textarea>
+        <label for="request">request</label>
+        <textarea id="request" name="request" rows="2" maxlength="10000" required></textarea>
+        <label for="lyrics">lyrics</label>
+        <textarea id="lyrics" name="lyrics" rows="13" maxlength="30000" required spellcheck="false"></textarea>
+        <label for="originalLyrics">original lyrics (optional)</label>
+        <textarea id="originalLyrics" name="originalLyrics" rows="6" maxlength="30000" spellcheck="false"></textarea>
+      </fieldset>
+      <button id="submit" type="submit">evaluate</button>
+      <p id="status" role="status"></p>
+      <p id="error" role="alert"></p>
+    </form>
+    <section class="review" aria-busy="false">
+      <h2>result</h2>
+      <div id="empty">no result yet.</div>
+      <div id="results" hidden>
+        <p>overall: <strong id="overall-score"></strong> / 5</p>
+        <p id="review-context"></p>
+        <div id="scores"></div>
+        <h3>strengths</h3>
+        <ul id="strengths"></ul>
+        <h3>improvements</h3>
+        <ol id="improvements"></ol>
+        <p id="save-status"></p>
+        <a id="langsmith-link" target="_blank" rel="noopener noreferrer" hidden>langsmith</a>
+        <button id="download" type="button">download json</button>
+      </div>
+      <p id="configuration"></p>
+    </section>
+  </main>
+</body>
+</html>

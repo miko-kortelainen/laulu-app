@@ -161,7 +161,7 @@ Before each call, it checks the estimated input size and the reported usage, the
 It trims older history when needed to leave room for the reply, preserving the latest request and complete tool pairs.
 Requests stop if they still cannot fit after history trimming, or if the output or model-call budget is exhausted.
 Nebius input sizing uses the SDK estimate. This check reduces overshoot but does not guarantee an exact billed-token ceiling.
-The separate Qwen lyrics agent keeps its 8,192-token completion budget, including reasoning, to preserve complete lyrics.
+The separate lyrics agent has a 16,384-token completion budget, including reasoning, to preserve complete lyrics.
 
 ### Configure sandbox pricing and checkout
 

@@ -72,7 +72,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     const request = await httpRequest.json();
     requests.push(request);
     const isLyrics = request.model === 'Qwen/Qwen3.8-27B';
-    if (isLyrics) assert.equal(request.max_completion_tokens, 8192);
+    if (isLyrics) assert.equal(request.max_completion_tokens, 16_384);
     else assert.ok(request.max_completion_tokens > 0 && request.max_completion_tokens <= 4096);
     const toolCall = !isLyrics && (looping || ++mainCalls % mainTurnCycle !== 0);
     if (isLyrics) {
