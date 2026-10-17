@@ -84,7 +84,8 @@ It adds `songs.title`, sets existing song titles to `untitled`, and updates the 
 
 Apply [the song favourites migration](supabase/migrations/20261015233700_song_favourites.sql) before deploying favourites.
 It stores each song's favourite state on the account and keeps older recovery metadata compatible.
-The favourites tab filters the latest 100 saved songs shown in the library.
+The library loads 50 songs at a time, newest first. Use **show more** to browse older songs.
+The favourites tab searches all saved songs and loads them in the same way.
 
 ### Configure usage quotas
 

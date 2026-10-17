@@ -13,12 +13,14 @@ const infoClass = "w-full min-w-0 resize-y rounded-lg border border-white/15 bg-
 
 export function SongsPage() {
   const { songs, visibleSongs, activeTab, selectTab, favouritingId, favouriteError, toggleFavourite,
-    loading, error, refresh, selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
+    loading, loadingMore, hasMore, pageError, loadMore, error, refresh,
+    selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
     recoveryIds, savingId, saveError, saveSong } = useSongs();
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const favouriteGradientId = useId();
-  const busy = loading || deletingId !== undefined || savingId !== undefined || favouritingId !== undefined;
+  const actionPending = loadingMore || deletingId !== undefined || savingId !== undefined || favouritingId !== undefined;
+  const busy = loading || actionPending;
   const selectedSong = visibleSongs?.find((song) => song.id === selectedSongId);
   const pendingDeleteSong = songs?.find((song) => song.id === pendingDeleteId);
   const songPrompt = selectedSong && getSongPrompt(selectedSong);
@@ -34,7 +36,7 @@ export function SongsPage() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 ref={titleRef} id="songs-title" tabIndex={-1} className="text-2xl font-semibold">my songs</h1>
-            <p className="mt-1 text-sm text-zinc-400">your latest 100 saved songs, newest first</p>
+            <p className="mt-1 text-sm text-zinc-400">your saved songs, newest first</p>
           </div>
           {error && <button type="button" onClick={refresh} disabled={busy} className={buttonClass}>
             try again
@@ -52,7 +54,7 @@ export function SongsPage() {
           {(["all songs", "favourites"] as const).map((tab) => (
             <button key={tab} id={tab === "all songs" ? "all-songs-tab" : "favourites-tab"} type="button" role="tab"
               aria-selected={activeTab === tab} aria-controls="songs-panel" tabIndex={activeTab === tab ? 0 : -1}
-              disabled={busy} onClick={() => selectTab(tab)}
+              disabled={actionPending} onClick={() => selectTab(tab)}
               className="min-h-11 border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 aria-selected:border-zinc-100 aria-selected:text-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
               {tab}
             </button>
@@ -84,7 +86,7 @@ export function SongsPage() {
         )}
         <div id="songs-panel" role="tabpanel" aria-labelledby={activeTab === "all songs" ? "all-songs-tab" : "favourites-tab"} tabIndex={0}
           className="space-y-4 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400">
-          {visibleSongs?.length === 0 && (activeTab === "favourites" ? (
+          {!loading && visibleSongs?.length === 0 && (activeTab === "favourites" ? (
             <p className="text-sm text-zinc-400">no favourites yet. use the heart to add a song.</p>
           ) : (
             <p className="text-sm text-zinc-400">no saved songs yet. <Link to="/" className="text-zinc-100 underline underline-offset-4">create a song in chat</Link></p>
@@ -158,6 +160,14 @@ export function SongsPage() {
               </li>
             ))}
           </ul>
+          {!loading && songs && songs.length > 0 && <div className="space-y-3">
+            <button type="button" disabled={busy || !hasMore} onClick={() => void loadMore()}
+              aria-controls="songs-panel" className={cn(buttonClass, "w-full")}>
+              {loadingMore ? "loading more songs..." : hasMore ? "show more" : "end of list"}
+            </button>
+            <p role="status" className="text-sm text-zinc-400">songs shown: {visibleSongs?.length}</p>
+          </div>}
+          {pageError && <p role="alert" className="text-sm text-red-300">{pageError}</p>}
         </div>
       </section>
       <aside id="song-info" aria-labelledby="song-info-heading"

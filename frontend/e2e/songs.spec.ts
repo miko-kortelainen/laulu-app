@@ -10,18 +10,133 @@ const songs = [
     url: "/api/music/22222222-2222-4222-8222-222222222222.mp3", sizeBytes: 16044, isFavourite: false },
 ];
 
+const librarySongs = Array.from({ length: 105 }, (_, index) => {
+  const id = `30000000-0000-4000-8000-${String(105 - index).padStart(12, "0")}`;
+  return { ...songs[0], id, title: `library song ${index + 1}`, url: `/api/music/${id}.mp3`,
+    createdAt: "2026-10-17T10:00:00.123456Z", isFavourite: index >= 50 };
+});
+
 test.describe("my songs", () => {
   test.beforeEach(async ({ page }) => {
-    await page.route(/\/api\/songs$/, (route) => fulfillJson(route, { songs }));
+    await page.route(/\/api\/songs(?:\?.*)?$/, (route) => fulfillJson(route, { songs }));
     await page.route(/\/api\/songs\/recovery$/, (route) => fulfillJson(route, { songIds: [] }));
     await page.route(/\/api\/music\/[^/]+\.mp3$/, (route) => route.fulfill({ contentType: "audio/wav", body: wavBuffer() }));
+  });
+
+  test("shows 50 songs per request and loads older pages through the full-width show more button", async ({ authedPage: page }) => {
+    const cursors = [null, `${librarySongs[49].createdAt},${librarySongs[49].id}`, `${librarySongs[99].createdAt},${librarySongs[99].id}`];
+    const pages = [librarySongs.slice(0, 50), librarySongs.slice(50, 100), librarySongs.slice(100)];
+    const requests: (string | null)[] = [];
+    await page.route(/\/api\/songs(?:\?.*)?$/, (route) => {
+      expect(route.request().headers().authorization).toMatch(/^Bearer /);
+      const before = new URL(route.request().url()).searchParams.get("before");
+      const index = cursors.indexOf(before);
+      expect(index).toBeGreaterThanOrEqual(0);
+      requests.push(before);
+      return fulfillJson(route, { songs: pages[index] });
+    });
+    await page.goto("/songs");
+    const items = page.getByRole("list", { name: "saved songs", exact: true }).getByRole("listitem");
+    await expect(items).toHaveCount(50);
+    await expect(items.first()).toContainText("library song 1");
+    await expect(items.last()).toContainText("library song 50");
+    await expect(page.getByRole("button", { name: "listen library song 51", exact: true })).toHaveCount(0);
+    const showMore = page.getByRole("button", { name: "show more", exact: true });
+    for (const width of [1280, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      expect(await showMore.evaluate(button => Math.abs(button.getBoundingClientRect().width - button.parentElement!.clientWidth))).toBeLessThanOrEqual(1);
+    }
+    await showMore.click();
+    await expect(items).toHaveCount(100);
+    await expect(items.last()).toContainText("library song 100");
+    await showMore.click();
+    await expect(items).toHaveCount(105);
+    await expect(items.last()).toContainText("library song 105");
+    await expect(page.getByRole("button", { name: "end of list", exact: true })).toBeDisabled();
+    expect(requests).toEqual(cursors);
+  });
+
+  test("preserves loaded songs and the selected song while retrying a failed or invalid next page", async ({ authedPage: page }) => {
+    let mode = "offline";
+    let finishPage: (() => void) | undefined;
+    const cursors: string[] = [];
+    await page.route(/\/api\/songs(?:\?.*)?$/, async (route) => {
+      const before = new URL(route.request().url()).searchParams.get("before");
+      if (!before) return fulfillJson(route, { songs: librarySongs.slice(0, 50) });
+      cursors.push(before);
+      if (mode === "offline") {
+        await new Promise<void>(resolve => { finishPage = resolve; });
+        return route.fulfill({ status: 503 });
+      }
+      return fulfillJson(route, { songs: mode === "invalid" ? librarySongs.slice(50, 101) : librarySongs.slice(50, 52) });
+    });
+    await page.goto("/songs");
+    const items = page.getByRole("list", { name: "saved songs", exact: true }).getByRole("listitem");
+    await expect(items).toHaveCount(50);
+    await page.getByRole("button", { name: "listen library song 1", exact: true }).click();
+    const showMore = page.getByRole("button", { name: "show more", exact: true });
+    await showMore.click();
+    await expect(page.getByRole("button", { name: "loading more songs...", exact: true })).toBeDisabled();
+    await expect(page.getByRole("tab", { name: "favourites", exact: true })).toBeDisabled();
+    await expect.poll(() => Boolean(finishPage)).toBe(true);
+    finishPage!();
+    await expect(page.getByRole("alert")).toContainText("could not load your songs");
+    await expect(items).toHaveCount(50);
+    await expect(page.getByRole("button", { name: "close library song 1", exact: true })).toBeVisible();
+    mode = "invalid";
+    await showMore.click();
+    await expect(page.getByRole("alert")).toContainText("invalid songs response");
+    await expect(items).toHaveCount(50);
+    mode = "valid";
+    await showMore.click();
+    await expect(items).toHaveCount(52);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "close library song 1", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "end of list", exact: true })).toBeDisabled();
+    expect(cursors).toEqual(Array(3).fill(`${librarySongs[49].createdAt},${librarySongs[49].id}`));
+  });
+
+  test("finds and pages favourites beyond the first page of all songs and resets the cursor on tab changes", async ({ authedPage: page }) => {
+    const requests: { favourites: boolean; before: string | null }[] = [];
+    const favouriteCursor = `${librarySongs[99].createdAt},${librarySongs[99].id}`;
+    await page.route(/\/api\/songs(?:\?.*)?$/, (route) => {
+      const query = new URL(route.request().url()).searchParams;
+      const favourites = query.get("favourites") === "true";
+      const before = query.get("before");
+      requests.push({ favourites, before });
+      if (favourites) {
+        expect(before === null || before === favouriteCursor).toBe(true);
+        return fulfillJson(route, { songs: before ? librarySongs.slice(100) : librarySongs.slice(50, 100) });
+      }
+      expect(before).toBeNull();
+      return fulfillJson(route, { songs: librarySongs.slice(0, 50) });
+    });
+    await page.goto("/songs");
+    const items = page.getByRole("list", { name: "saved songs", exact: true }).getByRole("listitem");
+    await expect(items).toHaveCount(50);
+    await page.getByRole("tab", { name: "favourites", exact: true }).click();
+    await expect(items.first()).toContainText("library song 51");
+    await expect(items).toHaveCount(50);
+    await page.getByRole("button", { name: "show more", exact: true }).click();
+    await expect(items).toHaveCount(55);
+    await expect(items.last()).toContainText("library song 105");
+    await expect(page.getByRole("button", { name: "end of list", exact: true })).toBeDisabled();
+    await page.getByRole("tab", { name: "all songs", exact: true }).click();
+    await expect(items.first()).toContainText("library song 1");
+    await expect(items).toHaveCount(50);
+    await expect(page.getByRole("button", { name: "show more", exact: true })).toBeEnabled();
+    expect(requests).toEqual([
+      { favourites: false, before: null }, { favourites: true, before: null },
+      { favourites: true, before: favouriteCursor }, { favourites: false, before: null },
+    ]);
   });
 
   test("lists songs, favourites one, and opens its details", async ({ authedPage: page }) => {
     let favourite = false;
     let fail = true;
-    await page.route(/\/api\/songs$/, (route) => fulfillJson(route, {
-      songs: songs.map((song) => ({ ...song, isFavourite: song.title === "quiet morning" ? favourite : song.isFavourite })),
+    await page.route(/\/api\/songs(?:\?.*)?$/, (route) => fulfillJson(route, {
+      songs: songs.map((song) => ({ ...song, isFavourite: song.title === "quiet morning" ? favourite : song.isFavourite }))
+        .filter((song) => !new URL(route.request().url()).searchParams.has("favourites") || song.isFavourite),
     }));
     await page.route(/\/api\/songs\/recovery$/, (route) => fulfillJson(route, { songIds: [] }));
     await page.route(/\/api\/songs\/[^/]+\/favourite$/, async (route) => {
@@ -81,7 +196,7 @@ test.describe("my songs", () => {
   });
 
   test("shows the empty state with no saved songs", async ({ authedPage: page }) => {
-    await page.route(/\/api\/songs$/, (route) => fulfillJson(route, { songs: [] }));
+    await page.route(/\/api\/songs(?:\?.*)?$/, (route) => fulfillJson(route, { songs: [] }));
     await page.route(/\/api\/songs\/recovery$/, (route) => fulfillJson(route, { songIds: [] }));
 
     await page.goto("/songs");
@@ -92,7 +207,7 @@ test.describe("my songs", () => {
 
   test("rejects failed or invalid lists and recovers with the visible retry action", async ({ authedPage: page }) => {
     let mode = "offline";
-    await page.route(/\/api\/songs$/, (route) => mode === "offline" ? route.fulfill({ status: 503 })
+    await page.route(/\/api\/songs(?:\?.*)?$/, (route) => mode === "offline" ? route.fulfill({ status: 503 })
       : fulfillJson(route, { songs: mode === "invalid" ? [{ ...songs[0], url: "https://untrusted.invalid/audio" }] : songs }));
     await page.goto("/songs");
     await expect(page.getByRole("alert")).toContainText("could not load your songs");
@@ -111,7 +226,7 @@ test.describe("my songs", () => {
     let fail = true;
     let deletes = 0;
     let finishDelete = () => {};
-    await page.route(/\/api\/songs$/, (route) => fulfillJson(route, { songs: remaining }));
+    await page.route(/\/api\/songs(?:\?.*)?$/, (route) => fulfillJson(route, { songs: remaining }));
     await page.route(new RegExp(`/api/songs/${songs[1].id}$`), async (route) => {
       expect(route.request().method()).toBe("DELETE");
       expect(route.request().headers().authorization).toMatch(/^Bearer /);
@@ -166,7 +281,7 @@ test.describe("my songs", () => {
     let generations = 0;
     let retries = 0;
     let finishSave = () => {};
-    await page.route(/\/api\/songs$/, (route) => fulfillJson(route, { songs: saved ? [recovered, songs[0]] : [songs[0]] }));
+    await page.route(/\/api\/songs(?:\?.*)?$/, (route) => fulfillJson(route, { songs: saved ? [recovered, songs[0]] : [songs[0]] }));
     await page.route(/\/api\/songs\/recovery$/, (route) => recoveryMode === "offline" ? route.fulfill({ status: 503 })
       : fulfillJson(route, { songIds: recoveryMode === "invalid" ? ["invalid-id"] : saved ? [] : [recovered.id] }));
     await page.route(/\/api\/music$/, (route) => { generations++; return route.abort(); });

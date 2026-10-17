@@ -115,10 +115,13 @@ async function legacySongPath(userId: string, id: string): Promise<string> {
   return filename;
 }
 
-export async function listSongs(userId: string): Promise<SavedSong[]> {
+export async function listSongs(userId: string, before?: { createdAt: string; id: string }, favourites = false): Promise<SavedSong[]> {
   userDirectory(musicDirectory, userId);
-  const { data, error } = await database().from('songs').select('*')
-    .eq('owner_id', userId).eq('status', 'ready').order('created_at', { ascending: false }).limit(100);
+  let query = database().from('songs').select('*').eq('owner_id', userId).eq('status', 'ready')
+    .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(50);
+  if (favourites) query = query.eq('is_favourite', true);
+  if (before) query = query.or(`created_at.lt.${before.createdAt},and(created_at.eq.${before.createdAt},id.lt.${before.id})`);
+  const { data, error } = await query;
   if (error) throw new Error('could not load saved songs. try again.');
   return (data as Song[]).map(publicSong);
 }

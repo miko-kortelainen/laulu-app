@@ -5,10 +5,41 @@ import { readFile, rm, writeFile } from 'node:fs/promises';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
-import { checkSongStorage, deleteSong, listSongRecovery, localSongPath, musicDirectory, retrySongStorage, saveSong, SongStorageError } from '../src/songs.js';
+import { checkSongStorage, deleteSong, listSongRecovery, listSongs, localSongPath, musicDirectory, retrySongStorage, saveSong, SongStorageError } from '../src/songs.js';
 import { prepareAnalysisAudio } from '../src/audio.js';
 import { configureTestGateway, testGatewayURL } from './gateway-environment.js';
 import { configureTestSongStorage } from './song-fixture.js';
+
+test('song pages keep owner filters, a 50-song limit, and full timestamp precision in the cursor', async () => {
+  const storage = configureTestSongStorage();
+  const originalFetch = globalThis.fetch;
+  const owner = randomUUID();
+  const before = { createdAt: '2026-10-17T10:00:00.123456+00:00', id: randomUUID() };
+  const queries: URLSearchParams[] = [];
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(new Request(input, init).url);
+    assert.equal(url.origin, process.env.SUPABASE_URL, 'no live services are permitted');
+    assert.equal(url.pathname, '/rest/v1/songs');
+    assert.equal(url.searchParams.get('owner_id'), `eq.${owner}`);
+    assert.equal(url.searchParams.get('status'), 'eq.ready');
+    assert.equal(url.searchParams.get('limit'), '50');
+    assert.equal(url.searchParams.get('order'), 'created_at.desc,id.desc');
+    queries.push(url.searchParams);
+    return Response.json([]);
+  };
+  try {
+    assert.deepEqual(await listSongs(owner), []);
+    assert.deepEqual(await listSongs(owner, before, true), []);
+    assert.equal(queries[0].get('is_favourite'), null);
+    assert.equal(queries[0].get('or'), null);
+    assert.equal(queries[1].get('is_favourite'), 'eq.true');
+    assert.equal(queries[1].get('or'),
+      `(created_at.lt.${before.createdAt},and(created_at.eq.${before.createdAt},id.lt.${before.id}))`);
+  } finally {
+    globalThis.fetch = originalFetch;
+    storage.restore();
+  }
+});
 
 test('songs persist privately, restore from R2, and retry failed saves without regenerating', async () => {
   process.env.NODE_ENV = 'test';
@@ -67,6 +98,10 @@ test('songs persist privately, restore from R2, and retry failed saves without r
   try {
     assert.equal((await fetch(`${base}/api/songs`)).status, 401);
     assert.equal((await fetch(`${base}/api/songs/recovery`)).status, 401);
+    for (const query of ['before=invalid', 'before=invalid&before=invalid', 'before=2026-10-17T10:00:00Z,invalid',
+      `before=invalid,${randomUUID()}`, 'favourites=false', 'favourites=true&favourites=true']) {
+      assert.equal((await fetch(`${base}/api/songs?${query}`, { headers: headersA })).status, 400, query);
+    }
     for (const title of [123, null, 'a'.repeat(201)]) {
       assert.equal((await generate(title)).status, 400);
     }

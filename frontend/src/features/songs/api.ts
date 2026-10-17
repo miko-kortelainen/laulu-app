@@ -27,15 +27,20 @@ function isSavedSong(value: unknown): value is SavedSong {
     Number.isFinite(Date.parse(value.createdAt));
 }
 
-export async function getSongs(signal: AbortSignal): Promise<SavedSong[]> {
-  const response = await authenticatedFetch("/api/songs", { signal });
+export const songsPageSize = 50;
+
+export async function getSongs(signal: AbortSignal, before?: SavedSong, favourites = false): Promise<SavedSong[]> {
+  const query = new URLSearchParams();
+  if (before) query.set("before", `${before.createdAt},${before.id}`);
+  if (favourites) query.set("favourites", "true");
+  const response = await authenticatedFetch(`/api/songs${query.size ? `?${query}` : ""}`, { signal });
   if (!response.ok) throw new Error("could not load your songs. try again.");
   const data: unknown = await response.json();
   if (!data || typeof data !== "object" || !("songs" in data) || !Array.isArray(data.songs)) {
     throw new Error("invalid songs response. try again.");
   }
   const songs: unknown[] = data.songs;
-  if (!songs.every(isSavedSong)) throw new Error("invalid songs response. try again.");
+  if (songs.length > songsPageSize || !songs.every(isSavedSong)) throw new Error("invalid songs response. try again.");
   return songs;
 }
 

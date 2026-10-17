@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { deleteSavedSong, getSongRecovery, getSongs, retrySongStorage, setSongFavourite, type SavedSong } from "./api";
+import { deleteSavedSong, getSongRecovery, getSongs, retrySongStorage, setSongFavourite, songsPageSize, type SavedSong } from "./api";
 
 export function useSongs() {
   const [songs, setSongs] = useState<SavedSong[]>();
@@ -7,6 +7,9 @@ export function useSongs() {
   const [favouritingId, setFavouritingId] = useState<string>();
   const [favouriteError, setFavouriteError] = useState<{ id: string; message: string }>();
   const [loading, setLoading] = useState(true);
+  const [before, setBefore] = useState<SavedSong>();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [pageError, setPageError] = useState<string>();
   const [error, setError] = useState<string>();
   const [request, setRequest] = useState(0);
   const [selectedSongId, setSelectedSongId] = useState<string>();
@@ -25,26 +28,30 @@ export function useSongs() {
     currentRequest.current = controller;
     async function load(): Promise<void> {
       const [result, recovery] = await Promise.all([
-        getSongs(controller.signal).catch((cause: unknown) =>
+        getSongs(controller.signal, undefined, activeTab === "favourites").catch((cause: unknown) =>
           new Error(cause instanceof Error ? cause.message : "could not load your songs. try again.")),
         getSongRecovery(controller.signal).catch((cause: unknown) =>
           new Error(cause instanceof Error ? cause.message : "could not load unsaved songs. try again.")),
       ]);
       if (controller.signal.aborted) return;
       if (result instanceof Error) setError(result.message);
-      else setSongs(result);
+      else {
+        setSongs(result);
+        setBefore(result.length === songsPageSize ? result.at(-1) : undefined);
+      }
       if (recovery instanceof Error) setError(recovery.message);
       else setRecoveryIds(recovery);
       setLoading(false);
     }
     void load();
     return () => controller.abort();
-  }, [request]);
+  }, [request, activeTab]);
 
   function refresh(): void {
     if (loading || acting.current) return;
     setLoading(true);
     setError(undefined);
+    setPageError(undefined);
     setRequest((previous) => previous + 1);
   }
 
@@ -55,8 +62,34 @@ export function useSongs() {
   }
 
   function selectTab(tab: typeof activeTab): void {
+    if (tab === activeTab || acting.current) return;
     setActiveTab(tab);
     setSelectedSongId(undefined);
+    setLoading(true);
+    setBefore(undefined);
+    setError(undefined);
+    setPageError(undefined);
+  }
+
+  async function loadMore(): Promise<void> {
+    if (!before || loading || acting.current) return;
+    const signal = currentRequest.current!.signal;
+    acting.current = true;
+    setLoadingMore(true);
+    setPageError(undefined);
+    const result = await getSongs(signal, before, activeTab === "favourites").catch((cause: unknown) =>
+      new Error(cause instanceof Error ? cause.message : "could not load more songs. try again."));
+    if (signal.aborted) return;
+    if (result instanceof Error) setPageError(result.message);
+    else {
+      setSongs((previous) => {
+        const ids = new Set(previous?.map((song) => song.id));
+        return [...(previous ?? []), ...result.filter((song) => !ids.has(song.id))];
+      });
+      setBefore(result.length === songsPageSize ? result.at(-1) : undefined);
+    }
+    acting.current = false;
+    setLoadingMore(false);
   }
 
   async function toggleFavourite(id: string): Promise<void> {
@@ -126,7 +159,7 @@ export function useSongs() {
     else {
       setRecoveryIds((previous) => previous.filter((songId) => songId !== id));
       setSongs((previous) => [result, ...(previous ?? []).filter((song) => song.id !== id)]
-        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 100));
+        .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
     }
     acting.current = false;
     setSavingId(undefined);
@@ -135,6 +168,7 @@ export function useSongs() {
   const visibleSongs = activeTab === "favourites" ? songs?.filter((song) => song.isFavourite) : songs;
 
   return { songs, visibleSongs, activeTab, selectTab, favouritingId, favouriteError, toggleFavourite,
-    loading, error, refresh, selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
+    loading, loadingMore, hasMore: Boolean(before), pageError, loadMore, error, refresh,
+    selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
     recoveryIds, savingId, saveError, saveSong };
 }

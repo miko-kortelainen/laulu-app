@@ -158,8 +158,18 @@ app.get('/api/music/:filename', async (req, res) => {
   res.send(result.audio);
 });
 
-app.get('/api/songs', async (_req, res) => {
-  const songs = await listSongs(res.locals.userId).catch((error: unknown) => storageFailure(res, error));
+app.get('/api/songs', async (req, res) => {
+  const before = typeof req.query.before === 'string' ? req.query.before.split(',') : [];
+  if (req.query.before !== undefined && (before.length !== 2 ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(before[0]) ||
+      !Number.isFinite(Date.parse(before[0])) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(before[1]))) {
+    return res.status(400).json({ error: 'invalid song page. reload your songs and try again.' });
+  }
+  if (req.query.favourites !== undefined && req.query.favourites !== 'true') {
+    return res.status(400).json({ error: 'invalid song filter.' });
+  }
+  const songs = await listSongs(res.locals.userId, before.length ? { createdAt: before[0], id: before[1] } : undefined,
+    req.query.favourites === 'true').catch((error: unknown) => storageFailure(res, error));
   if (songs) res.set('Cache-Control', 'private, no-store').json({ songs });
 });
 
