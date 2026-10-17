@@ -66,6 +66,7 @@ These instructions apply to the entire monorepo.
 - Keep package manifests and lockfiles consistent.
 - Update documentation when file structure or behavior changes.
 - Obey user limits on tests, builds, and other checks.
+- The CodeScene MCP server and CLI are available. Use them only when the user explicitly requests their use.
 - Use only end-to-end tests for the frontend. Do not add frontend unit or component tests.
 - Cover real user flows, visible results, and failure recovery in frontend end-to-end tests.
 - If checks are permitted, run only those required for the changed behavior.
