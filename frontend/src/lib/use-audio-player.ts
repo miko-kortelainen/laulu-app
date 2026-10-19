@@ -19,6 +19,7 @@ export function useAudioPlayer(src: string, active = true) {
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(() => savedVolume);
+  const [changingVolume, setChangingVolume] = useState(false);
   const [buffered, setBuffered] = useState<{ start: number; end: number }[]>([]);
   const [buffering, setBufferingVisible] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
@@ -141,9 +142,17 @@ export function useAudioPlayer(src: string, active = true) {
 
   function changeVolume(value: number): void {
     savedVolume = value;
-    for (const audio of document.querySelectorAll("audio")) audio.volume = value;
+    if (audioRef.current) audioRef.current.volume = value;
     setVolume(value);
-    try { localStorage.setItem("laulu:volume", String(value)); }
+    setChangingVolume(true);
+  }
+
+  function commitVolume(): void {
+    setChangingVolume(false);
+    for (const audio of document.querySelectorAll("audio")) {
+      if (audio.volume !== savedVolume) audio.volume = savedVolume;
+    }
+    try { localStorage.setItem("laulu:volume", String(savedVolume)); }
     catch { /* Keep the shared volume for this session when storage is unavailable. */ }
   }
 
@@ -189,5 +198,5 @@ export function useAudioPlayer(src: string, active = true) {
     },
   };
 
-  return { audioProps, playing, time, duration, volume, buffered, buffering, playbackError, togglePlayback, seek, stop, changeVolume };
+  return { audioProps, playing, time, duration, volume, changingVolume, buffered, buffering, playbackError, togglePlayback, seek, stop, changeVolume, commitVolume };
 }

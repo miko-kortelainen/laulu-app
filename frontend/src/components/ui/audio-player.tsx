@@ -19,7 +19,7 @@ export function AudioPlayer(props: AudioPlayerProps) {
 }
 
 function Player({ src, label, className, active = true }: AudioPlayerProps) {
-  const { audioProps, playing, time, duration, volume, buffered, buffering, playbackError, togglePlayback, seek, stop, changeVolume } = useAudioPlayer(src, active);
+  const { audioProps, playing, time, duration, volume, changingVolume, buffered, buffering, playbackError, togglePlayback, seek, stop, changeVolume, commitVolume } = useAudioPlayer(src, active);
   const timelineId = useId();
   const progress = duration ? Math.min(1, time / duration) : 0;
   const controlClass = "flex size-9 shrink-0 items-center justify-center rounded-lg border border-current/20 transition-colors hover:bg-current/10 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40";
@@ -79,8 +79,11 @@ function Player({ src, label, className, active = true }: AudioPlayerProps) {
         </span>
         <label className="ml-auto flex items-center gap-1.5 text-[11px]">
           volume
-          <input type="range" min="0" max="1" step="0.01" value={volume} aria-label={`volume ${label}`}
+          <input type="range" min="0" max="1" step="0.01" value={volume} data-volume={volume} aria-label={`volume ${label}`}
+            data-changing={changingVolume}
             aria-valuetext={`${Math.round(volume * 100)}%`} onChange={(event) => changeVolume(Number(event.currentTarget.value))}
+            onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
+            onPointerUp={commitVolume} onPointerCancel={commitVolume} onKeyUp={commitVolume} onBlur={commitVolume}
             className="audio-volume h-6 w-32 cursor-pointer appearance-none bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2" />
         </label>
       </div>
