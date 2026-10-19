@@ -63,7 +63,8 @@ body {
   position: relative;
 }
 
-.pricing-gradient-border::before {
+.pricing-gradient-border::before,
+.song-gradient-border::before {
   content: "";
   opacity: 0.35;
   pointer-events: none;
@@ -74,6 +75,15 @@ body {
   background-image: linear-gradient(to bottom right, #f87171 0%, #fb923c 33%, #fde047 67%, #4ade80 100%);
   mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0) border-box;
   mask-composite: exclude;
+}
+
+.song-gradient-border::before {
+  opacity: 0;
+  border-width: 2px;
+}
+
+.song-gradient-border[data-selected="true"]::before {
+  opacity: 0.25;
 }
 
 .music-field-updated {
@@ -93,6 +103,14 @@ body {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .song-gradient-border {
+    transition: border-color 100ms ease-out;
+  }
+
+  .song-gradient-border::before {
+    transition: opacity 100ms ease-out;
+  }
+
   .audio-volume::-webkit-slider-thumb {
     transition: width 150ms ease-out, height 150ms ease-out, margin-top 150ms ease-out;
   }

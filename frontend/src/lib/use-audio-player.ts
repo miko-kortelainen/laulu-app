@@ -1,18 +1,40 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getPlaybackUrl } from "./api";
 
+function readSavedVolume(): number {
+  try {
+    const stored = localStorage.getItem("laulu:volume");
+    const value = stored === null ? 1 : Number(stored);
+    return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 1;
+  } catch {
+    return 1;
+  }
+}
+
+let savedVolume = readSavedVolume();
+
 export function useAudioPlayer(src: string, active = true) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(() => savedVolume);
   const [buffered, setBuffered] = useState<{ start: number; end: number }[]>([]);
-  const [buffering, setBuffering] = useState(false);
+  const [buffering, setBufferingVisible] = useState(false);
   const [playbackError, setPlaybackError] = useState<string>();
   const resumeTime = useRef(0);
   const loadingAudio = useRef<Promise<void> | undefined>(undefined);
   const controller = useRef<AbortController | undefined>(undefined);
+  const bufferingTimer = useRef<number | undefined>(undefined);
+
+  const setBuffering = useCallback((waiting: boolean): void => {
+    window.clearTimeout(bufferingTimer.current);
+    if (!waiting) {
+      setBufferingVisible(false);
+      return;
+    }
+    bufferingTimer.current = window.setTimeout(() => setBufferingVisible(true), 250);
+  }, []);
 
   const updateMediaState = useCallback((): void => {
     const audio = audioRef.current;
@@ -49,12 +71,14 @@ export function useAudioPlayer(src: string, active = true) {
   useEffect(() => {
     controller.current = new AbortController();
     const audio = audioRef.current;
+    if (audio) audio.volume = savedVolume;
     // Buffer ranges can change after the last media event while paused.
     const timer = window.setInterval(() => {
       if (audio?.paused && audio.getAttribute("src") && !audio.error) updateMediaState();
     }, 500);
     return () => {
       window.clearInterval(timer);
+      window.clearTimeout(bufferingTimer.current);
       controller.current?.abort();
       loadingAudio.current = undefined;
       audio?.pause();
@@ -116,8 +140,11 @@ export function useAudioPlayer(src: string, active = true) {
   }
 
   function changeVolume(value: number): void {
-    if (audioRef.current) audioRef.current.volume = value;
+    savedVolume = value;
+    for (const audio of document.querySelectorAll("audio")) audio.volume = value;
     setVolume(value);
+    try { localStorage.setItem("laulu:volume", String(value)); }
+    catch { /* Keep the shared volume for this session when storage is unavailable. */ }
   }
 
   const audioProps = {
@@ -136,6 +163,7 @@ export function useAudioPlayer(src: string, active = true) {
       setPlaying(true);
     },
     onPause: () => { setPlaying(false); setBuffering(false); updateMediaState(); },
+    onVolumeChange: () => setVolume(audioRef.current?.volume ?? savedVolume),
     onEnded: () => { setPlaying(false); setBuffering(false); updateMediaState(); },
     onWaiting: () => setBuffering(!audioRef.current?.paused),
     onPlaying: () => { setBuffering(false); setPlaybackError(undefined); updateMediaState(); },

@@ -79,6 +79,8 @@ Keep `TERMS_VERSION` in `backend/src/terms.ts` and `frontend/src/lib/terms.ts` i
 
 Saved songs use private R2 objects and Supabase metadata. Playback and downloads require authentication.
 The player loads audio only when play is pressed, then uses native browser buffering and HTTP byte ranges, so playback can start before the full file downloads.
+My songs shows every player's controls immediately. Select a song card to view its details.
+Volume is shared between players and saved in this browser across page refreshes.
 Its seek bar shows buffered audio. It does not download the full file to draw a waveform. Media responses are privately cacheable for one hour, matching the playback link lifetime, so replaying or remounting a player does not download the file again.
 Authenticated clients request file-specific playback links. These links expire within one hour, at session expiry, or when the backend restarts.
 Anyone with a playback link can read that file until it expires. Links use an in-memory signing key for the single backend instance.

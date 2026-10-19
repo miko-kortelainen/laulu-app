@@ -13,7 +13,6 @@ export function useSongs() {
   const [error, setError] = useState<string>();
   const [request, setRequest] = useState(0);
   const [selectedSongId, setSelectedSongId] = useState<string>();
-  const [openedSongIds, setOpenedSongIds] = useState<string[]>([]);
   const [pendingDeleteId, setPendingDeleteId] = useState<string>();
   const [deletingId, setDeletingId] = useState<string>();
   const [deleteError, setDeleteError] = useState<{ id: string; message: string }>();
@@ -56,9 +55,7 @@ export function useSongs() {
   }
 
   function selectSong(id: string): void {
-    // Keep only the three most recently opened players loaded; older ones reload on reopen.
-    setOpenedSongIds((previous) => [...previous.filter((songId) => songId !== id), id].slice(-3));
-    setSelectedSongId((previous) => previous === id ? undefined : id);
+    setSelectedSongId(id);
   }
 
   function selectTab(tab: typeof activeTab): void {
@@ -140,7 +137,6 @@ export function useSongs() {
       setPendingDeleteId(undefined);
       setSongs((previous) => previous?.filter((song) => song.id !== id));
       setSelectedSongId((previous) => previous === id ? undefined : previous);
-      setOpenedSongIds((previous) => previous.filter((songId) => songId !== id));
     }
     acting.current = false;
     setDeletingId(undefined);
@@ -169,6 +165,6 @@ export function useSongs() {
 
   return { songs, visibleSongs, activeTab, selectTab, favouritingId, favouriteError, toggleFavourite,
     loading, loadingMore, hasMore: Boolean(before), pageError, loadMore, error, refresh,
-    selectedSongId, openedSongIds, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
+    selectedSongId, selectSong, pendingDeleteId, requestDelete, cancelDelete, deletingId, deleteError, removeSong,
     recoveryIds, savingId, saveError, saveSong };
 }
