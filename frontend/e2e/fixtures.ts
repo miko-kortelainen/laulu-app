@@ -90,6 +90,11 @@ export async function mockApi(page: Page, baseURL: string): Promise<void> {
   await page.route(/\/api\/terms$/, (route) => fulfillJson(route, { accepted: true, version: "2026-10-13" }));
   await page.route(/\/api\/context$/, (route) => fulfillJson(route, { messages: 0, limit: 16 }));
   await page.route(/\/api\/usage$/, (route) => fulfillJson(route, usage));
+  await page.route(/\/api\/playback$/, (route) => {
+    expect(route.request().headers().authorization).toMatch(/^Bearer /);
+    const { src } = route.request().postDataJSON() as { src: string };
+    return fulfillJson(route, { url: `${src}?playback=offline` });
+  });
   await page.route(/\/api\/operations$/, (route) => fulfillJson(route, { operations: [] }));
   await page.route(/\/api\/operations\/[^/]+\/acknowledge$/, (route) => route.fulfill({ status: 204 }));
   await page.route(/\/api\/session\/end$/, (route) => route.fulfill({ status: 204 }));

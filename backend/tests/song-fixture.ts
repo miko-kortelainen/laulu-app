@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
+import { Readable } from 'node:stream';
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { configureTestQuotas } from './quota-fixture.js';
 import { isRecord } from '../src/validation.js';
@@ -154,7 +155,8 @@ function objectResponse(audio: Buffer, range: string | undefined) {
     content = audio.subarray(start, end + 1);
     ContentRange = `bytes ${start}-${end}/${audio.length}`;
   }
-  return { Body: { transformToByteArray: async () => content }, ContentRange };
+  return { Body: Object.assign(Readable.from(content), { transformToByteArray: async () => content }),
+    ContentLength: content.length, ContentRange };
 }
 
 function matchesSong(row: Record<string, unknown>, { owner, id, status }: { owner?: string; id?: string; status?: string }): boolean {

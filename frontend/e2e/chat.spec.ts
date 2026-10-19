@@ -42,7 +42,7 @@ test.describe("chat (studio)", () => {
       const track = { url: `/api/music/${id}.mp3`, title: "quiet morning", lyrics: "a quiet morning" };
       return fulfillJson(route, { operation: { id, kind: "music", state: "completed", status: "", result: { track } } });
     });
-    await page.route(/\/api\/music\/[^/]+\.mp3$/, (route) => route.fulfill({ status: 200, contentType: "audio/mpeg", body: "" }));
+    await page.route(/\/api\/music\/[^/]+\.mp3(?:\?playback=offline)?$/, (route) => route.fulfill({ status: 200, contentType: "audio/mpeg", body: "" }));
 
     await page.goto("/");
     await page.getByLabel("genre / style").fill("warm acoustic folk");
@@ -136,7 +136,7 @@ test.describe("chat (studio)", () => {
     await page.route(/\/api\/audio\?name=/, (route) => fulfillJson(route, { audio: { url: "https://example.com/reference.wav", name: "reference.wav" } }));
     let track: unknown = { url: "/api/music/00000000-0000-0000-0000-000000000000.mp3", lyrics: "retained lyrics", title: null };
     await page.route(/\/api\/music$/, (route) => fulfillJson(route, { track }));
-    await page.route(/\/api\/music\/[^/]+\.mp3$/, (route) => route.fulfill({ contentType: "audio/mpeg", body: "" }));
+    await page.route(/\/api\/music\/[^/]+\.mp3(?:\?playback=offline)?$/, (route) => route.fulfill({ contentType: "audio/mpeg", body: "" }));
     await page.goto("/");
     await page.getByLabel("genre / style").fill("retained style");
     await page.getByLabel("Prompt message").fill("keep my draft");
@@ -165,8 +165,8 @@ test.describe("chat (studio)", () => {
     const requests: { audioUrl: string }[] = [];
     await page.route(/\/api\/audio\?name=/, (route) => fulfillJson(route, failUpload ? { error: "upload unavailable" }
       : { audio: { url: audioUrl, name: "reference.wav" } }, failUpload ? 503 : 200));
-    await page.route(new RegExp(`${audioUrl}$`), (route) => {
-      expect(route.request().headers().authorization).toMatch(/^Bearer /);
+    await page.route(new RegExp(`${audioUrl}(?:\\?playback=offline)?$`), (route) => {
+      expect(new URL(route.request().url()).searchParams.get("playback")).toBe("offline");
       return route.fulfill({ contentType: "audio/wav", body: wav });
     });
     await page.route(/\/api\/chat$/, (route) => {
@@ -227,7 +227,7 @@ test.describe("chat (studio)", () => {
       return fulfillJson(route, retryFails ? { error: "saving is still unavailable." }
         : { track: { url: `/api/music/${id}.mp3`, title: "quiet morning", lyrics: "retained lyrics" } }, retryFails ? 503 : 200);
     });
-    await page.route(new RegExp(`/api/music/${id}.mp3$`), (route) => route.fulfill({ contentType: "audio/wav", body: wavBuffer() }));
+    await page.route(new RegExp(`/api/music/${id}.mp3(?:\\?playback=offline)?$`), (route) => route.fulfill({ contentType: "audio/wav", body: wavBuffer() }));
     await page.goto("/");
     await page.getByLabel("genre / style").fill("indie pop");
     await page.getByRole("textbox", { name: "lyrics", exact: true }).fill("retained lyrics");

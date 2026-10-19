@@ -40,3 +40,14 @@ export async function downloadAudio(url: string, name: string): Promise<void> {
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
+
+export async function getPlaybackUrl(src: string, signal: AbortSignal): Promise<string> {
+  const response = await authenticatedFetch("/api/playback", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ src }), signal,
+  });
+  if (!response.ok) throw new Error("could not load audio.");
+  const data: unknown = await response.json();
+  if (!data || typeof data !== "object" || !("url" in data) || typeof data.url !== "string" ||
+    !data.url.startsWith(`${src}?playback=`)) throw new Error("invalid audio address.");
+  return data.url;
+}

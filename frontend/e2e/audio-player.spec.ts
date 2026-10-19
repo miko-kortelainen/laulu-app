@@ -6,10 +6,14 @@ const audioUrl = `/api/audio/${audioId}.wav`;
 test.describe("audio player", () => {
   test("uploads audio and plays it back", async ({ authedPage: page }) => {
     const wav = wavBuffer();
+    let mediaRequests = 0;
     await page.route(/\/api\/audio\?name=/, (route) => fulfillJson(route, { audio: { url: audioUrl, name: "reference.wav" } }));
-    await page.route(new RegExp(`/api/audio/${audioId}\\.wav$`), (route) => route.fulfill({
-      status: 200, contentType: "audio/wav", headers: { "Accept-Ranges": "bytes", "Content-Length": String(wav.length) }, body: wav,
-    }));
+    await page.route(new RegExp(`/api/audio/${audioId}\\.wav(?:\\?playback=offline)?$`), (route) => {
+      mediaRequests++;
+      return route.fulfill({
+        status: 200, contentType: "audio/wav", headers: { "Accept-Ranges": "bytes", "Content-Length": String(wav.length) }, body: wav,
+      });
+    });
 
     await page.goto("/");
     const upload = page.getByLabel("upload audio", { exact: true });
@@ -19,16 +23,14 @@ test.describe("audio player", () => {
     await expect(page.getByText("reference.wav")).toBeVisible();
     const play = page.getByRole("button", { name: "play attached audio: reference.wav" });
     await expect(play).toBeVisible();
+    expect(mediaRequests).toBe(0);
     await play.click();
+    await expect.poll(() => mediaRequests).toBeGreaterThan(0);
     await expect(page.getByRole("button", { name: "pause attached audio: reference.wav" })).toBeVisible();
     await page.getByRole("button", { name: "pause attached audio: reference.wav" }).click();
     await expect(play).toBeVisible();
     const media = page.locator("footer audio");
     await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.duration)).toBe(8);
-    await expect.poll(() => page.locator("footer svg path").first().getAttribute("d")).toMatch(/^M/);
-    const waveform = await page.locator("footer svg path").first().getAttribute("d");
-    expect(waveform!.split("M")).toHaveLength(161);
-    expect(new Set(waveform!.match(/v[\d.]+/g)).size).toBeGreaterThan(20);
     const volume = page.getByRole("slider", { name: "volume attached audio: reference.wav" });
     await volume.focus();
     await volume.press("Home");
@@ -63,10 +65,10 @@ test.describe("audio player", () => {
     await expect(page.getByText("audio received.", { exact: true })).toBeVisible();
     expect(await previous!.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
     const sent = page.locator("main audio");
+    await page.getByRole("button", { name: "play uploaded audio: reference.wav" }).click();
     await expect.poll(() => sent.evaluate((audio: HTMLAudioElement) => audio.duration)).toBe(8);
     await expect(upload).toBeEnabled();
     await upload.setInputFiles({ name: "reference.wav", mimeType: "audio/wav", buffer: wav });
-    await page.getByRole("button", { name: "play uploaded audio: reference.wav" }).click();
     await expect.poll(() => sent.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0);
     await play.click();
     await expect.poll(() => sent.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
@@ -80,14 +82,15 @@ test.describe("audio player", () => {
   test("shows a media failure and retries playback after the source recovers", async ({ authedPage: page }) => {
     let broken = true;
     await page.route(/\/api\/audio\?name=/, (route) => fulfillJson(route, { audio: { url: audioUrl, name: "broken.wav" } }));
-    await page.route(new RegExp(`${audioUrl}$`), (route) => broken ? route.fulfill({ status: 503 })
+    await page.route(new RegExp(`${audioUrl}(?:\\?playback=offline)?$`), (route) => broken ? route.fulfill({ status: 503 })
       : route.fulfill({ contentType: "audio/wav", body: wavBuffer() }));
     await page.goto("/");
     const upload = page.getByLabel("upload audio", { exact: true });
     await expect(upload).toBeEnabled();
     await upload.setInputFiles({ name: "broken.wav", mimeType: "audio/wav", buffer: Buffer.from("invalid audio") });
-    await expect(page.getByText("waveform unavailable", { exact: true })).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveText("could not load audio. try play again.");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await page.getByRole("button", { name: "play attached audio: broken.wav" }).click();
+    await expect(page.getByRole("alert")).toContainText(/could not (load|play) audio/);
     broken = false;
     await page.getByRole("button", { name: "play attached audio: broken.wav" }).click();
     await expect.poll(() => page.locator("footer audio").evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0);

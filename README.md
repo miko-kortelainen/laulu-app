@@ -78,6 +78,10 @@ Keep `TERMS_VERSION` in `backend/src/terms.ts` and `frontend/src/lib/terms.ts` i
 3. Set `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` in `backend/.env`.
 
 Saved songs use private R2 objects and Supabase metadata. Playback and downloads require authentication.
+The player loads audio only when play is pressed, then uses native browser buffering and HTTP byte ranges, so playback can start before the full file downloads.
+Its seek bar shows buffered audio. It does not download the full file to draw a waveform. Media responses are privately cacheable for one hour, matching the playback link lifetime, so replaying or remounting a player does not download the file again.
+Authenticated clients request file-specific playback links. These links expire within one hour, at session expiry, or when the backend restarts.
+Anyone with a playback link can read that file until it expires. Links use an in-memory signing key for the single backend instance.
 If storage fails, use **retry saving** to save the existing audio without another generation call.
 Apply [the song title migration](supabase/migrations/20261013123303_song_titles.sql) before deploying the title field.
 It adds `songs.title`, sets existing song titles to `untitled`, and updates the metadata save function.

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deleteSongObject, putSongObject, r2Storage, readSongObject } from './r2.js';
+import { deleteSongObject, openSongObject, putSongObject, r2Storage, readSongObject } from './r2.js';
 import { userDirectory } from './user-files.js';
 import { database } from './database.js';
 import { hasErrorCode, isCount, isRecord, isTimestamp, isUuid } from './validation.js';
@@ -273,13 +273,13 @@ function validRecoverySize(value: Record<string, unknown>): value is Record<stri
   return isCount(value.size_bytes) && value.size_bytes > 0 && isTimestamp(value.created_at);
 }
 
-export async function readSong(userId: string, id: string, range?: string): Promise<{ audio: Buffer; contentRange?: string } | { filename: string }> {
+export async function readSong(userId: string, id: string, range?: string): Promise<Awaited<ReturnType<typeof openSongObject>> | { filename: string }> {
   const song = await findSong({ owner_id: userId, id });
   if (!song) return { filename: await legacySongPath({ owner_id: userId, id }) };
   if (song.status !== 'ready') throw new SongNotFoundError('song not found.');
   const key = `users/${userId}/${id}.mp3`;
   if (song.object_key !== key) throw new SongNotFoundError('song not found.');
-  return readSongObject(key, range);
+  return openSongObject(key, range);
 }
 
 export async function localSongPath(userId: string, id: string): Promise<{ filename: string; temporary: boolean }> {

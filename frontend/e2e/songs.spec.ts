@@ -20,7 +20,7 @@ test.describe("my songs", () => {
   test.beforeEach(async ({ page }) => {
     await page.route(/\/api\/songs(?:\?.*)?$/, (route) => fulfillJson(route, { songs }));
     await page.route(/\/api\/songs\/recovery$/, (route) => fulfillJson(route, { songIds: [] }));
-    await page.route(/\/api\/music\/[^/]+\.mp3$/, (route) => route.fulfill({ contentType: "audio/wav", body: wavBuffer() }));
+    await page.route(/\/api\/music\/[^/]+\.mp3(?:\?playback=offline)?$/, (route) => route.fulfill({ contentType: "audio/wav", body: wavBuffer() }));
   });
 
   test("shows 50 songs per request and loads older pages through the full-width show more button", async ({ authedPage: page }) => {

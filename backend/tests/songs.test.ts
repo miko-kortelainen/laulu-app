@@ -160,12 +160,30 @@ async function assertSongPlayback(fixture: SongFixture, { track, row }: Generate
   assert.equal(storage.reads, 0);
   const playback = await fetch(`${base}${track.url}`, { headers: headersA });
   assert.equal(playback.status, 200);
-  assert.equal(playback.headers.get('cache-control'), 'private, no-store');
+  assert.equal(playback.headers.get('cache-control'), 'private, max-age=3600');
   assert.deepEqual(Buffer.from(await playback.arrayBuffer()), audio);
   const range = await fetch(`${base}${track.url}`, { headers: { ...headersA, Range: 'bytes=0-2' } });
   assert.equal(range.status, 206);
   assert.equal(range.headers.get('content-range'), `bytes 0-2/${audio.length}`);
   assert.equal(await range.text(), 'ID3');
+  // Browsers ask for an open-ended range when they start streaming and a suffix range when probing the end.
+  const openRange = await fetch(`${base}${track.url}`, { headers: { ...headersA, Range: 'bytes=0-' } });
+  assert.equal(openRange.status, 206);
+  assert.equal(openRange.headers.get('content-range'), `bytes 0-${audio.length - 1}/${audio.length}`);
+  assert.equal(openRange.headers.get('content-length'), String(audio.length));
+  await openRange.arrayBuffer();
+  const suffixRange = await fetch(`${base}${track.url}`, { headers: { ...headersA, Range: 'bytes=-3' } });
+  assert.equal(suffixRange.status, 206);
+  assert.equal(suffixRange.headers.get('content-range'), `bytes ${audio.length - 3}-${audio.length - 1}/${audio.length}`);
+  assert.equal(await suffixRange.text(), 'ong');
+  // The <audio> element cannot send an Authorization header, so it uses the signed playback URL.
+  const signedResponse = await fetch(`${base}/api/playback`, { method: 'POST', headers: headersA, body: JSON.stringify({ src: track.url }) });
+  assert.equal(signedResponse.status, 200);
+  const signed = await signedResponse.json() as { url: string };
+  const signedRange = await fetch(`${base}${signed.url}`, { headers: { Range: 'bytes=0-2' } });
+  assert.equal(signedRange.status, 206);
+  assert.equal(await signedRange.text(), 'ID3');
+  assert.equal((await fetch(`${base}${signed.url.replace(/playback=[^&]+/, 'playback=invalid')}`)).status, 401);
   for (const Range of ['bytes=999-', 'bytes=2-1', 'bytes=0-1,3-4']) {
     assert.equal((await fetch(`${base}${track.url}`, { headers: { ...headersA, Range } })).status, 416);
   }

@@ -1,4 +1,3 @@
-import { useId } from "react";
 import { cn } from "@/lib/utils";
 import { useAudioPlayer } from "@/lib/use-audio-player";
 
@@ -19,23 +18,21 @@ export function AudioPlayer(props: AudioPlayerProps) {
 }
 
 function Player({ src, label, className, active = true }: AudioPlayerProps) {
-  const { audioProps, playing, time, duration, volume, waveform, waveformError, playbackError, togglePlayback, seek, stop, changeVolume } = useAudioPlayer(src, active);
-  const clipId = useId();
+  const { audioProps, playing, time, duration, volume, buffered, buffering, playbackError, togglePlayback, seek, stop, changeVolume } = useAudioPlayer(src, active);
   const progress = duration ? Math.min(1, time / duration) : 0;
   const controlClass = "flex size-9 shrink-0 items-center justify-center rounded-lg border border-current/20 transition-colors hover:bg-current/10 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
     <div role="group" aria-label={label} className={cn("w-80 max-w-full min-w-0 space-y-2 rounded-lg bg-current/5 p-3", className)}>
-      <audio {...audioProps} preload="metadata" aria-label={label} className="hidden" />
+      <audio {...audioProps} preload="none" aria-label={label} className="hidden" />
       <div className="relative h-12 rounded-sm focus-within:outline-2 focus-within:outline-offset-2">
         <svg viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true" className="h-full w-full">
-          <defs><clipPath id={clipId}><rect width={progress * 240} height="48" /></clipPath></defs>
-          {waveform ? (
-            <g fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round">
-              <path d={waveform} opacity="0.25" vectorEffect="non-scaling-stroke" />
-              <path d={waveform} clipPath={`url(#${clipId})`} vectorEffect="non-scaling-stroke" />
-            </g>
-          ) : <line x1="0" y1="24" x2="240" y2="24" stroke="currentColor" opacity="0.25" />}
+          <rect y="21" width="240" height="6" rx="3" fill="currentColor" opacity="0.1" />
+          {duration > 0 && buffered.map((range) => (
+            <rect key={range.start} x={range.start / duration * 240} y="21"
+              width={(range.end - range.start) / duration * 240} height="6" fill="currentColor" opacity="0.25" />
+          ))}
+          <rect y="21" width={progress * 240} height="6" rx="3" fill="currentColor" />
           <line data-playhead x1={progress * 240} x2={progress * 240} y1="1" y2="47" stroke="currentColor" strokeWidth="1.5" />
         </svg>
         <input type="range" min="0" max={duration || 1} step="0.01" value={time} disabled={!duration}
@@ -60,7 +57,7 @@ function Player({ src, label, className, active = true }: AudioPlayerProps) {
             className="h-6 w-16 cursor-pointer accent-current" />
         </label>
       </div>
-      {!waveform && <p className="text-[11px] opacity-60">{waveformError ? "waveform unavailable" : "loading waveform..."}</p>}
+      <p role="status" className="text-[11px] opacity-60">{buffering ? "buffering..." : ""}</p>
       {playbackError && <p role="alert" className="text-xs">{playbackError}</p>}
     </div>
   );

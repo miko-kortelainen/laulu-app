@@ -32,6 +32,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   }
 
   res.locals.userId = claims.sub;
+  res.locals.sessionExpiresAt = claims.exp;
   next();
 };
 

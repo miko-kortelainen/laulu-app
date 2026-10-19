@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pipeline } from 'node:stream/promises';
 import { BeforeModelCallEvent, BeforeToolCallEvent } from '@strands-agents/sdk';
 import { endUploadSession, getChatContext, getOrCreateAgent, resetAgentSession, retainUploadSession } from './agent.js';
 import { getLyricsModelId, getModelConfig } from './model.js';
@@ -9,6 +10,7 @@ import { isTimestamp, isUuid } from './validation.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
+import { createPlaybackUrl, isPlaybackPath, playbackUser } from './playback.js';
 import { hasAcceptedTerms, recordTermsAcceptance, requireTerms, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
 import { deleteSong, listSongs, listSongRecovery, readSong, retrySongStorage, setSongFavourite, SongNotFoundError, SongStorageError, validateSongTitle } from './songs.js';
@@ -45,8 +47,22 @@ app.post('/api/paddle/webhook', express.raw({ type: 'application/json', limit: '
     return res.status(500).json({ error: 'webhook could not be verified or recorded.' });
   }
 });
-app.use('/api', requireAuth);
+app.use('/api', (req, res, next) => {
+  const userId = (req.method === 'GET' || req.method === 'HEAD')
+    ? playbackUser(req.baseUrl + req.path, req.query.playback) : undefined;
+  if (!userId) return requireAuth(req, res, next);
+  res.locals.userId = userId;
+  next();
+});
 app.use(express.json());
+
+app.post('/api/playback', (req, res) => {
+  const src: unknown = req.body?.src;
+  if (!isPlaybackPath(src)) return res.status(400).json({ error: 'invalid audio address.' });
+  res.set('Cache-Control', 'private, no-store').json({
+    url: createPlaybackUrl(src, res.locals.userId, res.locals.sessionExpiresAt),
+  });
+});
 
 app.get('/api/billing', async (_req, res) => {
   const billing = await getBilling(res.locals.userId).catch(() => {
@@ -120,7 +136,8 @@ function locked(handler: (req: Request, res: Response) => Promise<unknown>) {
   };
 }
 app.use('/api/audio', (req, res, next) => {
-  res.set('Cache-Control', 'private, no-store');
+  // Media bytes may be reused by the browser for as long as a playback link lives.
+  res.set('Cache-Control', req.method === 'GET' || req.method === 'HEAD' ? 'private, max-age=3600' : 'private, no-store');
   express.static(userDirectory(audioDirectory, res.locals.userId), { dotfiles: 'deny', index: false })(req, res, next);
 });
 
@@ -153,10 +170,17 @@ app.get('/api/music/:filename', async (req, res) => {
   }
   const result = await readSong(res.locals.userId, match[1], range).catch((error: unknown) => storageFailure(res, error));
   if (!result) return;
-  res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'private, no-store', 'Accept-Ranges': 'bytes' });
+  res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'private, max-age=3600', 'Accept-Ranges': 'bytes' });
   if ('filename' in result) return res.sendFile(result.filename);
   if (result.contentRange) res.status(206).set('Content-Range', result.contentRange);
-  res.send(result.audio);
+  if (result.contentLength !== undefined) res.set('Content-Length', String(result.contentLength));
+  if (req.method === 'HEAD') {
+    result.audio.destroy();
+    return res.end();
+  }
+  await pipeline(result.audio, res).catch(() => {
+    if (!res.destroyed) res.destroy();
+  });
 });
 
 function validSongCursor(before: string[]): boolean {

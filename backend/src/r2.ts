@@ -1,4 +1,5 @@
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { Readable } from 'node:stream';
 import 'dotenv/config';
 
 export function r2Storage(): { client: S3Client; bucket: string } {
@@ -36,4 +37,11 @@ export async function readSongObject(key: string, range?: string): Promise<{ aud
   const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: range }));
   if (!result.Body) throw new Error('song storage returned no audio.');
   return { audio: Buffer.from(await result.Body.transformToByteArray()), contentRange: result.ContentRange };
+}
+
+export async function openSongObject(key: string, range?: string): Promise<{ audio: Readable; contentLength?: number; contentRange?: string }> {
+  const { client, bucket } = r2Storage();
+  const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key, Range: range }));
+  if (!(result.Body instanceof Readable)) throw new Error('song storage returned no audio stream.');
+  return { audio: result.Body, contentLength: result.ContentLength, contentRange: result.ContentRange };
 }
