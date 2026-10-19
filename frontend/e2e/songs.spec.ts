@@ -40,7 +40,7 @@ test.describe("my songs", () => {
     await expect(items).toHaveCount(50);
     await expect(items.first()).toContainText("library song 1");
     await expect(items.last()).toContainText("library song 50");
-    await expect(page.getByRole("button", { name: "listen library song 51", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "song details: library song 51", exact: true })).toHaveCount(0);
     const showMore = page.getByRole("button", { name: "show more", exact: true });
     for (const width of [1280, 320]) {
       await page.setViewportSize({ width, height: 800 });
@@ -73,7 +73,7 @@ test.describe("my songs", () => {
     await page.goto("/songs");
     const items = page.getByRole("list", { name: "saved songs", exact: true }).getByRole("listitem");
     await expect(items).toHaveCount(50);
-    await page.getByRole("button", { name: "listen library song 1", exact: true }).click();
+    await page.getByRole("button", { name: "song details: library song 1", exact: true }).click();
     const showMore = page.getByRole("button", { name: "show more", exact: true });
     await showMore.click();
     await expect(page.getByRole("button", { name: "loading more songs...", exact: true })).toBeDisabled();
@@ -82,7 +82,7 @@ test.describe("my songs", () => {
     finishPage!();
     await expect(page.getByRole("alert")).toContainText("could not load your songs");
     await expect(items).toHaveCount(50);
-    await expect(page.getByRole("button", { name: "close library song 1", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: library song 1", exact: true })).toHaveAttribute("aria-pressed", "true");
     mode = "invalid";
     await showMore.click();
     await expect(page.getByRole("alert")).toContainText("invalid songs response");
@@ -91,7 +91,7 @@ test.describe("my songs", () => {
     await showMore.click();
     await expect(items).toHaveCount(52);
     await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "close library song 1", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: library song 1", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "end of list", exact: true })).toBeDisabled();
     expect(cursors).toEqual(Array(3).fill(`${librarySongs[49].createdAt},${librarySongs[49].id}`));
   });
@@ -150,8 +150,8 @@ test.describe("my songs", () => {
     await page.goto("/songs");
 
     await expect(page.getByRole("heading", { name: "my songs" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "listen quiet morning" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "listen untitled" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: quiet morning" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: untitled" })).toBeVisible();
     await page.getByRole("tab", { name: "favourites" }).click();
     await expect(page.getByText("no favourites yet.")).toBeVisible();
     await page.getByRole("tab", { name: "favourites" }).press("Home");
@@ -164,8 +164,8 @@ test.describe("my songs", () => {
     await expect(page.getByRole("button", { name: "favourite quiet morning" })).toHaveAttribute("aria-pressed", "true");
 
     await page.getByRole("tab", { name: "favourites" }).click();
-    await expect(page.getByRole("button", { name: "listen quiet morning" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "listen untitled" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "song details: quiet morning" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: untitled" })).toHaveCount(0);
     await page.getByRole("button", { name: "favourite quiet morning" }).click();
     await expect(page.getByText("no favourites yet.")).toBeVisible();
 
@@ -173,7 +173,7 @@ test.describe("my songs", () => {
     await page.getByRole("button", { name: "favourite quiet morning" }).click();
     await page.reload();
     await expect(page.getByRole("button", { name: "favourite quiet morning" })).toHaveAttribute("aria-pressed", "true");
-    await page.getByRole("button", { name: "listen quiet morning" }).press("Enter");
+    await page.getByRole("button", { name: "song details: quiet morning" }).press("Enter");
     await expect(page.getByText("select a song to view its prompt and lyrics.")).toHaveCount(0);
     await expect(page.getByLabel("genre / style")).toHaveValue("warm acoustic folk");
     await expect(page.getByLabel("genre / style")).toHaveAttribute("readonly", "");
@@ -183,13 +183,14 @@ test.describe("my songs", () => {
     await page.getByRole("button", { name: "download MP3 quiet morning" }).click();
     expect((await downloadPromise).suggestedFilename()).toBe(`song-${songs[0].id}.mp3`);
     const first = await page.locator("audio[aria-label='quiet morning']").elementHandle();
-    await page.getByRole("button", { name: "listen untitled" }).click();
+    await page.getByRole("button", { name: "song details: untitled" }).click();
+    await expect(page.getByRole("button", { name: "pause quiet morning", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "play untitled", exact: true }).click();
     await expect.poll(() => first!.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
     await expect(page.getByLabel("original prompt")).toHaveValue("instrumental piano");
     await expect(page.getByLabel("genre / style")).toHaveValue("");
-    await page.getByRole("button", { name: "close untitled" }).click();
-    await expect(page.getByText("select a song to view its prompt and lyrics.")).toBeVisible();
-    await page.getByRole("button", { name: "listen quiet morning" }).click();
+    await expect(page.getByRole("button", { name: "song details: untitled" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "song details: quiet morning" }).click();
     expect(await page.locator("audio[aria-label='quiet morning']").evaluate((audio, previous) => audio === previous, first)).toBe(true);
     await page.setViewportSize({ width: 320, height: 760 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -211,13 +212,13 @@ test.describe("my songs", () => {
       : fulfillJson(route, { songs: mode === "invalid" ? [{ ...songs[0], url: "https://untrusted.invalid/audio" }] : songs }));
     await page.goto("/songs");
     await expect(page.getByRole("alert")).toContainText("could not load your songs");
-    await expect(page.getByRole("button", { name: "listen quiet morning" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "song details: quiet morning" })).toHaveCount(0);
     mode = "invalid";
     await page.getByRole("button", { name: "try again", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("invalid songs response");
     mode = "valid";
     await page.getByRole("button", { name: "try again", exact: true }).click();
-    await expect(page.getByRole("button", { name: "listen quiet morning" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: quiet morning" })).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
@@ -237,7 +238,7 @@ test.describe("my songs", () => {
       await route.fulfill({ status: 204 });
     });
     await page.goto("/songs");
-    await page.getByRole("button", { name: "listen untitled" }).click();
+    await page.getByRole("button", { name: "song details: untitled" }).click();
     const trigger = page.getByRole("button", { name: "delete untitled", exact: true });
     const dialog = page.getByRole("dialog", { name: "delete song?" });
     await trigger.click();
@@ -255,7 +256,7 @@ test.describe("my songs", () => {
     await dialog.getByRole("button", { name: "delete song", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText("could not delete the song");
     await expect(page.getByLabel("original prompt")).toHaveValue("instrumental piano");
-    await expect(page.getByRole("button", { name: "close untitled" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: untitled", includeHidden: true })).toHaveAttribute("aria-pressed", "true");
     fail = false;
     await dialog.getByRole("button", { name: "delete song", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "deleting..." })).toBeDisabled();
@@ -265,11 +266,11 @@ test.describe("my songs", () => {
     finishDelete();
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("heading", { name: "my songs" })).toBeFocused();
-    await expect(page.getByRole("button", { name: "listen untitled" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "song details: untitled" })).toHaveCount(0);
     await expect(page.getByText("select a song to view its prompt and lyrics.")).toBeVisible();
     await page.reload();
-    await expect(page.getByRole("button", { name: "listen quiet morning" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "listen untitled" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "song details: quiet morning" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: untitled" })).toHaveCount(0);
   });
 
   test("discovers unsaved songs and retries storage without generating again", async ({ authedPage: page }) => {
@@ -297,7 +298,7 @@ test.describe("my songs", () => {
     });
     await page.goto("/songs");
     await expect(page.getByRole("alert")).toContainText("could not load unsaved songs");
-    await expect(page.getByRole("button", { name: "listen quiet morning" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: quiet morning" })).toBeVisible();
     recoveryMode = "invalid";
     await page.getByRole("button", { name: "try again", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("invalid unsaved songs response");
@@ -309,17 +310,17 @@ test.describe("my songs", () => {
     saveMode = "invalid";
     await retry.click();
     await expect(page.getByRole("alert")).toContainText("invalid saved song response");
-    await expect(page.getByRole("button", { name: "listen recovered song" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "song details: recovered song" })).toHaveCount(0);
     saveMode = "pending";
     await retry.click();
     await expect(page.getByRole("button", { name: "saving... unsaved song 1", exact: true })).toBeDisabled();
     expect(retries).toBe(3);
     finishSave();
-    await expect(page.getByRole("button", { name: "listen recovered song" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: recovered song" })).toBeVisible();
     await expect(retry).toHaveCount(0);
     expect(generations).toBe(0);
     await page.reload();
-    await expect(page.getByRole("button", { name: "listen recovered song" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: recovered song" })).toBeVisible();
     await expect(retry).toHaveCount(0);
     expect(generations).toBe(0);
   });

@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import { test, expect, fulfillJson, wavBuffer } from "./fixtures";
 
 const audioId = "44444444-4444-4444-4444-444444444444";
@@ -43,29 +44,7 @@ test.describe("audio player", () => {
     await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0);
     await page.getByRole("button", { name: "pause attached audio: reference.wav" }).click();
     expect(await bufferingTexts.jsonValue()).not.toContain("buffering...");
-    const volume = page.getByRole("slider", { name: "volume attached audio: reference.wav" });
-    await volume.focus();
-    await volume.press("Home");
-    expect(await media.evaluate((audio: HTMLAudioElement) => audio.volume)).toBe(0);
-    await volume.press("End");
-    expect(await media.evaluate((audio: HTMLAudioElement) => audio.volume)).toBe(1);
-    const seek = page.getByRole("slider", { name: "seek attached audio: reference.wav" });
-    const bounds = (await seek.boundingBox())!;
-    await seek.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
-    await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(2);
-    await page.mouse.move(bounds.x + bounds.width / 4, bounds.y + bounds.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(bounds.x + bounds.width * 0.75, bounds.y + bounds.height / 2);
-    await page.mouse.up();
-    await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(5);
-    await seek.press("Home");
-    await seek.press("ArrowRight");
-    await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0);
-    await seek.press("End");
-    await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBe(8);
-    await page.getByRole("button", { name: "stop attached audio: reference.wav" }).click();
-    expect(await media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBe(0);
-    expect(await media.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
+    await checkAttachedAudioControls(page);
     await page.setViewportSize({ width: 320, height: 760 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.setViewportSize({ width: 1280, height: 900 });
@@ -109,3 +88,30 @@ test.describe("audio player", () => {
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 });
+
+async function checkAttachedAudioControls(page: Page): Promise<void> {
+  const media = page.locator("footer audio");
+  const volume = page.getByRole("slider", { name: "volume attached audio: reference.wav" });
+  await volume.focus();
+  await volume.press("Home");
+  expect(await media.evaluate((audio: HTMLAudioElement) => audio.volume)).toBe(0);
+  await volume.press("End");
+  expect(await media.evaluate((audio: HTMLAudioElement) => audio.volume)).toBe(1);
+  const seek = page.getByRole("slider", { name: "seek attached audio: reference.wav" });
+  const bounds = (await seek.boundingBox())!;
+  await seek.click({ position: { x: bounds.width / 2, y: bounds.height / 2 } });
+  await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(2);
+  await page.mouse.move(bounds.x + bounds.width / 4, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.75, bounds.y + bounds.height / 2);
+  await page.mouse.up();
+  await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(5);
+  await seek.press("Home");
+  await seek.press("ArrowRight");
+  await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0);
+  await seek.press("End");
+  await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBe(8);
+  await page.getByRole("button", { name: "stop attached audio: reference.wav" }).click();
+  expect(await media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBe(0);
+  expect(await media.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
+}

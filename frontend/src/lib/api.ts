@@ -47,7 +47,11 @@ export async function getPlaybackUrl(src: string, signal: AbortSignal): Promise<
   });
   if (!response.ok) throw new Error("could not load audio.");
   const data: unknown = await response.json();
-  if (!data || typeof data !== "object" || !("url" in data) || typeof data.url !== "string" ||
-    !data.url.startsWith(`${src}?playback=`)) throw new Error("invalid audio address.");
+  if (!hasPlaybackUrl(data) || !data.url.startsWith(`${src}?playback=`)) throw new Error("invalid audio address.");
   return data.url;
+}
+
+function hasPlaybackUrl(data: unknown): data is { url: string } {
+  if (!data || typeof data !== "object") return false;
+  return "url" in data && typeof data.url === "string";
 }

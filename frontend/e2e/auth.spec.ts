@@ -152,7 +152,7 @@ test.describe("auth", () => {
     await page.goto("/");
     await page.getByLabel("genre / style").fill("private song style");
     await page.getByRole("link", { name: "my songs", exact: true }).click();
-    await expect(page.getByRole("button", { name: "listen private saved song" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "song details: private saved song" })).toBeVisible();
     await page.getByRole("link", { name: "studio", exact: true }).click();
     await page.evaluate(() => {
       const original = window.fetch;
@@ -182,7 +182,7 @@ test.describe("auth", () => {
     await expect(page.getByText("private pending message")).toHaveCount(0);
     await page.getByRole("link", { name: "my songs", exact: true }).click();
     await expect(page.getByText(/no saved songs yet/)).toBeVisible();
-    await expect(page.getByRole("button", { name: "listen private saved song" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "song details: private saved song" })).toHaveCount(0);
   });
 
   test("processes confirmation callbacks and refreshes an expired saved session", async ({ page, baseURL }) => {

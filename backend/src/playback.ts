@@ -19,13 +19,19 @@ export function createPlaybackUrl(src: string, userId: string, sessionExpiresAt:
   return `${src}?playback=${token}`;
 }
 
-export function playbackUser(src: string, token: unknown): string | undefined {
-  if (!isPlaybackPath(src) || typeof token !== 'string') return;
+function parsePlaybackToken(token: string): { userId: string; expiresAt: number; supplied: Buffer } | undefined {
   const parts = token.split('.');
-  if (parts.length !== 3 || !isUuid(parts[0]) || !/^\d+$/.test(parts[1]) || !/^[\w-]{43}$/.test(parts[2])) return;
+  if (parts.length !== 3 || !isUuid(parts[0])) return;
+  if (!/^\d+$/.test(parts[1]) || !/^[\w-]{43}$/.test(parts[2])) return;
   const expiresAt = Number(parts[1]);
   if (!Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() / 1000) return;
-  const supplied = Buffer.from(parts[2], 'base64url');
-  const expected = signature(src, parts[0], expiresAt);
-  if (supplied.length === expected.length && timingSafeEqual(supplied, expected)) return parts[0];
+  return { userId: parts[0], expiresAt, supplied: Buffer.from(parts[2], 'base64url') };
+}
+
+export function playbackUser(src: string, token: unknown): string | undefined {
+  if (!isPlaybackPath(src) || typeof token !== 'string') return;
+  const parsed = parsePlaybackToken(token);
+  if (!parsed) return;
+  const expected = signature(src, parsed.userId, parsed.expiresAt);
+  if (parsed.supplied.length === expected.length && timingSafeEqual(parsed.supplied, expected)) return parsed.userId;
 }

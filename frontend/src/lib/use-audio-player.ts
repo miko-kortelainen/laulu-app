@@ -121,6 +121,10 @@ export function useAudioPlayer(src: string, active = true) {
         return;
       }
     }
+    await playAudio(audio);
+  }
+
+  async function playAudio(audio: HTMLAudioElement): Promise<void> {
     await audio.play().catch((error: unknown) => {
       setBuffering(false);
       if (error instanceof DOMException && error.name === "AbortError") return;
@@ -191,7 +195,10 @@ export function useAudioPlayer(src: string, active = true) {
     onError: () => {
       // Firefox can deliver a stale error from the previous load after a retry has already recovered.
       const current = audioRef.current;
-      if (current && (!current.error || (!current.paused && current.readyState >= 2 && current.currentTime > 0))) return;
+      if (current && !current.error) return;
+      if (current && !current.paused) {
+        if (current.readyState >= 2 && current.currentTime > 0) return;
+      }
       setPlaying(false);
       setBuffering(false);
       setPlaybackError("could not load audio. try play again.");

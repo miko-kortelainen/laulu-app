@@ -161,15 +161,23 @@ app.get('/api/usage', async (_req, res) => {
   if (usage) res.set('Cache-Control', 'private, no-store').json(usage);
 });
 
+function validAudioRange(range: string | undefined): boolean {
+  return !range || /^bytes=(?:\d+-\d*|-\d+)$/.test(range);
+}
+
 app.get('/api/music/:filename', async (req, res) => {
   const match = /^([0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})\.mp3$/i.exec(req.params.filename);
   if (!match) return res.status(404).json({ error: 'song not found.' });
   const range = req.get('range');
-  if (range && !/^bytes=(?:\d+-\d*|-\d+)$/.test(range)) {
+  if (!validAudioRange(range)) {
     return res.status(416).json({ error: 'invalid audio range.' });
   }
   const result = await readSong(res.locals.userId, match[1], range).catch((error: unknown) => storageFailure(res, error));
   if (!result) return;
+  return sendSong(req, res, result);
+});
+
+async function sendSong(req: Request, res: Response, result: Awaited<ReturnType<typeof readSong>>): Promise<unknown> {
   res.set({ 'Content-Type': 'audio/mpeg', 'Cache-Control': 'private, max-age=3600', 'Accept-Ranges': 'bytes' });
   if ('filename' in result) return res.sendFile(result.filename);
   if (result.contentRange) res.status(206).set('Content-Range', result.contentRange);
@@ -181,7 +189,7 @@ app.get('/api/music/:filename', async (req, res) => {
   await pipeline(result.audio, res).catch(() => {
     if (!res.destroyed) res.destroy();
   });
-});
+}
 
 function validSongCursor(before: string[]): boolean {
   return before.length === 2 &&
