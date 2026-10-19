@@ -300,6 +300,9 @@ Limits run before authentication and body parsing, including plans, playback, an
 HTTP 429 responses include `Retry-After`. Health checks and CORS preflight requests are excluded.
 Counters reset on restart and at each window boundary; traffic can burst across a boundary.
 These limits supplement paid usage quotas and do not replace proxy protection against traffic floods.
+The server sends CSP, framing protection, `nosniff`, and a referrer policy on all responses.
+CSP permits the configured Supabase origin, Paddle, Turnstile, and Google Fonts; inline scripts are blocked.
+Inline styles remain allowed for React and Paddle. Production responses include one year of HSTS for this host only.
 Set `TRUSTED_PROXY_CIDRS` to the exact trusted proxy IPs or CIDRs when using a reverse proxy.
 Without it, forwarded headers are ignored and clients behind a proxy share its IP allowance.
 

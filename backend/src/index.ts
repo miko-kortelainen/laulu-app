@@ -24,6 +24,36 @@ export const app = express();
 const PORT = process.env.PORT || 3001;
 const trustedProxies = (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map((ip) => ip.trim()).filter(Boolean);
 app.set('trust proxy', trustedProxies.length ? trustedProxies : false);
+app.disable('x-powered-by');
+
+const authOrigin = process.env.SUPABASE_URL ? new URL(process.env.SUPABASE_URL).origin : '';
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "script-src 'self' https://cdn.paddle.com https://challenges.cloudflare.com",
+  // React and Paddle set inline styles for layout and appearance.
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https://*.paddle.com",
+  `connect-src 'self' ${authOrigin} https://*.paddle.com https://challenges.cloudflare.com`,
+  "media-src 'self' blob:",
+  "frame-src https://*.paddle.com https://challenges.cloudflare.com",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+].join('; ');
+
+app.use((_req, res, next) => {
+  res.set({
+    'Content-Security-Policy': contentSecurityPolicy,
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+  });
+  // HTTPS terminates at the production proxy; browsers ignore HSTS received over HTTP.
+  if (process.env.NODE_ENV === 'production') res.set('Strict-Transport-Security', 'max-age=31536000');
+  next();
+});
 
 // The frontend and API share one origin in production and use the Vite proxy in development.
 // Browsers from other origins cannot read API responses unless listed here.

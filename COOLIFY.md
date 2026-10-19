@@ -171,5 +171,10 @@ docker compose config --quiet
 
 Deploy through Coolify to supply the runtime variables and public proxy routing.
 In Coolify, verify `https://studio.lau.lu/api/health` and reload `/songs`, `/profile`, and `/privacy` directly.
+Check `curl -I https://studio.lau.lu` for `Content-Security-Policy`, `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, and `Strict-Transport-Security: max-age=31536000`.
+Keep HTTPS working: HSTS tells browsers to use HTTPS for this host for one year.
+Verify login/Turnstile, fonts, playback, Paddle prices, and sandbox checkout after deploying CSP.
+Check the browser console for blocked resources; do not widen the policy to arbitrary HTTPS sources or inline scripts.
 Verify that private API requests still require login and that a missing asset returns HTTP 404.
 Confirm that the recovery volume survives a redeploy. Do not trigger paid operations for packaging checks.
