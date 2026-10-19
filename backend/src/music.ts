@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { PublicError } from './errors.js';
 import { tool, type ToolContext } from '@strands-agents/sdk';
 import { traceable } from 'langsmith/traceable';
 import { readFileSync } from 'node:fs';
@@ -11,14 +12,14 @@ import { QuotaError, reserveUsage, settleGeneration, songOutputLimit } from './q
 
 export { musicDirectory };
 
-export class MusicPromptTokenLimitError extends Error {}
-export class MusicGenerationError extends Error {
+export class MusicPromptTokenLimitError extends PublicError {}
+export class MusicGenerationError extends PublicError {
   constructor(message: string, readonly confirmedFailure: boolean) { super(message); }
 }
 
 export function validateMusicModel(value: unknown = 'lyria-3.5'): 'lyria-3.5' | 'lyria-3-clip-preview' {
   if (value !== 'lyria-3.5' && value !== 'lyria-3-clip-preview') {
-    throw new Error('choose Lyria 3.5 or Lyria 3 Clip Preview.');
+    throw new PublicError('choose Lyria 3.5 or Lyria 3 Clip Preview.');
   }
   return value;
 }
@@ -42,7 +43,7 @@ function musicServiceError(error: unknown): string {
 
 export function validateMusicPrompt(value: unknown): string {
   if (!validMusicPrompt(value)) {
-    throw new Error('music prompt must contain 1–10,000 characters.');
+    throw new PublicError('music prompt must contain 1–10,000 characters.');
   }
   return value.trim();
 }
@@ -195,11 +196,11 @@ async function checkMusicTokens(client: GoogleGenAI, model: string, input: strin
     config: { httpOptions: { timeout: 30_000, retryOptions: { attempts: 1 } } },
   }).catch((error: unknown) => {
     console.error('music token counting failed:', error);
-    throw new Error('could not check your prompt. generation was not started. try again later.');
+    throw new PublicError('could not check your prompt. generation was not started. try again later.');
   });
   const totalTokens = tokenData.totalTokens;
   if (!isCount(totalTokens)) {
-    throw new Error('could not check your prompt. generation was not started. try again later.');
+    throw new PublicError('could not check your prompt. generation was not started. try again later.');
   }
   if (totalTokens > 131_072) {
     throw new MusicPromptTokenLimitError(`music prompt contains ${totalTokens.toLocaleString('en-US')} tokens; the ${model} input limit is 131,072. shorten the prompt and try again.`);

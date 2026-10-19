@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { deleteSongObject, openSongObject, putSongObject, r2Storage, readSongObject } from './r2.js';
 import { userDirectory } from './user-files.js';
 import { database } from './database.js';
+import { PublicError } from './errors.js';
 import { hasErrorCode, isCount, isRecord, isTimestamp, isUuid } from './validation.js';
 import { checkAllowance, quotaRpc, settleGeneration, songOutputLimit } from './quotas.js';
 
@@ -42,7 +43,7 @@ export interface SavedSong {
 
 export function validateSongTitle(value: unknown = 'untitled'): string {
   if (typeof value !== 'string' || value.trim().length > 200) {
-    throw new Error('song title must be text with at most 200 characters.');
+    throw new PublicError('song title must be text with at most 200 characters.');
   }
   return value.trim() || 'untitled';
 }
@@ -52,13 +53,12 @@ function songPath(userId: unknown, id: unknown): string {
   return path.join(userDirectory(musicDirectory, userId), `${id}.mp3`);
 }
 
-export class SongNotFoundError extends Error {}
+export class SongNotFoundError extends PublicError {}
 
-export class SongStorageError extends Error {
+export class SongStorageError extends PublicError {
   constructor(public readonly songId: string, inMemory = false, cause?: unknown) {
     super('song generated, but saving failed. retry saving instead of generating again.' +
-      (inMemory ? ' local recovery is only in memory; keep the backend running until saving succeeds.' : '') +
-      (cause instanceof Error ? ` ${cause.message}` : ''), { cause });
+      (inMemory ? ' local recovery is only in memory; keep the backend running until saving succeeds.' : ''), { cause });
   }
 }
 
@@ -84,10 +84,10 @@ export async function checkSongStorage(userId: string): Promise<void> {
   r2Storage();
   // Check the table and database credentials before the paid generation call.
   const { error } = await database().from('songs').select('id, title').eq('owner_id', userId).limit(1);
-  if (error) throw new Error('song database is unavailable. generation was not started.');
+  if (error) throw new PublicError('could not check song storage. generation was not started. try again.', { cause: error });
   const pending = await listSongRecovery(userId);
   // Limit unfinished recovery to five songs per account.
-  if (pending.length >= 5) throw new Error('retry your unsaved songs before generating another song.');
+  if (pending.length >= 5) throw new PublicError('retry your unsaved songs before generating another song.');
 }
 
 function publicSong(song: Song): SavedSong {
@@ -101,7 +101,7 @@ async function findSong({ owner_id: userId, id }: Pick<Song, 'owner_id' | 'id'>)
   songPath(userId, id);
   if (!process.env.SUPABASE_SECRET_KEY) return null;
   const { data, error } = await database().from('songs').select('*').eq('owner_id', userId).eq('id', id).maybeSingle();
-  if (error) throw new Error('could not load song metadata. try again.');
+  if (error) throw new PublicError('could not load song metadata. try again.', { cause: error });
   return data as Song | null;
 }
 
@@ -123,7 +123,7 @@ export async function listSongs(userId: string, before?: { createdAt: string; id
   if (favourites) query = query.eq('is_favourite', true);
   if (before) query = query.or(`created_at.lt.${before.createdAt},and(created_at.eq.${before.createdAt},id.lt.${before.id})`);
   const { data, error } = await query;
-  if (error) throw new Error('could not load saved songs. try again.');
+  if (error) throw new PublicError('could not load saved songs. try again.', { cause: error });
   return (data as Song[]).map(publicSong);
 }
 
@@ -131,7 +131,7 @@ export async function setSongFavourite(userId: string, id: string, isFavourite: 
   songPath(userId, id);
   const { data, error } = await database().from('songs').update({ is_favourite: isFavourite })
     .eq('owner_id', userId).eq('id', id).eq('status', 'ready').select('id').maybeSingle();
-  if (error) throw new Error('could not update favourite. try again.');
+  if (error) throw new PublicError('could not update favourite. try again.', { cause: error });
   if (!data) throw new SongNotFoundError('song not found.');
 }
 
@@ -145,18 +145,18 @@ export async function deleteSong(userId: string, id: string): Promise<void> {
   if (!readySong(song, key)) {
     throw new SongNotFoundError('song not found.');
   }
-  await deleteSongObject(key).catch(() => { throw new Error('could not delete song audio. try deleting again.'); });
+  await deleteSongObject(key).catch((cause: unknown) => { throw new PublicError('could not delete song audio. try deleting again.', { cause }); });
   await removeLocalSong(song);
   // Keep metadata until cleanup succeeds; deleting an absent R2 object is safe to retry.
   const { error } = await database().from('songs').delete().eq('owner_id', userId).eq('id', id);
-  if (error) throw new Error('could not finish deleting the song. try deleting again.');
+  if (error) throw new PublicError('could not finish deleting the song. try deleting again.', { cause: error });
 }
 
 async function removeLocalSong(song: Song): Promise<void> {
   const filename = songPath(song.owner_id, song.id);
   // Remove local copies before metadata so legacy playback cannot restore a deleted song.
   await Promise.all([filename, filename.replace(/\.mp3$/, '.json')].map((file) => rm(file, { force: true })))
-    .catch(() => { throw new Error('could not delete local song files. try deleting again.'); });
+    .catch((cause: unknown) => { throw new PublicError('could not delete local song files. try deleting again.', { cause }); });
   memoryRecovery.delete(song.id);
 }
 

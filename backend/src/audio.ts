@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { PublicError } from './errors.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -58,7 +59,7 @@ async function withProcessorSlot<T>(task: () => Promise<T>): Promise<T> {
 export function audioPath(value: unknown, userId: unknown): string {
   const match = typeof value === 'string' ? audioUrlPattern.exec(value) : null;
   if (!match || (match[1] === 'music' && match[3] !== 'mp3')) {
-    throw new Error('choose a generated track or upload an MP3, WAV, FLAC, or OGG file first.');
+    throw new PublicError('choose a generated track or upload an MP3, WAV, FLAC, or OGG file first.');
   }
   return path.join(userDirectory(match[1] === 'music' ? musicDirectory : audioDirectory, userId), match[2]);
 }
@@ -76,14 +77,12 @@ async function runProcessor(command: 'ffmpeg' | 'ffprobe', args: string[]): Prom
     timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
   })).catch((error: unknown) => {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      throw new Error('install FFmpeg on the backend host. ffmpeg and ffprobe must be on PATH.');
+      throw new PublicError('audio processing is unavailable. try again later.', { cause: error });
     }
     if (error && typeof error === 'object' && 'killed' in error && error.killed) {
-      throw new Error('audio processing timed out. try a shorter track.');
+      throw new PublicError('audio processing timed out. try a shorter track.', { cause: error });
     }
-    const detail = error && typeof error === 'object' && 'stderr' in error && typeof error.stderr === 'string'
-      ? error.stderr.trim().split('\n').at(-1) : undefined;
-    throw new Error(detail || 'local audio processing failed.');
+    throw new PublicError('could not process this audio. choose a valid MP3, WAV, FLAC, or OGG file.', { cause: error });
   });
   return result.stdout;
 }
@@ -92,7 +91,7 @@ async function validateAudio(source: string): Promise<void> {
   const stdout = await runProcessor('ffprobe', [...audioInputOptions, '-select_streams', 'a',
     '-show_entries', 'stream=channels:format=duration', '-of', 'json', source]);
   const info = JSON.parse(stdout) as { streams?: { channels?: number }[]; format?: { duration?: string } };
-  if (!validAudioInfo(info)) throw new Error('audio must be mono or stereo and between 0 and 10 minutes long.');
+  if (!validAudioInfo(info)) throw new PublicError('audio must be mono or stereo and between 0 and 10 minutes long.');
 }
 
 function validAudioInfo(info: { streams?: { channels?: number }[]; format?: { duration?: string } }): boolean {
@@ -104,7 +103,7 @@ export async function prepareAnalysisAudio(audioUrl: unknown, userId: unknown): 
   const { filename: source, temporary } = await resolveAudioPath(audioUrl, userId);
   const releaseSource = retainLocalAudio(source);
   try {
-    const file = await stat(source).catch(() => { throw new Error('audio file no longer exists. upload it again.'); });
+    const file = await stat(source).catch(() => { throw new PublicError('audio file no longer exists. upload it again.'); });
     const extension = path.extname(source);
     // Leave room for the data URI prefix under the provider's 10 MB base64 limit.
     if (canInlineAudio(extension, file.size)) {
@@ -129,7 +128,7 @@ async function convertAnalysisAudio(source: string, userId: unknown): Promise<{ 
     await runProcessor('ffmpeg', [...audioInputOptions, '-nostdin', '-xerror', '-i', source,
       '-map', '0:a:0', '-ar', '44100', '-c:a', 'libmp3lame', '-b:a', '80k', output]);
     const data = (await readFile(output)).toString('base64');
-    if (!data || data.length + 13 >= 10_000_000) throw new Error('audio is too large to analyze. try a shorter track.');
+    if (!data || data.length + 13 >= 10_000_000) throw new PublicError('audio is too large to analyze. try a shorter track.');
     return { data, format: 'mp3' };
   } finally {
     releaseTemporary();
@@ -139,10 +138,10 @@ async function convertAnalysisAudio(source: string, userId: unknown): Promise<{ 
 
 export async function uploadAudio(name: unknown, data: unknown, userId: unknown): Promise<AudioTrack> {
   if (!validUploadName(name)) {
-    throw new Error('choose an MP3, WAV, FLAC, or OGG file.');
+    throw new PublicError('choose an MP3, WAV, FLAC, or OGG file.');
   }
   if (!validUploadData(data)) {
-    throw new Error('audio upload must contain 1 byte to 50 MB.');
+    throw new PublicError('audio upload must contain 1 byte to 50 MB.');
   }
   const filename = `${randomUUID()}${path.extname(name).toLowerCase()}`;
   const directory = userDirectory(audioDirectory, userId);

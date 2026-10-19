@@ -4,6 +4,7 @@ import { userDirectory } from './user-files.js';
 import { MusicGenerationError } from './music.js';
 import { retainUploadSession } from './agent.js';
 import { database } from './database.js';
+import { PublicError, publicErrorMessage } from './errors.js';
 import { hasErrorCode, isRecord, isUuid } from './validation.js';
 import { cleanupSongRecovery, musicDirectory, retrySongStorage, SongNotFoundError, SongStorageError, writeAtomic } from './songs.js';
 import { QuotaError, quotaRpc, settleGeneration } from './quotas.js';
@@ -31,13 +32,13 @@ export function sessionBusy(userId: string): boolean {
 
 export function operationId(value: unknown): string {
   if (!isUuid(value)) {
-    throw new Error('invalid operation reference.');
+    throw new PublicError('invalid operation reference.');
   }
   return value;
 }
 
 function unavailable(): Error {
-  return new Error('operation database is unavailable. reconnect to recover your request.');
+  return new PublicError('could not load your request. reconnect to recover it.');
 }
 
 async function persist(operation: Operation): Promise<void> {
@@ -102,7 +103,8 @@ export async function acknowledgeOperation(userId: string, id: string): Promise<
 
 export function operationFailure(error: unknown): Record<string, unknown> {
   return {
-    error: error instanceof Error ? error.message : 'request failed.',
+    error: error instanceof QuotaError && error.status === 429 ? error.message
+      : publicErrorMessage(error, 'request failed. check your requests before trying again.'),
     ...(error instanceof MusicGenerationError ? { generationStatus: error.confirmedFailure ? 'failed' : 'unknown' } : {}),
     ...(error instanceof SongStorageError ? { songId: error.songId } : {}),
     ...(error instanceof QuotaError ? { code: error.status === 429 ? 'quota_exceeded' : 'quota_unavailable',
@@ -118,7 +120,7 @@ export async function startOperation(userId: string, id: string, kind: Operation
     .select('*').abortSignal(AbortSignal.timeout(10_000)).single();
   if (error?.code === '23505') {
     const existing = await getOperation(userId, id);
-    if (existing.kind !== kind) throw new Error('operation reference belongs to another request.');
+    if (existing.kind !== kind) throw new PublicError('operation reference belongs to another request.');
     return existing;
   }
   if (error || !data) throw unavailable();

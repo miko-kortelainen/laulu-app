@@ -194,7 +194,10 @@ async function assertOversizeRecovery({ prompt, provider, storage, bytes, comple
     let oversizedId = '';
     await assert.rejects(generateMusic(prompt, provider.expectedModel), (error: unknown) => {
       assert.ok(error instanceof SongStorageError);
-      assert.match(error.message, /MAX_GENERATED_SONG_BYTES/);
+      assert.match(error.message, /retry saving instead of generating again/);
+      assert.doesNotMatch(error.message, /MAX_GENERATED_SONG_BYTES/);
+      assert.ok(error.cause instanceof Error);
+      assert.match(error.cause.message, /MAX_GENERATED_SONG_BYTES/);
       oversizedId = error.songId;
       return true;
     });

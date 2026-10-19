@@ -21,6 +21,7 @@ test('verified users own their API session and local media', async (t) => {
     await assertUploadOwnership(fixture);
     await assertReceivingUpload(fixture);
     await assertClosingUploadSlots(fixture);
+    await assertErrorResponses(fixture);
     await assertRequestLimiting(fixture);
   } finally {
     await fixture.cleanup();
@@ -79,6 +80,36 @@ async function createAuthFixture(t: TestContext) {
 }
 
 type AuthFixture = Awaited<ReturnType<typeof createAuthFixture>>;
+
+async function assertErrorResponses({ t, url, headersA }: AuthFixture): Promise<void> {
+  const { getPaddle } = await import('../src/billing.js');
+  process.env.PADDLE_SANDBOX_API_KEY = 'pdl_sdbx_offline';
+  process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET = 'offline_notification_secret';
+  process.env.PADDLE_STARTER_PRICE_ID = 'pri_01m4tvkjam9nptz0f1ngrbr9mj';
+  process.env.PADDLE_PRO_PRICE_ID = 'pri_01m4tvmm85j15s4vjd9ykmsa0d';
+  process.env.PADDLE_ULTRA_PRICE_ID = 'pri_01m4tvnr6xfnyk1nwtyt5vma9e';
+  const internal = new Error('private Paddle diagnostic /srv/billing');
+  const logs = t.mock.method(console, 'error', () => {});
+  const provider = t.mock.method(getPaddle().prices, 'get', async () => { throw internal; });
+  try {
+    const checkout = await fetch(`${url}/api/billing/checkout`, {
+      method: 'POST', headers: headersA, body: JSON.stringify({ plan: 'starter' }),
+    });
+    assert.equal(checkout.status, 503);
+    assert.deepEqual(await checkout.json(), { error: 'checkout could not start. check your subscription before retrying.' });
+    assert.ok(logs.mock.calls.some(call => call.arguments[1] === internal));
+    const invalid = await fetch(`${url}/api/billing/checkout`, {
+      method: 'POST', headers: headersA, body: JSON.stringify({ plan: 'invalid' }),
+    });
+    assert.deepEqual(await invalid.json(), { error: 'choose a valid billing plan.' });
+    const malformed = await fetch(`${url}/api/chat`, { method: 'POST', headers: headersA, body: '{private malformed body' });
+    assert.equal(malformed.status, 400);
+    assert.deepEqual(await malformed.json(), { error: 'request must contain valid JSON.' });
+  } finally {
+    provider.mock.restore();
+    logs.mock.restore();
+  }
+}
 
 async function assertRequestLimiting({ url, auth }: AuthFixture): Promise<void> {
   const authRequests = auth.requests;
@@ -205,7 +236,11 @@ async function assertConversationOwnership(fixture: AuthFixture): Promise<void> 
   assert.equal((await fetch(`${url}/api/songs/${randomUUID()}`, { method: 'DELETE', headers: headersA })).status, 409);
   assert.equal((await fetch(`${url}/api/reset`, { method: 'POST', headers: headersB })).status, 200);
   cancel(new Error('offline request cancellation'));
-  assert.equal((await pendingChat).status, 500);
+  const failedChat = await pendingChat;
+  assert.equal(failedChat.status, 500);
+  assert.deepEqual(await failedChat.json(), {
+    error: 'could not process your message. try again.', reply: 'could not process your message. try again.',
+  });
   const usageBeforeReset = await (await fetch(`${url}/api/usage?userId=${userB}`, { headers: headersA })).json();
   assert.equal(usageBeforeReset.chat.used, 1, 'failed paid requests consume one allowance');
   const originalRm = fs.rm;
@@ -216,7 +251,7 @@ async function assertConversationOwnership(fixture: AuthFixture): Promise<void> 
   syncBuiltinESMExports();
   const failedReset = await fetch(`${url}/api/reset`, { method: 'POST', headers: headersA });
   assert.equal(failedReset.status, 500);
-  assert.match((await failedReset.json()).error, /upload cleanup failure/);
+  assert.equal((await failedReset.json()).error, 'session cleanup failed. try again.');
   assert.equal(getChatContext(userA).messages, 1, 'failed cleanup preserves the conversation for retry');
   assert.equal(await fs.readFile(`${directory}/${filename}`, 'utf8'), 'private fixture');
   failure.mock.restore();
@@ -349,6 +384,10 @@ function configureAuthTransport(quotas: ReturnType<typeof configureTestQuotas>, 
     if (requestUrl.origin === process.env.SUPABASE_URL && requestUrl.pathname === '/rest/v1/rpc/get_plan_limits') {
       assert.equal(request.headers.get('apikey'), 'sb_secret_offline');
       return auth.plansUnavailable ? Response.json({ message: 'offline plans failure' }, { status: 503 }) : Response.json([]);
+    }
+    if (requestUrl.origin === process.env.SUPABASE_URL && requestUrl.pathname === '/rest/v1/rpc/get_billing') {
+      return Response.json({ plan: null, status: null, paidAccess: false, periodEnd: null,
+        billingInterval: null, scheduledChange: null, transactionId: null });
     }
     if (requestUrl.origin === process.env.SUPABASE_URL && requestUrl.pathname === '/rest/v1/terms_acceptances') {
       return testTermsResponse(request, requestUrl, auth);

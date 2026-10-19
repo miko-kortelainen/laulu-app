@@ -11,6 +11,7 @@ import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validate
 import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
 import { createApiRateLimit } from './rate-limit.js';
+import { PublicError, publicErrorMessage } from './errors.js';
 import { createPlaybackUrl, isPlaybackPath, playbackUser } from './playback.js';
 import { hasAcceptedTerms, recordTermsAcceptance, requireTerms, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
@@ -107,28 +108,28 @@ app.get('/api/billing', async (_req, res) => {
 
 app.post('/api/billing/checkout', requireTerms, locked(async (req, res) => {
   const transactionId = await createCheckout(res.locals.userId, req.body?.plan, req.body?.billingInterval).catch((error: unknown) => {
-    res.status(503).json({ error: error instanceof Error ? error.message : 'checkout could not start. try again.' });
+    res.status(503).json({ error: publicErrorMessage(error, 'checkout could not start. check your subscription before retrying.') });
   });
   if (transactionId) res.set('Cache-Control', 'private, no-store').json({ transactionId });
 }));
 
 app.post('/api/billing/preview', requireTerms, locked(async (req, res) => {
   const preview = await previewPlanChange(res.locals.userId, req.body?.plan, req.body?.billingInterval).catch((error: unknown) => {
-    res.status(503).json({ error: error instanceof Error ? error.message : 'could not preview this plan change. try again.' });
+    res.status(503).json({ error: publicErrorMessage(error, 'could not preview this plan change. try again.') });
   });
   if (preview) res.set('Cache-Control', 'private, no-store').json(preview);
 }));
 
 app.post('/api/billing/change', requireTerms, locked(async (req, res) => {
   await changeSubscription(res.locals.userId, req.body?.plan, req.body?.subscriptionUpdatedAt, req.body?.billingInterval).catch((error: unknown) => {
-    res.status(503).json({ error: error instanceof Error ? error.message : 'could not change your plan. check your subscription before retrying.' });
+    res.status(503).json({ error: publicErrorMessage(error, 'could not change your plan. check your subscription before retrying.') });
   });
   if (!res.headersSent) res.status(204).end();
 }));
 
 app.post('/api/billing/cancel', locked(async (_req, res) => {
   await cancelSubscription(res.locals.userId).catch((error: unknown) => {
-    res.status(503).json({ error: error instanceof Error ? error.message : 'could not cancel your subscription. check your subscription before retrying.' });
+    res.status(503).json({ error: publicErrorMessage(error, 'could not cancel your subscription. check your subscription before retrying.') });
   });
   if (!res.headersSent) res.status(204).end();
 }));
@@ -179,14 +180,14 @@ function storageFailure(res: Response, error: unknown): void {
   if (error instanceof QuotaError) return quotaFailure(res, error);
   const invalidRange = error instanceof Error && error.name === 'InvalidRange';
   res.status(error instanceof SongNotFoundError ? 404 : invalidRange ? 416 : 502).json({
-    error: error instanceof Error ? error.message : 'song storage failed. try again.',
+    error: invalidRange ? 'requested audio range is unavailable.' : publicErrorMessage(error, 'song storage failed. try again.'),
     ...(error instanceof SongStorageError ? { songId: error.songId, retryUrl: `/api/songs/${error.songId}/retry` } : {}),
   });
 }
 
 function quotaFailure(res: Response, error: QuotaError): void {
   if (error.resetAt) res.set('Retry-After', String(Math.max(0, Math.ceil((Date.parse(error.resetAt) - Date.now()) / 1000))));
-  res.status(error.status).json({ error: error.message, code: error.status === 429 ? 'quota_exceeded' : 'quota_unavailable',
+  res.status(error.status).json({ error: error.status === 429 ? error.message : publicErrorMessage(error, 'could not check your allowance. try again.'), code: error.status === 429 ? 'quota_exceeded' : 'quota_unavailable',
     resource: error.resource, resetAt: error.resetAt });
 }
 
@@ -269,7 +270,9 @@ app.post('/api/audio', locked(async (req, res) => {
       });
     });
     const audio = await uploadAudio(req.query.name, req.body, res.locals.userId).catch((error: unknown) => {
-      res.status(error instanceof LocalAudioLimitError ? 507 : 400).json({ error: error instanceof Error ? error.message : 'audio upload failed.' });
+      res.status(error instanceof LocalAudioLimitError ? 507 : error instanceof PublicError ? 400 : 500).json({
+        error: error instanceof LocalAudioLimitError ? error.message : publicErrorMessage(error, 'audio upload failed. try again.'),
+      });
     });
     if (audio) res.json({ audio });
   } finally {
@@ -394,12 +397,11 @@ app.post('/api/chat', requireTerms, locked(async (req: Request, res: Response) =
       quotaFailure(res, error);
       return;
     }
-    const message = error instanceof Error ? error.message : 'Failed to process message with agent';
-    console.error('Agent invocation error:', error);
+    const message = publicErrorMessage(error, 'could not process your message. try again.');
     if (!res.headersSent) res.status(500);
     send({
       error: message,
-      reply: `Agent Error: ${message}`,
+      reply: message,
     });
   } finally {
     for (const removeHook of removeHooks) removeHook();
@@ -418,7 +420,7 @@ app.post('/api/music', requireTerms, locked(async (req: Request, res: Response) 
     model = validateMusicModel(req.body?.model);
     title = validateSongTitle(req.body?.title);
   } catch (error: unknown) {
-    res.status(400).json({ error: error instanceof Error ? error.message : 'invalid music prompt.' });
+    res.status(400).json({ error: publicErrorMessage(error, 'invalid music prompt.') });
     return;
   }
 
@@ -432,7 +434,7 @@ app.post('/api/music', requireTerms, locked(async (req: Request, res: Response) 
   const track = await generateMusic({ prompt, modelId: model, userId: sessionId, title }, { metadata: { thread_id: sessionId, ls_model_name: model } }).catch((error: unknown) => {
     if (error instanceof QuotaError || error instanceof SongStorageError) return storageFailure(res, error);
     res.status(error instanceof MusicPromptTokenLimitError ? 400 : 502)
-      .json({ error: error instanceof Error ? error.message : 'music generation failed.' });
+      .json({ error: publicErrorMessage(error, 'music generation failed. check your requests before trying again.') });
   });
   if (track) res.json({ track });
 }));
@@ -440,7 +442,7 @@ app.post('/api/music', requireTerms, locked(async (req: Request, res: Response) 
 // Reset endpoint
 app.post('/api/session/end', async (_req, res) => {
   await endUploadSession(res.locals.userId).catch((error: unknown) => {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'session cleanup failed. try again.' });
+    res.status(500).json({ error: publicErrorMessage(error, 'session cleanup failed. try again.') });
   });
   if (!res.headersSent) res.status(204).end();
 });
@@ -448,7 +450,7 @@ app.post('/api/session/end', async (_req, res) => {
 app.post('/api/reset', locked(async (req: Request, res: Response) => {
   const sessionId: string = res.locals.userId;
   await resetAgentSession(sessionId).catch((error: unknown) => {
-    res.status(500).json({ error: error instanceof Error ? error.message : 'session cleanup failed. try again.' });
+    res.status(500).json({ error: publicErrorMessage(error, 'session cleanup failed. try again.') });
   });
   if (!res.headersSent) res.json({ status: 'ok' });
 }));
@@ -460,6 +462,14 @@ app.use(express.static(frontendDirectory, { index: false }));
 app.get('/{*path}', (req, res, next) => {
   if (path.extname(req.path) || !req.accepts('html')) return next();
   res.sendFile(path.join(frontendDirectory, 'index.html'), { headers: { 'Cache-Control': 'no-cache' } });
+});
+
+app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) return next(error);
+  const type = error && typeof error === 'object' && 'type' in error ? error.type : undefined;
+  if (type === 'entity.too.large') return res.status(413).json({ error: 'request is too large.' });
+  if (type === 'entity.parse.failed') return res.status(400).json({ error: 'request must contain valid JSON.' });
+  res.status(error instanceof PublicError ? 400 : 500).json({ error: publicErrorMessage(error, 'request failed. try again.') });
 });
 
 if (process.env.NODE_ENV !== 'test') {

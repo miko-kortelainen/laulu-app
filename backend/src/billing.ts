@@ -5,6 +5,7 @@ import {
   type TransactionCompletedEvent, type Price, type Transaction, type Subscription, type UpdateSubscriptionRequestBody,
 } from '@paddle/paddle-node-sdk';
 import { database } from './database.js';
+import { PublicError } from './errors.js';
 import { isRecord, isTimestamp } from './validation.js';
 
 const planSettings = {
@@ -33,7 +34,7 @@ function plans() {
 
 async function billingRpc(name: string, parameters: Record<string, unknown>): Promise<unknown> {
   const result = await database().rpc(name, parameters).abortSignal(AbortSignal.timeout(3500));
-  if (result.error) throw new Error('billing database is unavailable. try again.');
+  if (result.error) throw new Error('billing database is unavailable. try again.', { cause: result.error });
   return result.data as unknown;
 }
 
@@ -69,14 +70,14 @@ type Plan = ReturnType<typeof plans>[number];
 function requestedBillingPlan(requestedPlan: unknown, interval: unknown): Plan {
   if (!process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET) throw new Error('subscription fulfillment is not configured yet.');
   const plan = plans().find(item => item.name === requestedPlan && item.interval === interval);
-  if (!plan) throw new Error('choose a valid billing plan.');
+  if (!plan) throw new PublicError('choose a valid billing plan.');
   return plan;
 }
 
 async function validatePrice(plan: Plan): Promise<void> {
   const price = await getPaddle().prices.get(plan.priceId);
   if (!validPrice(price, plan)) {
-    throw new Error('this billing plan is unavailable.');
+    throw new PublicError('this billing plan is unavailable.');
   }
 }
 
@@ -87,7 +88,7 @@ function validPrice(price: Price, plan: Plan): boolean {
 export async function createCheckout(userId: string, requestedPlan: unknown, interval: unknown = 'month'): Promise<string> {
   const plan = requestedBillingPlan(requestedPlan, interval);
   const billing = await getBilling(userId);
-  if (billing.status && billing.status !== 'canceled') throw new Error('you already have a subscription. manage it before buying another plan.');
+  if (billing.status && billing.status !== 'canceled') throw new PublicError('you already have a subscription. manage it before buying another plan.');
 
   await validatePrice(plan);
   const previous = await previousCheckout(userId, plan);
@@ -104,7 +105,7 @@ async function previousCheckout(userId: string, plan: Plan): Promise<string | un
   const pending = await database().from('paddle_transactions').select('id').eq('user_id', userId)
     .order('id', { ascending: false }).limit(1)
     .abortSignal(AbortSignal.timeout(3500)).maybeSingle();
-  if (pending.error) throw new Error('could not check previous checkout. try again.');
+  if (pending.error) throw new Error('could not check previous checkout. try again.', { cause: pending.error });
   const row: unknown = pending.data;
   if (!isRecord(row) || typeof row.id !== 'string') return undefined;
   const previous = await getPaddle().transactions.get(row.id);
@@ -118,14 +119,14 @@ async function verifyPreviousSubscription(userId: string, subscriptionId: string
   const subscription = await database().from('paddle_subscriptions').select('status')
     .eq('id', subscriptionId).eq('user_id', userId)
     .abortSignal(AbortSignal.timeout(3500)).maybeSingle();
-  if (subscription.error) throw new Error('could not check previous subscription. try again.');
-  if (subscription.data?.status !== 'canceled') throw new Error('your previous payment is processing. check your subscription before paying again.');
+  if (subscription.error) throw new Error('could not check previous subscription. try again.', { cause: subscription.error });
+  if (subscription.data?.status !== 'canceled') throw new PublicError('your previous payment is processing. check your subscription before paying again.');
 }
 
 async function reuseCheckout(previous: Transaction, plan: Plan): Promise<string | undefined> {
   if (previous.status === 'canceled') return undefined;
   if (previous.status !== 'draft' && previous.status !== 'ready') {
-    throw new Error('your previous payment is processing. check your subscription before paying again.');
+    throw new PublicError('your previous payment is processing. check your subscription before paying again.');
   }
   if (!checkoutMatches(previous, plan)) {
     await getPaddle().transactions.update(previous.id, { items: [{ priceId: plan.priceId, quantity: 1 }] });
@@ -141,9 +142,9 @@ async function ownedSubscription(userId: string): Promise<{ subscription: Subscr
   const result = await database().from('paddle_subscriptions').select('id, customer_id, scheduled_change, updated_at')
     .eq('user_id', userId).neq('status', 'canceled').order('updated_at', { ascending: false }).limit(1)
     .abortSignal(AbortSignal.timeout(3500)).maybeSingle();
-  if (result.error) throw new Error('could not load your subscription. try again.');
+  if (result.error) throw new Error('could not load your subscription. try again.', { cause: result.error });
   const row: unknown = result.data;
-  if (!validSubscriptionOwner(row)) throw new Error('no subscription to manage.');
+  if (!validSubscriptionOwner(row)) throw new PublicError('no subscription to manage.');
   const subscription = await getPaddle().subscriptions.get(row.id);
   if (subscription.customerId !== row.customer_id) throw new Error('subscription ownership could not be verified.');
   return {
@@ -160,7 +161,7 @@ function currentPlan(subscription: Subscription, catalogue: Plan[]): Plan {
   const item = subscription.items.length === 1 ? subscription.items[0] : undefined;
   const current = catalogue.find(candidate => candidate.priceId === item?.price.id);
   if (!current || !subscriptionMatches(subscription, current)) {
-    throw new Error('this subscription cannot change plans here.');
+    throw new PublicError('this subscription cannot change plans here.');
   }
   return current;
 }
@@ -175,11 +176,11 @@ function isActiveAutomatic(subscription: Subscription): boolean {
 
 async function changeableSubscription(userId: string): Promise<Subscription> {
   const { subscription, pendingChange, synced } = await ownedSubscription(userId);
-  if (!synced) throw new Error('your subscription update is processing. check its status before changing plans.');
+  if (!synced) throw new PublicError('your subscription update is processing. check its status before changing plans.');
   if (!isActiveAutomatic(subscription)) {
-    throw new Error('only active subscriptions can change plans.');
+    throw new PublicError('only active subscriptions can change plans.');
   }
-  if (pendingChange || subscription.scheduledChange) throw new Error('your subscription already has a scheduled change.');
+  if (pendingChange || subscription.scheduledChange) throw new PublicError('your subscription already has a scheduled change.');
   return subscription;
 }
 
@@ -187,8 +188,8 @@ async function planChange(userId: string, requestedPlan: unknown, interval: unkn
   const plan = requestedBillingPlan(requestedPlan, interval);
   const subscription = await changeableSubscription(userId);
   const current = currentPlan(subscription, plans());
-  if (plan.interval !== current.interval) throw new Error('keep your current billing frequency when changing tiers.');
-  if (current.name === plan.name) throw new Error('you already have this plan.');
+  if (plan.interval !== current.interval) throw new PublicError('keep your current billing frequency when changing tiers.');
+  if (current.name === plan.name) throw new PublicError('you already have this plan.');
   await validatePrice(plan);
   return { subscription, plan, ...subscriptionChange(subscription, plan, current) };
 }
@@ -197,7 +198,7 @@ function subscriptionChange(subscription: Subscription, plan: Plan, current: Pla
   const tiers = Object.keys(planSettings);
   const downgrade = tiers.indexOf(plan.name) < tiers.indexOf(current.name);
   const effectiveAt = downgrade ? subscription.currentBillingPeriod?.endsAt : null;
-  if (effectiveAt === undefined) throw new Error('your renewal date is unavailable. try again.');
+  if (effectiveAt === undefined) throw new PublicError('your renewal date is unavailable. try again.');
   const body: UpdateSubscriptionRequestBody = {
     items: [{ priceId: plan.priceId, quantity: 1 }],
     prorationBillingMode: downgrade ? 'do_not_bill' : 'prorated_immediately',
@@ -229,8 +230,8 @@ export async function previewPlanChange(userId: string, requestedPlan: unknown, 
   const preview = await getPaddle().subscriptions.previewUpdate(subscription.id, body);
   const recurring = preview.recurringTransactionDetails?.totals;
   const next = preview.nextTransaction?.details.totals;
-  if (!recurring || !next) throw new Error('subscription prices are unavailable. try again.');
-  if (!preview.nextBilledAt) throw new Error('subscription prices are unavailable. try again.');
+  if (!recurring || !next) throw new PublicError('subscription prices are unavailable. try again.');
+  if (!preview.nextBilledAt) throw new PublicError('subscription prices are unavailable. try again.');
 
   return {
     plan: plan.name, billingInterval: plan.interval, subscriptionUpdatedAt: subscription.updatedAt,
@@ -244,7 +245,7 @@ export async function previewPlanChange(userId: string, requestedPlan: unknown, 
 export async function changeSubscription(userId: string, requestedPlan: unknown, updatedAt: unknown, interval: unknown = 'month'): Promise<void> {
   const { subscription, body } = await planChange(userId, requestedPlan, interval);
   if (typeof updatedAt !== 'string' || subscription.updatedAt !== updatedAt) {
-    throw new Error('your subscription changed. review the new price before confirming.');
+    throw new PublicError('your subscription changed. review the new price before confirming.');
   }
   await getPaddle().subscriptions.update(subscription.id, body);
 }

@@ -284,6 +284,8 @@ Chat, lyric generation, audio analysis, and music generation incur provider char
 The **generate song** button starts music generation from the edited brief.
 Dates use short month names. Displayed times use your browser's local time, without seconds or timezone offsets.
 Music errors show short recovery instructions instead of raw provider responses.
+Unexpected API and saved-operation errors use recovery messages; their details stay in server logs.
+Validation, allowance limits, and song-save recovery references remain visible.
 Safety rejections ask you to edit the prompt or lyrics before trying again.
 
 ## Storage and recovery

@@ -62,17 +62,17 @@ test('audio uploads validate files, preserve valid state, and end with their ses
   await assert.rejects(uploadAudio('track.wav', Buffer.alloc(0)), /audio upload/);
   await assert.rejects(uploadAudio('track.wav', Buffer.alloc(50 * 1024 * 1024 + 1)), /audio upload/);
   const before = await readdir(path.join(audioDirectory, userId)).catch(() => []);
-  await assert.rejects(uploadAudio('broken.wav', Buffer.from('not audio')), /Invalid data/);
+  await assert.rejects(uploadAudio('broken.wav', Buffer.from('not audio')), /could not process this audio/);
   await assert.rejects(uploadAudio('surround.wav', await sampleAudio(3)), /mono or stereo/);
   await assert.rejects(uploadAudio('long.wav', await sampleAudio(1, 601)), /10 minutes/);
-  await assert.rejects(uploadAudio('disguised.wav', await sampleAudio(1, 1, 'adts')), /Invalid argument/);
+  await assert.rejects(uploadAudio('disguised.wav', await sampleAudio(1, 1, 'adts')), /could not process this audio/);
   assert.deepEqual(await readdir(path.join(audioDirectory, userId)), before);
 
   const input = await sampleAudio();
   const previousPath = process.env.PATH;
   try {
     process.env.PATH = '';
-    await assert.rejects(uploadAudio('track.wav', input), /install FFmpeg/);
+    await assert.rejects(uploadAudio('track.wav', input), /audio processing is unavailable/);
     assert.deepEqual(await readdir(path.join(audioDirectory, userId)), before);
   } finally {
     process.env.PATH = previousPath;
