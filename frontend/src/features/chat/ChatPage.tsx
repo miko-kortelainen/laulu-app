@@ -20,7 +20,7 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
       <section aria-label="chat" className="flex h-[70dvh] min-h-0 min-w-0 flex-col lg:h-auto lg:flex-1">
-        <main ref={messagesRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto py-4 space-y-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <main ref={messagesRef} className="mx-auto min-h-0 w-full min-w-0 max-w-[44rem] flex-1 overflow-y-auto p-4 space-y-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <h1 className="sr-only">chat</h1>
           {messages.map((message, index) => (
             <ChatMessage key={index} message={message} />

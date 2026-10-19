@@ -51,21 +51,12 @@ export function ChatMessage({ message }: { message: Message }) {
     >
       <div
         className={cn(
-          "relative min-w-0 max-w-full rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed",
-          "[overflow-wrap:anywhere] border",
+          "min-w-0 max-w-full rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed text-balance [overflow-wrap:anywhere]",
           hasAudio && "w-full",
-          isUser && "border-white/15 bg-zinc-700/70 font-medium text-zinc-100",
-          !isUser && "border-white/10 bg-zinc-900/80 text-zinc-100 shadow-xs",
+          isUser && "bg-zinc-800 bg-linear-to-b from-white/[0.04] to-black/10 font-medium text-zinc-100",
+          !isUser && "text-zinc-100",
         )}
       >
-        {!isUser && (
-          <span aria-hidden="true" className="pointer-events-none absolute -inset-px rounded-[inherit] border-2 border-transparent opacity-5"
-            style={{
-              backgroundImage: "linear-gradient(to right, #f87171 0%, #fb923c 33%, #fde047 67%, #4ade80 100%)",
-              mask: "linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0) border-box",
-              maskComposite: "exclude",
-            }} />
-        )}
         {message.welcome && (
           <>
             hi, i'm{" "}

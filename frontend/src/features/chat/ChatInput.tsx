@@ -32,7 +32,7 @@ export function ChatInput({ onSubmit, disabled }: { onSubmit: (message: string) 
 
   return (
     <form onSubmit={(event) => { event.preventDefault(); submit(); }}
-      className={cn("relative w-full rounded-3xl border border-white/12 bg-[#0c0c0e]/95 shadow-[0_16px_40px_rgba(0,0,0,0.6)] backdrop-blur-xl focus-within:border-white/30 focus-within:ring-1 focus-within:ring-white/20 hover:border-white/20", disabled && "opacity-60")}>
+      className={cn("relative w-full rounded-2xl border border-white/15 bg-zinc-900/60 shadow-[0_16px_40px_rgba(0,0,0,0.6)] backdrop-blur-xl motion-safe:transition-[background-color,box-shadow] motion-safe:duration-150 motion-safe:ease-out focus-within:border-white/12 focus-within:bg-zinc-800 focus-within:shadow-[inset_0_3px_7px_rgb(0_0_0/0.55),0_1px_0_rgb(255_255_255/0.09)] hover:not-focus-within:border-white/20", disabled && "opacity-60")}>
       <textarea ref={textareaRef} name="message" rows={1} value={value} disabled={disabled}
         onChange={(event) => setValue(event.currentTarget.value)}
         onKeyDown={(event) => {
@@ -48,7 +48,7 @@ export function ChatInput({ onSubmit, disabled }: { onSubmit: (message: string) 
           style={{ backgroundImage: "linear-gradient(to right, #f87171 0%, #fb923c 33%, #fde047 67%, #4ade80 100%)" }}>laulu</span>
       </p>}
       <button type="submit" disabled={disabled || !value.trim()} aria-label="Send prompt"
-        className="absolute right-2 bottom-2 flex size-8 items-center justify-center rounded-full bg-white text-black shadow-sm hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:cursor-not-allowed disabled:opacity-40">
+        className="absolute right-[10px] bottom-[8.5px] flex size-7 items-center justify-center rounded-full bg-zinc-300 text-black shadow-sm hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:cursor-not-allowed disabled:opacity-40">
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">
           <path d="M7 12V2M7 2L2.5 6.5M7 2L11.5 6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>

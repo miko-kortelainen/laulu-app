@@ -17,7 +17,7 @@ type MusicPromptFieldsProps = {
 export function MusicPromptFields(props: MusicPromptFieldsProps) {
   const { prompt, model, title, readOnly } = props;
   const updatedFields = props.readOnly ? [] : props.updatedFields;
-  const controlClass = "w-full min-w-0 rounded-lg border border-white/15 bg-zinc-950/60 px-3 py-2 text-sm text-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-60";
+  const controlClass = "w-full min-w-0 rounded-lg border border-white/15 bg-zinc-900/60 px-3 pt-[8.5px] pb-[7.5px] text-sm text-zinc-100 motion-safe:transition-[background-color,box-shadow] motion-safe:duration-150 motion-safe:ease-out focus-visible:border-white/15 focus-visible:bg-zinc-800 focus-visible:shadow-[inset_0_3px_7px_rgb(0_0_0/0.55),0_1px_0_rgb(255_255_255/0.09)] focus-visible:outline-hidden disabled:opacity-60";
 
   return (
     <fieldset disabled={!props.readOnly && props.disabled} aria-label="song prompt" className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
