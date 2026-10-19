@@ -73,7 +73,10 @@ function Player({ src, label, className, active = true }: AudioPlayerProps) {
         <button type="button" onClick={stop} disabled={!playing && time === 0} aria-label={`stop ${label}`} className={controlClass}>
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="size-4"><path d="M5 5h14v14H5z" /></svg>
         </button>
-        <span className="whitespace-nowrap text-[11px] tabular-nums">{formatTime(time)} / {duration ? formatTime(duration) : "--:--"}</span>
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11px] tabular-nums">
+          {formatTime(time)} / {duration ? formatTime(duration) : "--:--"}
+          {buffering && <span aria-hidden="true" className="size-3 shrink-0 rounded-full border-2 border-current border-t-transparent opacity-60 motion-safe:animate-spin" />}
+        </span>
         <label className="ml-auto flex items-center gap-1.5 text-[11px]">
           volume
           <input type="range" min="0" max="1" step="0.01" value={volume} aria-label={`volume ${label}`}
@@ -81,7 +84,7 @@ function Player({ src, label, className, active = true }: AudioPlayerProps) {
             className="audio-volume h-6 w-32 cursor-pointer appearance-none bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2" />
         </label>
       </div>
-      <p role="status" className="text-[11px] opacity-60">{buffering ? "buffering..." : ""}</p>
+      <p role="status" className="sr-only">{buffering ? "buffering..." : ""}</p>
       {playbackError && <p role="alert" className="text-xs">{playbackError}</p>}
     </div>
   );
