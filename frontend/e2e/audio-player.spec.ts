@@ -31,6 +31,18 @@ test.describe("audio player", () => {
     await expect(play).toBeVisible();
     const media = page.locator("footer audio");
     await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.duration)).toBe(8);
+    await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.buffered.end(0))).toBe(8);
+    const bufferingTexts = await page.getByRole("status").evaluateHandle((status) => {
+      const texts: string[] = [];
+      new MutationObserver(() => texts.push(status.textContent ?? "")).observe(status, {
+        childList: true, characterData: true, subtree: true,
+      });
+      return texts;
+    });
+    await play.click();
+    await expect.poll(() => media.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "pause attached audio: reference.wav" }).click();
+    expect(await bufferingTexts.jsonValue()).not.toContain("buffering...");
     const volume = page.getByRole("slider", { name: "volume attached audio: reference.wav" });
     await volume.focus();
     await volume.press("Home");

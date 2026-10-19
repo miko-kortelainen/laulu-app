@@ -14,6 +14,20 @@ export function useAudioPlayer(src: string, active = true) {
   const loadingAudio = useRef<Promise<void> | undefined>(undefined);
   const controller = useRef<AbortController | undefined>(undefined);
 
+  const updateMediaState = useCallback((): void => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setTime(audio.currentTime);
+    setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
+    const ranges = audio.buffered;
+    const next = Array.from({ length: ranges.length }, (_, index) => ({
+      start: ranges.start(index), end: ranges.end(index),
+    }));
+    setBuffered((current) => current.length === next.length && current.every((range, index) =>
+      range.start === next[index].start && range.end === next[index].end,
+    ) ? current : next);
+  }, []);
+
   const loadAudio = useCallback((): Promise<void> => {
     if (loadingAudio.current) return loadingAudio.current;
     const signal = controller.current!.signal;
@@ -35,14 +49,19 @@ export function useAudioPlayer(src: string, active = true) {
   useEffect(() => {
     controller.current = new AbortController();
     const audio = audioRef.current;
+    // Buffer ranges can change after the last media event while paused.
+    const timer = window.setInterval(() => {
+      if (audio?.paused && audio.getAttribute("src") && !audio.error) updateMediaState();
+    }, 500);
     return () => {
+      window.clearInterval(timer);
       controller.current?.abort();
       loadingAudio.current = undefined;
       audio?.pause();
       audio?.removeAttribute("src");
       audio?.load();
     };
-  }, [loadAudio]);
+  }, [loadAudio, updateMediaState]);
 
   useEffect(() => {
     if (!active) audioRef.current?.pause();
@@ -68,8 +87,8 @@ export function useAudioPlayer(src: string, active = true) {
       audio.pause();
       return;
     }
-    setBuffering(true);
     if (!audio.getAttribute("src") || audio.error) {
+      setBuffering(true);
       const failure = await loadAudio().catch(() => new Error("could not load audio. try play again."));
       if (failure) {
         setBuffering(false);
@@ -99,17 +118,6 @@ export function useAudioPlayer(src: string, active = true) {
   function changeVolume(value: number): void {
     if (audioRef.current) audioRef.current.volume = value;
     setVolume(value);
-  }
-
-  function updateMediaState(): void {
-    const audio = audioRef.current;
-    if (!audio) return;
-    setTime(audio.currentTime);
-    setDuration(Number.isFinite(audio.duration) ? audio.duration : 0);
-    const ranges = audio.buffered;
-    setBuffered(Array.from({ length: ranges.length }, (_, index) => ({
-      start: ranges.start(index), end: ranges.end(index),
-    })));
   }
 
   const audioProps = {
