@@ -20,6 +20,45 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+.audio-volume::-webkit-slider-runnable-track {
+  height: 8px;
+  background: linear-gradient(to right, #4ade8080 0%, #fde04780 33%, #fb923c80 67%, #f8717180 100%);
+}
+
+.audio-volume::-moz-range-track {
+  height: 8px;
+  background: linear-gradient(to right, #4ade8080 0%, #fde04780 33%, #fb923c80 67%, #f8717180 100%);
+}
+
+.audio-volume::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.audio-volume::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.audio-volume:active::-webkit-slider-thumb {
+  width: 20px;
+  height: 20px;
+  margin-top: -6px;
+}
+
+.audio-volume:active::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+}
+
 .pricing-gradient-border {
   position: relative;
 }
@@ -54,6 +93,14 @@ body {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .audio-volume::-webkit-slider-thumb {
+    transition: width 150ms ease-out, height 150ms ease-out, margin-top 150ms ease-out;
+  }
+
+  .audio-volume::-moz-range-thumb {
+    transition: width 150ms ease-out, height 150ms ease-out;
+  }
+
   .navigation-drawer[open] {
     animation: navigation-slide-in 180ms ease-out;
   }

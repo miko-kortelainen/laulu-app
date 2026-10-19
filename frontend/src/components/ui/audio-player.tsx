@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { cn } from "@/lib/utils";
 import { useAudioPlayer } from "@/lib/use-audio-player";
 
@@ -19,21 +20,44 @@ export function AudioPlayer(props: AudioPlayerProps) {
 
 function Player({ src, label, className, active = true }: AudioPlayerProps) {
   const { audioProps, playing, time, duration, volume, buffered, buffering, playbackError, togglePlayback, seek, stop, changeVolume } = useAudioPlayer(src, active);
+  const timelineId = useId();
   const progress = duration ? Math.min(1, time / duration) : 0;
   const controlClass = "flex size-9 shrink-0 items-center justify-center rounded-lg border border-current/20 transition-colors hover:bg-current/10 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40";
 
   return (
     <div role="group" aria-label={label} className={cn("w-80 max-w-full min-w-0 space-y-2 rounded-lg bg-current/5 p-3", className)}>
       <audio {...audioProps} preload="none" aria-label={label} className="hidden" />
-      <div className="relative h-12 rounded-sm focus-within:outline-2 focus-within:outline-offset-2">
-        <svg viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true" className="h-full w-full">
-          <rect y="21" width="240" height="6" rx="3" fill="currentColor" opacity="0.1" />
-          {duration > 0 && buffered.map((range) => (
-            <rect key={range.start} x={range.start / duration * 240} y="21"
-              width={(range.end - range.start) / duration * 240} height="6" fill="currentColor" opacity="0.25" />
-          ))}
-          <rect y="21" width={progress * 240} height="6" rx="3" fill="currentColor" />
-          <line data-playhead x1={progress * 240} x2={progress * 240} y1="1" y2="47" stroke="currentColor" strokeWidth="1.5" />
+      <div className="relative h-12 bg-black/15 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2">
+        <svg viewBox="0 0 240 48" preserveAspectRatio="none" aria-hidden="true" className="h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id={`${timelineId}-gradient`} gradientUnits="userSpaceOnUse" x1="0" x2="240">
+              <stop offset="0%" stopColor="#f87171" />
+              <stop offset="33%" stopColor="#fb923c" />
+              <stop offset="67%" stopColor="#fde047" />
+              <stop offset="100%" stopColor="#4ade80" />
+            </linearGradient>
+            <pattern id={`${timelineId}-ticks`} width="12" height="48" patternUnits="userSpaceOnUse">
+              <path d="M6 15v2 M6 31v2" stroke="currentColor" strokeOpacity="0.12" vectorEffect="non-scaling-stroke" />
+            </pattern>
+            <pattern id={`${timelineId}-markers`} width="60" height="48" patternUnits="userSpaceOnUse">
+              <path d="M30 11v6 M30 31v6" stroke="currentColor" strokeOpacity="0.2" vectorEffect="non-scaling-stroke" />
+            </pattern>
+            <clipPath id={`${timelineId}-track`}>
+              <rect y="21" width="240" height="6" />
+            </clipPath>
+          </defs>
+          <rect width="240" height="48" fill={`url(#${timelineId}-ticks)`} />
+          <rect width="240" height="48" fill={`url(#${timelineId}-markers)`} />
+          <g clipPath={`url(#${timelineId}-track)`}>
+            <rect y="21" width="240" height="6" fill="currentColor" opacity="0.08" />
+            {duration > 0 && buffered.map((range) => (
+              <rect key={range.start} x={range.start / duration * 240} y="21"
+                width={(range.end - range.start) / duration * 240} height="6" fill="currentColor" opacity="0.25" />
+            ))}
+            <rect y="21" width={progress * 240} height="6" fill={`url(#${timelineId}-gradient)`} />
+          </g>
+          <line data-playhead x1={progress * 240} x2={progress * 240} y1="16" y2="32"
+            stroke="currentColor" strokeWidth="3" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
         </svg>
         <input type="range" min="0" max={duration || 1} step="0.01" value={time} disabled={!duration}
           aria-label={`seek ${label}`} aria-valuetext={`${formatTime(time)} of ${duration ? formatTime(duration) : "unknown duration"}`}
@@ -54,7 +78,7 @@ function Player({ src, label, className, active = true }: AudioPlayerProps) {
           volume
           <input type="range" min="0" max="1" step="0.01" value={volume} aria-label={`volume ${label}`}
             aria-valuetext={`${Math.round(volume * 100)}%`} onChange={(event) => changeVolume(Number(event.currentTarget.value))}
-            className="h-6 w-16 cursor-pointer accent-current" />
+            className="audio-volume h-6 w-32 cursor-pointer appearance-none bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2" />
         </label>
       </div>
       <p role="status" className="text-[11px] opacity-60">{buffering ? "buffering..." : ""}</p>
