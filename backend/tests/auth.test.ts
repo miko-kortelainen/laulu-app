@@ -165,7 +165,7 @@ async function assertConversationOwnership(fixture: AuthFixture): Promise<void> 
   const ownFile = await fetch(`${url}/api/audio/${filename}`, { headers: headersA });
   assert.equal(ownFile.status, 200);
   assert.equal(await ownFile.text(), 'private fixture');
-  assert.equal(ownFile.headers.get('cache-control'), 'private, no-store');
+  assert.equal(ownFile.headers.get('cache-control'), 'private, max-age=3600');
   assert.equal((await fetch(`${url}/api/audio/${filename}`, { headers: headersB })).status, 404);
   const reset = await fetch(`${url}/api/reset`, { method: 'POST', headers: headersB, body: JSON.stringify({ sessionId: userA }) });
   assert.equal(reset.status, 200);
