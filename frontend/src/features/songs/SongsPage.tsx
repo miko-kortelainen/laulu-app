@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { type CSSProperties, useEffect, useId, useRef } from "react";
 import { Link } from "react-router";
 import { AudioDownload } from "@/components/ui/audio-download";
 import { AudioPlayer } from "@/components/ui/audio-player";
@@ -94,10 +94,11 @@ export function SongsPage() {
           <ul aria-label="saved songs" className="space-y-4">
             {visibleSongs?.map((song) => (
               <li key={song.id} data-selected={selectedSongId === song.id}
+                style={{ "--song-texture-position": `${Number.parseInt(song.id.slice(0, 8), 16) % 240}px ${Number.parseInt(song.id.slice(9, 13), 16) % 160}px` } as CSSProperties}
                 className={cn("song-gradient-border relative space-y-4 rounded-xl border bg-white/10 p-5",
                 "bg-linear-to-b from-white/2 to-black/8 shadow-[inset_0_1px_0_rgb(255_255_255/0.03),inset_0_-8px_16px_-8px_rgb(0_0_0/0.2)]",
                 selectedSongId === song.id ? "border-transparent" : "border-white/10")}>
-                <div className="flex items-start gap-3">
+                <div className="song-card-header flex items-start gap-3">
                   <h2 className="min-w-0 flex-1">
                     <button type="button" aria-pressed={selectedSongId === song.id} aria-controls="song-info"
                       aria-label={`song details: ${song.title}`} title="song details"

@@ -86,6 +86,11 @@ body {
   opacity: 0.25;
 }
 
+.song-card-header {
+  background-image: url("./assets/song-specks.svg");
+  background-position: var(--song-texture-position);
+}
+
 .music-field-updated {
   border-color: #a5b4fc;
   box-shadow: 0 0 0 1px #a5b4fc60, 0 0 12px #a5b4fc40;
