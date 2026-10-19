@@ -295,6 +295,14 @@ Saved songs remain available until you delete them. Chat history does not persis
 Run one backend instance. Keep `backend/generated-music/` on persistent storage for unfinished songs and operation recovery.
 Unknown provider outcomes retain their allowance charge and never trigger automatic paid retries.
 
+The API allows 300 requests per IP and 3,000 requests across the server per 60-second window.
+Limits run before authentication and body parsing, including plans, playback, and Paddle webhooks.
+HTTP 429 responses include `Retry-After`. Health checks and CORS preflight requests are excluded.
+Counters reset on restart and at each window boundary; traffic can burst across a boundary.
+These limits supplement paid usage quotas and do not replace proxy protection against traffic floods.
+Set `TRUSTED_PROXY_CIDRS` to the exact trusted proxy IPs or CIDRs when using a reverse proxy.
+Without it, forwarded headers are ignored and clients behind a proxy share its IP allowance.
+
 ## Project layout
 
 | Path | Contents |
@@ -303,6 +311,7 @@ Unknown provider outcomes retain their allowance charge and never trigger automa
 | `frontend/src/components/ui/` | Shared UI components |
 | `backend/src/` | HTTP API, agents, audio, storage, and quotas |
 | `backend/src/validation.ts` | Shared checks for API data, counts, timestamps, IDs, and file errors |
+| `backend/src/rate-limit.ts` | Bounded, per-process API request counters |
 | `backend/tests/` | Offline regression scenarios and fixtures; `http-fixture.ts` starts isolated HTTP servers |
 | `backend/prompts/` | Chat, song brief, lyrics, and analysis instructions |
 | `supabase/migrations/` | Database migrations |

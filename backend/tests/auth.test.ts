@@ -21,6 +21,7 @@ test('verified users own their API session and local media', async (t) => {
     await assertUploadOwnership(fixture);
     await assertReceivingUpload(fixture);
     await assertClosingUploadSlots(fixture);
+    await assertRequestLimiting(fixture);
   } finally {
     await fixture.cleanup();
   }
@@ -78,6 +79,24 @@ async function createAuthFixture(t: TestContext) {
 }
 
 type AuthFixture = Awaited<ReturnType<typeof createAuthFixture>>;
+
+async function assertRequestLimiting({ url, auth }: AuthFixture): Promise<void> {
+  const authRequests = auth.requests;
+  for (let i = 0; i < 300; i++) {
+    const response = await fetch(`${url}/api/context`);
+    assert.ok(response.status === 401 || response.status === 429);
+  }
+  for (const endpoint of ['plans', 'context', 'audio/invalid.wav', 'paddle/webhook']) {
+    const response = await fetch(`${url}/api/${endpoint}`, {
+      method: endpoint === 'paddle/webhook' ? 'POST' : 'GET',
+      headers: { Authorization: 'Bearer malformed', 'X-Forwarded-For': '192.0.2.123' },
+    });
+    assert.equal(response.status, 429, `${endpoint} is limited before authentication or downstream work`);
+    assert.equal((await response.json()).code, 'rate_limited');
+  }
+  assert.equal(auth.requests, authRequests, 'rejected traffic makes no Auth requests');
+  assert.equal((await fetch(`${url}/api/health`)).status, 200, 'limits do not fail health checks');
+}
 
 async function assertPublicAuth(fixture: AuthFixture): Promise<void> {
   const { url, userA, headersA, filename, auth, token } = fixture;

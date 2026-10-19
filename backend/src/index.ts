@@ -10,6 +10,7 @@ import { isTimestamp, isUuid } from './validation.js';
 import { generateMusic, MusicPromptTokenLimitError, validateMusicModel, validateMusicPrompt } from './music.js';
 import { AudioBusyError, audioDirectory, audioPath, startAudioUpload, uploadAudio } from './audio.js';
 import { requireAuth } from './auth.js';
+import { createApiRateLimit } from './rate-limit.js';
 import { createPlaybackUrl, isPlaybackPath, playbackUser } from './playback.js';
 import { hasAcceptedTerms, recordTermsAcceptance, requireTerms, TERMS_VERSION } from './terms.js';
 import { userDirectory } from './user-files.js';
@@ -21,6 +22,8 @@ import { cancelSubscription, changeSubscription, createCheckout, getBilling, get
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
+const trustedProxies = (process.env.TRUSTED_PROXY_CIDRS ?? '').split(',').map((ip) => ip.trim()).filter(Boolean);
+app.set('trust proxy', trustedProxies.length ? trustedProxies : false);
 
 // The frontend and API share one origin in production and use the Vite proxy in development.
 // Browsers from other origins cannot read API responses unless listed here.
@@ -28,6 +31,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,ht
   .split(',').map((origin) => origin.trim()).filter(Boolean);
 app.use(cors({ origin: allowedOrigins }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+app.use('/api', createApiRateLimit());
 app.get('/api/plans', async (_req, res) => {
   const plans = await quotaRpc('get_plan_limits', {}).catch(() => {
     res.status(503).json({ error: 'could not load plan allowances. try again.' });

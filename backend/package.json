@@ -13,6 +13,7 @@
     "test:audio": "tsx --test tests/audio.test.ts",
     "test:tracing": "node --import tsx tests/tracing.test.ts",
     "test:auth": "node --import tsx --test tests/auth.test.ts",
+    "test:rate-limit": "node --import tsx --test tests/rate-limit.test.ts",
     "test:deployment": "node --test tests/deployment.test.mjs",
     "test:agent": "node --import tsx tests/agent.test.ts",
     "test:songs": "node --import tsx --test tests/songs.test.ts",

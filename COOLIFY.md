@@ -86,6 +86,11 @@ ALLOWED_ORIGINS=https://studio.lau.lu
 ```
 
 The Dockerfile supplies the first three defaults. Runtime variables override image defaults.
+Set `TRUSTED_PROXY_CIDRS` at runtime to the Coolify proxy's actual source IP or dedicated network CIDR.
+If Cloudflare proxies the site, also trust its current published proxy CIDRs to resolve the visitor IP.
+Trust only proxies that maintain the forwarding chain. Do not use `0.0.0.0/0` or `::/0`.
+Keep port `3001` private. Without this setting, all visitors share the proxy's 300-request-per-minute limit.
+After deployment, verify that separate clients have separate allowances and forged `X-Forwarded-For` values cannot change them.
 Set `LANGSMITH_TRACING` to `true` or `false` in Doppler, then redeploy to refresh the runtime variables.
 Tracing also requires `LANGSMITH_API_KEY`. Set `LANGSMITH_PROJECT` to select the project.
 Provider API keys remain in Cloudflare AI Gateway's BYOK provider settings.
