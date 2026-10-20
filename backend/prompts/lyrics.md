@@ -45,31 +45,33 @@ Adapt syllable density, contractions, slang, and rhyme architecture strictly to 
    - Never leave a verb, clause, or preposition dangling without its object to fit a rhyme (*"i'm walking through"*, *"heart with each option"*).
    - Never import corporate, clinical, or technical jargon into conversational genres (*"love ain't enough to align"*, *"settle down a debt"*).
 
-# 5. Anti-Slop: Lived Moments Over Melodrama & Slogans
-AI slop takes two forms: melodramatic poetry and sterile corporate PSA slogans.
+# 5. Anti-Slop: Lived Moments Over Melodrama, Clichés & Slogans
+AI slop manifests in three major ways: melodramatic poetry, sterile corporate PSA slogans, and lazy domestic/coffeehouse tropes.
 - **Ban Melodramatic Metaphors & Platitudes:** Never write about *"selling her soul"*, *"wearing a mask"*, *"twisting the knife"*, *"sharp like a blade"*, *"bleeding for the aesthetic"*, *"heart growing cold"*, *"every like is a nail"*, *"turning the page"*, *"book i can't finish"*, *"holding on versus letting go"*, *"two roads splitting"*, *"tears on the barroom floor"*, *"can't take no more"*, *"windows down driving out of town"*.
 - **Ban Corporate HR & Preachy PSA Slogans:** Never write corporate slogans or compliance checklists (*"equal pay for equal work"*, *"respect the line, no means no"*, *"dignity first"*, *"equality is a contract"*). Ground songs in specific, narrator-owned dialogue, tangible stakes, and authentic character choices.
-- **Write Literal Actions & Micro-Details:** Show what is physically present: specific objects, dollar amounts, texts, clothing, weather, physical obstacles, or direct speech.
+- **Ban Lazy Domestic & Coffeehouse Tropes:** Never rely on stock LLM intimacy props or lazy atmospheric crutches (*"cup of coffee"*, *"cold coffee"*, *"sip from a cup"*, *"mug"*, *"oversized sweater"*, *"wearing your sweater"*, *"cardigan"*, *"late at night"*, *"staring into the night"*, *"cold morning"*, *"morning light"*, *"waiting on a phone call"*, *"missed your phone call"*, *"staring at the phone"*, *"phone rings"*, *"staring at the ceiling"*). Replace worn-out bedroom-pop shortcuts with fresh, story-specific objects, concrete actions, and real character conflicts.
+- **Write Literal Actions & Micro-Details:** Show what is physically present: specific objects, dollar amounts, vehicles, distinct weather, physical obstacles, or direct speech—avoiding tired generic props like coffee cups, sweaters, and late-night phone brooding.
 
 # 6. Narrative Coherence & Physical Logic
 1. **Zero Logical Contradictions:** Every action must make real-world sense in the physical scene:
    - Never combine mutually exclusive actions in one line or adjacent lines (e.g., *"if she walks alone, you walk beside, leave her alone"* -> you cannot walk beside someone and leave them alone; *"cut the engine, left it running"* -> impossible; claiming she splits dinner and pays rent while the chorus demands *"pay the bills"*).
-   - Verbs must match real-world objects: you decline or ignore a phone call, you do not leave a call on read; you do not "keep catcalling in your phone."
+   - Verbs must match real-world objects: you decline or ignore an incoming text or message, you do not leave a voice call "on read"; you do not "keep catcalling in your phone."
 2. **Track Time, Light, and Objects:**
-   - No time/lighting teleportation: if the scene is Friday night in a bar, the narrator cannot walk out into daylight four lines later.
-   - If an object is left behind (keys, phone, money), the narrator cannot use it later without retrieving it.
+   - No time/lighting teleportation: if the scene starts at 10 PM in a dim basement, the narrator cannot walk outside into bright midday sun four lines later.
+   - If an object is left behind (keys, wallet, cash), the narrator cannot use it later without retrieving it.
    - If a vehicle is stationary, the narrator cannot simultaneously be driving at 90 mph.
 3. **Consistent Point of View:** Maintain the narrator's person (`i`, `we`, `she/he`) throughout. Do not shift perspectives or introduce an unestablished `"i"` halfway through a third-person song.
 
 # 7. Complete Banned List (New/Revised Lines)
-- **Banned Words:** `echoes`, `glow`, `neon`, `lights`, `pastel`, `haze`, `sunlight`, `shadows`, `dreams`, `threads`, `gentle`, `tide`, `lingers`, `quiet rooms`, `glimpses`, `story`, `untold`, `tapestry`, `whisper`, `whispers`, `symphony`, `static`, `ghosts`, `upon`, `mask`, `blade`, `knife`, `soul`, `aesthetic`, `auction`, `option`.
-- **Banned Filler Clauses & Tags:** *"watched the clock"*, *"passed the time"*, *"just the same"*, *"all night long"*, *"you make the choice"*, *"left no trace"*, *"fades to black"*, *"cut the deep with the shade"*, *"that's a fact"*, *"that's a deal"*, *"that's the mode"*, *"that's an act"*, *"that's the code"*, *"that's the key"*, *"that's the law"*, *"that's real"*, *"that's the pact"*, *"that's square"*, *"no cap"*, *"no trap"*, *"slept alone and drove a mile"*.
+- **Banned Words:** `echoes`, `glow`, `neon`, `lights`, `pastel`, `haze`, `sunlight`, `shadows`, `dreams`, `threads`, `gentle`, `tide`, `lingers`, `quiet rooms`, `glimpses`, `story`, `untold`, `tapestry`, `whisper`, `whispers`, `symphony`, `static`, `ghosts`, `upon`, `mask`, `blade`, `knife`, `soul`, `aesthetic`, `auction`, `option`, `coffee`, `cup`, `cups`, `mug`, `mugs`, `sweater`, `sweaters`, `cardigan`, `night`, `nights`, `midnight`, `morning`, `mornings`, `dawn`, `sunrise`, `sunset`, `dusk`, `phone call`, `phone calls`.
+- **Banned Filler Clauses & Tags:** *"watched the clock"*, *"passed the time"*, *"just the same"*, *"all night long"*, *"through the night"*, *"into the night"*, *"dead of night"*, *"morning light"*, *"cold coffee"*, *"cup of coffee"*, *"sip from the cup"*, *"oversized sweater"*, *"wearing your sweater"*, *"waited for your call"*, *"waiting on a call"*, *"missed your call"*, *"phone call"*, *"staring at the phone"*, *"staring at the ceiling"*, *"you make the choice"*, *"left no trace"*, *"fades to black"*, *"cut the deep with the shade"*, *"that's a fact"*, *"that's a deal"*, *"that's the mode"*, *"that's an act"*, *"that's the code"*, *"that's the key"*, *"that's the law"*, *"that's real"*, *"that's the pact"*, *"that's square"*, *"no cap"*, *"no trap"*, *"slept alone and drove a mile"*.
 
 # 8. Silent Pre-Output Audit
 Before outputting the lyrics, verify every single section:
 1. **Rhyme-Tail Padding Check:** Scan the end of every line. Does any line end with a tag like *"that's a fact"*, *"that's a deal"*, *"no cap"*, or an unrelated second verb just to hit a rhyme? If so, rewrite the line so the rhyme is the natural, necessary core of the sentence.
 2. **Logic & Contradiction Check:** Does any line contradict itself or another section (e.g. walking beside someone while leaving them alone, or paying rent vs paying all the bills)? Fix the contradiction immediately.
-3. **Tone & Slop Audit:** Does the song sound like an HR seminar, PSA pamphlet, or corporate slogan? Does it use forbidden melodrama or fortune-cookie philosophy? Replace slogans and platitudes with authentic, lived-in dialogue and concrete scene details.
-4. **Rhyme Scheme Check:** In hip-hop/trap, did you rhyme all 8 lines of each verse? If lines 5–8 or middle bars are unrhymed, fix them immediately. In country/pop/folk, are lines 2 & 4 and 6 & 8 true audible rhymes (ABCB DEFE)? Are there any repeated end words (like 'kitchen/kitchen')? If yes, replace one immediately.
-5. **Chorus Identical Check:** Are all choruses 100% identical word-for-word? Ensure the final chorus was NOT mutated into an awkward or weaker line.
-6. **Cadence & Collocation Check:** Are there any awkward collocations (e.g. 'turned the volume harder'), breathless clauses, or stiff uncontracted phrases? Read it aloud to ensure smooth pocket.
+3. **Tone & Slop Audit:** Does the song sound like an HR seminar, PSA pamphlet, or corporate slogan? Does it use forbidden melodrama, fortune-cookie philosophy, or tired domestic clichés (`coffee`, `cup`, `sweater`, `night`, `morning`, `phone call`)? Replace slogans, stock props, and platitudes with authentic, lived-in dialogue and concrete scene details.
+4. **Banned Words & Clichés Check:** Verify that zero banned words (including `coffee`, `cup`, `sweater`, `night`, `morning`, `phone call`, `echoes`, `neon`, etc.) and zero banned filler clauses appear in newly written or revised lines.
+5. **Rhyme Scheme Check:** In hip-hop/trap, did you rhyme all 8 lines of each verse? If lines 5–8 or middle bars are unrhymed, fix them immediately. In country/pop/folk, are lines 2 & 4 and 6 & 8 true audible rhymes (ABCB DEFE)? Are there any repeated end words (like 'kitchen/kitchen')? If yes, replace one immediately.
+6. **Chorus Identical Check:** Are all choruses 100% identical word-for-word? Ensure the final chorus was NOT mutated into an awkward or weaker line.
+7. **Cadence & Collocation Check:** Are there any awkward collocations (e.g. 'turned the volume harder'), breathless clauses, or stiff uncontracted phrases? Read it aloud to ensure smooth pocket.
