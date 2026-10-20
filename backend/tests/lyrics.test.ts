@@ -76,7 +76,10 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     else assert.ok(request.max_completion_tokens > 0 && request.max_completion_tokens <= 4096);
     const toolCall = !isLyrics && (looping || ++mainCalls % mainTurnCycle !== 0);
     if (isLyrics) {
-      assert.equal(request.reasoning_effort, 'low');
+      assert.equal(request.reasoning_effort, undefined);
+      assert.equal(request.temperature, 1);
+      assert.equal(request.top_p, 0.95);
+      assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true });
       assert.equal(request.tools?.length ?? 0, 0);
       assert.equal(request.messages[0].content, readFileSync(new URL('../prompts/lyrics.md', import.meta.url), 'utf8').trim());
       assert.deepEqual(JSON.parse(request.messages.at(-1).content[0].text), { request: lyricRequest, brief: currentBrief });

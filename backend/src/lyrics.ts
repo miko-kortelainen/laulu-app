@@ -48,7 +48,13 @@ export const generateLyrics = traceable(async (
 ): Promise<string> => {
   const model = createNebiusModel(getLyricsModelId());
   // The completion budget includes reasoning and the finished lyric text.
-  model.updateConfig({ maxTokens: 16_384, params: { reasoning_effort: 'low' } });
+  model.updateConfig({
+    maxTokens: 16_384, params: {
+      temperature: 1,
+      top_p: 0.95,
+      chat_template_kwargs: { enable_thinking: true },
+    }
+  });
   const agent = new Agent({
     model,
     systemPrompt: readFileSync(new URL('../prompts/lyrics.md', import.meta.url), 'utf8').trim(),
