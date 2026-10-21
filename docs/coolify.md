@@ -37,7 +37,7 @@ Set shared daily attempt limits in Supabase Table Editor → `public.global_usag
 Set an operation's `daily_limit` to `0` to disable it. Changes apply to the next reservation without a redeploy.
 Keep `used` and `usage_date` unchanged. Usage resets at midnight UTC.
 The old `GLOBAL_*` environment variables are ignored. Remove them from deployment settings.
-See [usage quota setup](README.md#configure-usage-quotas) for the required migration and initial limits.
+See [usage quota setup](billing-and-quotas.md#usage-quotas) for the required migration and initial limits.
 
 Missing credentials cause the corresponding operation to fail.
 The backend supplies the existing defaults for optional model IDs, provider slugs, personal allowances, and audio limits.
@@ -72,7 +72,7 @@ VITE_PADDLE_ULTRA_ANNUAL_PRICE_ID={{vault.VITE_PADDLE_ULTRA_ANNUAL_PRICE_ID}}
 ```
 
 Store the sandbox `test_` client token and the monthly and annual sandbox price IDs in Doppler under these names.
-The Dockerfile declares the matching build arguments. See [sandbox pricing setup](README.md#configure-sandbox-pricing-and-checkout)
+The Dockerfile declares the matching build arguments. See [sandbox pricing setup](billing-and-quotas.md#paddle-sandbox-billing)
 for the existing price IDs. Checkout remains in sandbox. Confirmed sandbox subscriptions activate the selected tier allowances.
 Add the matching `PADDLE_*_ANNUAL_PRICE_ID` variables at runtime and apply `20261015212549_annual_billing.sql` before deploying.
 
