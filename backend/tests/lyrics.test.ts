@@ -49,6 +49,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
   let revisedLyrics = lyrics;
   const requests: { model: string; max_completion_tokens: number; messages: { role: string; content: string }[] }[] = [];
   let lyricRequest: string | undefined = 'write lyrics about waiting for someone';
+  let lyricSkill: string | undefined = 'melodic-hip-hop-rnb';
   let failure: 'http' | 'empty' | 'truncated' | 'truncatedEmpty' | 'long' | undefined;
   let lyricOutput: string | undefined;
   let currentBrief = brief;
@@ -72,24 +73,34 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     const request = await httpRequest.json();
     requests.push(request);
     const isLyrics = request.model === 'Qwen/Qwen3.8-27B';
-    if (isLyrics) assert.equal(request.max_completion_tokens, 16_384);
+    if (isLyrics) assert.equal(request.max_completion_tokens, 32_768);
     else assert.ok(request.max_completion_tokens > 0 && request.max_completion_tokens <= 4096);
-    const toolCall = !isLyrics && (looping || ++mainCalls % mainTurnCycle !== 0);
+    const lyricSkillCall = isLyrics && !!lyricSkill && request.messages.at(-1)?.role !== 'tool';
+    const toolCall = lyricSkillCall || (!isLyrics && (looping || ++mainCalls % mainTurnCycle !== 0));
     if (isLyrics) {
       assert.equal(request.reasoning_effort, undefined);
       assert.equal(request.temperature, 1);
       assert.equal(request.top_p, 0.95);
       assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true });
-      assert.equal(request.tools?.length ?? 0, 0);
-      assert.equal(request.messages[0].content, readFileSync(new URL('../prompts/lyrics.md', import.meta.url), 'utf8').trim());
-      assert.deepEqual(JSON.parse(request.messages.at(-1).content[0].text), { request: lyricRequest, brief: currentBrief });
+      assert.deepEqual(request.tools?.map((entry: { function: { name: string } }) => entry.function.name), ['skills']);
+      assert.ok(request.messages[0].content.startsWith(readFileSync(new URL('../prompts/lyrics.md', import.meta.url), 'utf8').trim()));
+      for (const skillName of ['country-pop-rock-folk-indie', 'melodic-hip-hop-rnb', 'street-trap-drill-rap']) {
+        assert.ok(request.messages[0].content.includes(`<name>${skillName}</name>`));
+      }
+      assert.deepEqual(JSON.parse(request.messages[1].content[0].text), { request: lyricRequest, brief: currentBrief });
+      if (request.messages.at(-1)?.role === 'tool') {
+        assert.ok(JSON.stringify(request.messages.at(-1)).includes('# Melodic Hip-Hop & R&B Lyric Craft'));
+      }
       if (failure === 'http') return Response.json({ error: { message: 'offline lyric failure' } }, { status: 400 });
     } else {
       assert.equal(request.model, getModelId());
       if (mainFailure) return Response.json({ error: { message: 'offline throttling' } }, { status: 429 });
       if (contextOverflow) return Response.json({ error: { message: 'context length exceeded', code: 'context_length_exceeded' } }, { status: 400 });
     }
-    const delta = toolCall
+    const delta = lyricSkillCall
+      ? { role: 'assistant', tool_calls: [{ index: 0, id: `skill-${requests.length}`, type: 'function',
+          function: { name: 'skills', arguments: JSON.stringify({ skill_name: lyricSkill }) } }] }
+      : toolCall
       ? { role: 'assistant', tool_calls: Array.from({ length: looping ? 3 : 1 }, (_, index) => ({
           index, id: `form-${requests.length}-${index}`, type: 'function',
           function: { name: 'update_music_form', arguments: JSON.stringify({ ...currentBrief, lyricRequest }) },
@@ -116,7 +127,8 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     let agent = getOrCreateAgent(sessionId);
     const draft = await agent.invoke(lyricRequest!);
     assert.deepEqual(draft.invocationState.musicPrompt, { ...brief, lyrics });
-    assert.deepEqual(requests.map(({ model }) => model), [getModelId(), 'Qwen/Qwen3.8-27B', getModelId()]);
+    assert.deepEqual(requests.map(({ model }) => model), [getModelId(), 'Qwen/Qwen3.8-27B', 'Qwen/Qwen3.8-27B', getModelId()]);
+    lyricSkill = undefined;
     const formRun = runs.find((run) => run.name === 'update_music_form');
     const lyricRun = runs.find((run) => run.name === 'generate_lyrics');
     assert.ok(formRun?.id && lyricRun?.id);

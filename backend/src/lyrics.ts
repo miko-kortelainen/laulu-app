@@ -1,8 +1,15 @@
 import { Agent, MaxTokensError } from '@strands-agents/sdk';
+import { AgentSkills, Skill } from '@strands-agents/sdk/vended-plugins/skills';
 import { traceable } from 'langsmith/traceable';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { createNebiusModel, getLyricsModelId } from './model.js';
 import { reserveLyrics } from './quotas.js';
+
+const lyricSkills = Skill.fromDirectory(
+  fileURLToPath(new URL('../prompts/skills', import.meta.url)),
+  { strict: true },
+).map(({ name, description, instructions }) => new Skill({ name, description, instructions }));
 
 export function countLyricCharacters(lyrics: string): number {
   return lyrics.length;
@@ -49,7 +56,7 @@ export const generateLyrics = traceable(async (
   const model = createNebiusModel(getLyricsModelId());
   // The completion budget includes reasoning and the finished lyric text.
   model.updateConfig({
-    maxTokens: 16_384, params: {
+    maxTokens: 32_768, params: {
       temperature: 1,
       top_p: 0.95,
       chat_template_kwargs: { enable_thinking: true },
@@ -57,6 +64,7 @@ export const generateLyrics = traceable(async (
   });
   const agent = new Agent({
     model,
+    plugins: [new AgentSkills({ skills: lyricSkills, strict: true })],
     systemPrompt: readFileSync(new URL('../prompts/lyrics.md', import.meta.url), 'utf8').trim(),
     printer: false,
     retryStrategy: null,
@@ -64,7 +72,7 @@ export const generateLyrics = traceable(async (
   await reserveLyrics(userId);
   const result = await agent.invoke(JSON.stringify({ request, brief }), {
     cancelSignal: AbortSignal.timeout(120_000),
-    limits: { turns: 1 },
+    limits: { turns: 2 },
   }).catch((error: unknown) => {
     if (!(error instanceof MaxTokensError)) throw error;
     const lyrics = error.partialMessage.content

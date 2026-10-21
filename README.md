@@ -167,7 +167,7 @@ Before each call, it checks the estimated input size and the reported usage, the
 It trims older history when needed to leave room for the reply, preserving the latest request and complete tool pairs.
 Requests stop if they still cannot fit after history trimming, or if the output or model-call budget is exhausted.
 Nebius input sizing uses the SDK estimate. This check reduces overshoot but does not guarantee an exact billed-token ceiling.
-The separate lyrics agent has a 16,384-token completion budget, including reasoning, to preserve complete lyrics.
+The separate lyrics agent allows up to two turns to load a genre skill and write lyrics, with a 32,768-token completion budget per call, including reasoning.
 
 ### Configure sandbox pricing and checkout
 
@@ -318,7 +318,7 @@ Without it, forwarded headers are ignored and clients behind a proxy share its I
 | `backend/src/validation.ts` | Shared checks for API data, counts, timestamps, IDs, and file errors |
 | `backend/src/rate-limit.ts` | Bounded, per-process API request counters |
 | `backend/tests/` | Offline regression scenarios and fixtures; `http-fixture.ts` starts isolated HTTP servers |
-| `backend/prompts/` | Chat, song brief, lyrics, and analysis instructions |
+| `backend/prompts/` | Chat, song brief, lyrics, genre lyric skills, and analysis instructions |
 | `supabase/migrations/` | Database migrations |
 
 Restart the backend after prompt changes.
