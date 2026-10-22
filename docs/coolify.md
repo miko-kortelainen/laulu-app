@@ -111,6 +111,8 @@ The application uses two projects in the `miko-kortelainen` Sentry organization:
 Set `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT=production`, and `VITE_SENTRY_RELEASE` as public build variables.
 Set `SENTRY_DSN`, `SENTRY_ENVIRONMENT=production`, and `SENTRY_RELEASE` as runtime variables.
 Use the deployed Git commit as both release values. Empty DSNs disable the corresponding SDK.
+Enable **Source commit availability → Available during build** in Coolify. The Dockerfile reads `SOURCE_COMMIT` directly
+and supplies the actual commit to the frontend SDK and source-map uploader; it falls back to `VITE_SENTRY_RELEASE` for other build runners.
 Locally, set the DSNs in `frontend/.env.local` and `backend/.env`, with environment `development`.
 
 Both SDKs report errors and sample 10% of production traces. Development traces use 100% sampling.
