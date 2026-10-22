@@ -19,7 +19,7 @@ export function getModelId(): string {
 }
 
 export function getLyricsModelId(): string {
-  return process.env.LYRICS_MODEL?.trim() || 'Qwen/Qwen3.8-27B';
+  return process.env.LYRICS_MODEL?.trim() || 'nvidia/Nemotron-3.5-Super-VL';
 }
 
 export function getModelConfig() {

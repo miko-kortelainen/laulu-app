@@ -27,7 +27,7 @@ test('lyric contract counts sections without enforcing ambiguous section require
   assert.throws(() => validateLyricOutput('a'.repeat(3_001)), /exceed 3,000 characters/);
 });
 
-test('only lyric requests use the Qwen fallback, preserve form values, and commit completed lyrics', { timeout: 15_000 }, async () => {
+test('only lyric requests use the default lyric model, preserve form values, and commit completed lyrics', { timeout: 15_000 }, async () => {
   const originalFetch = globalThis.fetch;
   const originalDatabaseURL = process.env.SUPABASE_URL;
   process.env.SUPABASE_URL = 'https://offline-lyrics.supabase.co';
@@ -72,7 +72,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     assert.equal(httpRequest.url, `${testGatewayURL}/custom-nebius/v1/chat/completions`);
     const request = await httpRequest.json();
     requests.push(request);
-    const isLyrics = request.model === 'Qwen/Qwen3.8-27B';
+    const isLyrics = request.model === 'nvidia/Nemotron-3.5-Super-VL';
     if (isLyrics) assert.equal(request.max_completion_tokens, 32_768);
     else assert.ok(request.max_completion_tokens > 0 && request.max_completion_tokens <= 4096);
     const lyricSkillCall = isLyrics && !!lyricSkill && request.messages.at(-1)?.role !== 'tool';
@@ -127,7 +127,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     let agent = getOrCreateAgent(sessionId);
     const draft = await agent.invoke(lyricRequest!);
     assert.deepEqual(draft.invocationState.musicPrompt, { ...brief, lyrics });
-    assert.deepEqual(requests.map(({ model }) => model), [getModelId(), 'Qwen/Qwen3.8-27B', 'Qwen/Qwen3.8-27B', getModelId()]);
+    assert.deepEqual(requests.map(({ model }) => model), [getModelId(), 'nvidia/Nemotron-3.5-Super-VL', 'nvidia/Nemotron-3.5-Super-VL', getModelId()]);
     lyricSkill = undefined;
     const formRun = runs.find((run) => run.name === 'update_music_form');
     const lyricRun = runs.find((run) => run.name === 'generate_lyrics');
@@ -214,7 +214,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     assert.ok(loop.stopReason === 'limitTurns' || loop.toString().includes('token budget'));
     assert.deepEqual(loop.invocationState.musicPrompt, { ...currentBrief, lyrics: 'a'.repeat(3_000) });
     assert.ok(requests.slice(loopStart).filter(({ model }) => model === getModelId()).length <= 3);
-    assert.equal(requests.slice(loopStart).filter(({ model }) => model === 'Qwen/Qwen3.8-27B').length, 1);
+    assert.equal(requests.slice(loopStart).filter(({ model }) => model === 'nvidia/Nemotron-3.5-Super-VL').length, 1);
 
     // A three-turn edit completes within the chat budgets.
     looping = false;
@@ -229,7 +229,7 @@ test('only lyric requests use the Qwen fallback, preserve form values, and commi
     assert.equal(extended.stopReason, 'endTurn');
     assert.deepEqual(extended.invocationState.musicPrompt, { ...currentBrief, lyrics: revisedLyrics });
     assert.equal(requests.slice(extendedStart).filter(({ model }) => model === getModelId()).length, 3);
-    assert.equal(requests.slice(extendedStart).filter(({ model }) => model === 'Qwen/Qwen3.8-27B').length, 1);
+    assert.equal(requests.slice(extendedStart).filter(({ model }) => model === 'nvidia/Nemotron-3.5-Super-VL').length, 1);
 
     // Full history is trimmed so a successful lyric edit can still receive its final reply.
     await resetAgentSession(sessionId);
