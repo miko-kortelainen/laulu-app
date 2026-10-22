@@ -1,18 +1,34 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import * as Sentry from '@sentry/node';
 import { PublicError, publicErrorMessage } from '../src/errors.js';
 import { operationFailure } from '../src/operations.js';
 import { SongStorageError } from '../src/songs.js';
 import { MusicGenerationError } from '../src/music.js';
 import { QuotaError } from '../src/quotas.js';
 
-test('unexpected errors stay in logs while public recovery messages and metadata survive', (t) => {
+test('unexpected errors reach Sentry while public recovery messages and metadata survive', async (t) => {
+  const events: unknown[] = [];
+  Sentry.init({
+    dsn: 'https://public@example.com/1',
+    defaultIntegrations: [],
+    transport: () => ({
+      send: async ([, items]) => {
+        for (const [header, event] of items) if (header.type === 'event') events.push(event);
+        return { statusCode: 200 };
+      },
+      flush: async () => true,
+    }),
+  });
+  t.after(() => Sentry.close());
   const logs = t.mock.method(console, 'error', () => {});
   const internal = new Error('private provider diagnostics /srv/audio/file.wav');
   assert.equal(publicErrorMessage(internal, 'please try again.'), 'please try again.');
   assert.equal(logs.mock.calls[0].arguments[1], internal);
   assert.equal(publicErrorMessage({ message: 'untrusted diagnostic' }, 'please try again.'), 'please try again.');
   assert.equal(publicErrorMessage(new PublicError('choose a valid billing plan.'), 'fallback'), 'choose a valid billing plan.');
+  await Sentry.flush();
+  assert.equal(events.length, 2, 'unexpected errors are captured; expected public errors are skipped');
   assert.deepEqual(operationFailure(internal), { error: 'request failed. check your requests before trying again.' });
   const storage = new SongStorageError('song-id', false, internal);
   const failure = operationFailure(storage);

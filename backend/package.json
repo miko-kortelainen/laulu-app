@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --import ./src/instrument.ts src/index.ts",
     "build": "tsc",
     "test:music": "tsx --test tests/music.test.ts",
     "test:lyrics": "node --import tsx tests/lyrics.test.ts",
@@ -22,12 +22,14 @@
     "test:local-audio": "node --import tsx --test tests/local-audio.test.ts",
     "test:operations": "node --import tsx --test tests/operations.test.ts",
     "test:quotas:db": "node --test tests/quotas-db.test.mjs",
-    "start": "node dist/index.js"
+    "start": "node --enable-source-maps --import ./dist/instrument.js dist/index.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1146.0",
     "@google/genai": "^2.28.0",
     "@paddle/paddle-node-sdk": "^3.10.0",
+    "@sentry/node": "^11.8.0",
+    "@sentry/profiling-node": "^11.8.0",
     "@strands-agents/sdk": "^1.20.0",
     "@supabase/supabase-js": "2.117.3",
     "cors": "^2.8.5",

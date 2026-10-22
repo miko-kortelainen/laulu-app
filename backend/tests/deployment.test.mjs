@@ -81,5 +81,6 @@ function assertSecurityHeaders(response) {
   assert.deepEqual(directives.get('frame-src'), ['https://*.paddle.com', 'https://challenges.cloudflare.com']);
   assert.ok(directives.get('connect-src').includes('https://offline-auth.supabase.co'));
   assert.ok(directives.get('connect-src').includes('https://*.paddle.com'));
+  assert.ok(directives.get('connect-src').includes('https://o4512300799492096.ingest.de.sentry.io'));
   assert.ok(directives.get('media-src').includes("'self'"));
 }

@@ -35,7 +35,7 @@ const contentSecurityPolicy = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https://*.paddle.com",
-  `connect-src 'self' ${authOrigin} https://*.paddle.com https://challenges.cloudflare.com`,
+  `connect-src 'self' ${authOrigin} https://*.paddle.com https://challenges.cloudflare.com https://o4512300799492096.ingest.de.sentry.io`,
   "media-src 'self' blob:",
   "frame-src https://*.paddle.com https://challenges.cloudflare.com",
   "object-src 'none'",

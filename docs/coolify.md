@@ -99,6 +99,45 @@ The image contains no development `.env` files, uploads, recovery audio, or mode
 Use the existing Supabase production redirect, email, and CAPTCHA configuration.
 The site URL must be `https://studio.lau.lu`. Confirmation and recovery redirects must allow this origin.
 
+## Sentry monitoring
+
+The application uses two projects in the `miko-kortelainen` Sentry organization:
+
+| Project | DSN variable | Value |
+| --- | --- | --- |
+| [laulu-frontend](https://miko-kortelainen.sentry.io/issues/?project=4512300820725840) | `VITE_SENTRY_DSN` | `https://0ab89b830f6d1b735bb64d32c951aaec@o4512300799492096.ingest.de.sentry.io/4512300820725840` |
+| [laulu-backend](https://miko-kortelainen.sentry.io/issues/?project=4512300820856912) | `SENTRY_DSN` | `https://043b618ed4ca73e6de72b628809a202c@o4512300799492096.ingest.de.sentry.io/4512300820856912` |
+
+Set `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT=production`, and `VITE_SENTRY_RELEASE` as public build variables.
+Set `SENTRY_DSN`, `SENTRY_ENVIRONMENT=production`, and `SENTRY_RELEASE` as runtime variables.
+Use the deployed Git commit as both release values. Empty DSNs disable the corresponding SDK.
+Locally, set the DSNs in `frontend/.env.local` and `backend/.env`, with environment `development`.
+
+Both SDKs report errors and sample 10% of production traces. Development traces use 100% sampling.
+The backend also samples profiling sessions at 10% in production and 100% in development.
+Automatic collection excludes user details, cookies, HTTP headers and bodies, URL query values, AI input/output content,
+database values, and stack-frame variables. Console breadcrumbs are excluded. Error messages can still contain application data.
+Session Replay and the feedback widget are not enabled.
+
+The frontend build uploads hidden source maps to `laulu-frontend` and deletes the map files before deployment.
+These maps contain frontend source code. Upload them only to this organization's frontend project.
+Create a [Sentry organization auth token](https://miko-kortelainen.sentry.io/settings/auth-tokens/) for build uploads.
+For a local build, save `SENTRY_AUTH_TOKEN=...` in the ignored file `frontend/.env.sentry-build-plugin`.
+The Vite plugin reads this file. Never put this token in a `VITE_` variable or a Docker build argument.
+
+In Doppler, save the upload token as `SENTRY_AUTH_TOKEN`. Import it into Coolify as
+`SENTRY_AUTH_TOKEN={{vault.SENTRY_AUTH_TOKEN}}`, available during build only.
+In Coolify, set **Build secrets** to **Docker BuildKit secrets**. Keep **Build arguments** set to **Managed manually in Dockerfile**.
+Coolify's managed Compose deployment generates the `build.secrets` and top-level `secrets` declarations from the build variables.
+The repository Compose file needs no secret declarations. The Dockerfile mounts the upload token and public frontend build variables for `npm run build`.
+Use **Force deploy (without cache)** for the first deployment and after changing build-only values: Docker does not invalidate cached layers when secret contents change.
+If the build server does not support BuildKit, do not deploy the token through the fallback build-argument path.
+Without the token, the build warns and skips upload; error reporting still works, but frontend frames remain minified.
+The backend uses Node source-map support and includes its TypeScript sources inside the private container for source context.
+
+After deployment, confirm a fresh error from each project and inspect its frames in Sentry.
+Local verification does not confirm production environment values or artifact uploads in the deployment runner.
+
 ## Import values from Doppler
 
 1. Create a production config in Doppler with all required environment values and any optional overrides.

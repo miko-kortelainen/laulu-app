@@ -10,6 +10,7 @@ build/
 # Environment & secrets
 .env
 .env*.local
+.env.sentry-build-plugin
 !.env.example
 
 # Logs

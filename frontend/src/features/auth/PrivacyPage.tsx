@@ -6,12 +6,13 @@ export function PrivacyPage() {
       <article className="space-y-7 text-sm leading-relaxed text-zinc-300" aria-labelledby="privacy-title">
         <header>
           <h1 id="privacy-title" className="text-2xl font-semibold text-zinc-100">privacy and beta limits</h1>
-          <p className="mt-2 text-xs text-zinc-400">lau.lu beta · updated 17 October 2026</p>
+          <p className="mt-2 text-xs text-zinc-400">lau.lu beta · updated 22 October 2026</p>
         </header>
         <section className="space-y-2" aria-labelledby="privacy-storage">
           <h2 id="privacy-storage" className="text-base font-semibold text-zinc-100">what is stored</h2>
           <p>Supabase stores your account details, sign-in information, usage, subscription and billing records, song metadata, and temporary request results. Saved song audio is stored in a private Cloudflare R2 bucket. The app lets you access only your own songs and uploads.</p>
           <p>Saved songs stay until you delete them from my songs. Temporary request results can include assistant replies, song briefs, and lyrics. Finished request records and unsaved song recovery files are eligible for cleanup after seven days.</p>
+          <p>Sentry receives error details and sampled performance data to help diagnose failures.</p>
         </section>
         <section className="space-y-2" aria-labelledby="privacy-processing">
           <h2 id="privacy-processing" className="text-base font-semibold text-zinc-100">AI processing</h2>

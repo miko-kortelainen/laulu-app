@@ -26,6 +26,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
+      VITE_SENTRY_DSN: "",
       VITE_SUPABASE_URL: baseURL,
       VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_offline",
       VITE_TURNSTILE_SITE_KEY: "offline-site-key",
