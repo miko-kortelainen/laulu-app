@@ -48,8 +48,9 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
     assert.equal(request.headers.get('cf-aig-no-wholesale'), 'true');
     assert.equal(request.method, 'POST');
     const body = JSON.parse(await request.text());
-    const expectedCosts: Record<string, { per_token_in: number; per_token_out: number }> = {
+    const expectedCosts: Record<string, { per_token_in: number; per_token_out: number; per_cache_read_token?: number }> = {
       'nvidia/nemotron-3-super-120b-a12b': { per_token_in: 0.00000030, per_token_out: 0.00000090 },
+      'nvidia/Nemotron-3.5-Super-VL': { per_token_in: 0.00000030, per_token_out: 0.00000090, per_cache_read_token: 0.00000006 },
       'zai-org/GLM-5.3-Flash': { per_token_in: 0.00000015, per_token_out: 0.00000050 },
       'Qwen/Qwen3.8-27B': { per_token_in: 0.00000045, per_token_out: 0.00000300 },
       'qwen3.8-omni-flash': { per_token_in: 0.00000015, per_token_out: 0.00000047 },
@@ -138,6 +139,12 @@ test('BYOK routes chat, lyrics, token counting, music, and analysis without prov
       method: 'POST',
       body: JSON.stringify({ model: 'unpriced-model', stream: true }),
 
+    });
+
+    const vlGateway = getAiGateway('nebius', 'nvidia/Nemotron-3.5-Super-VL');
+    await vlGateway.fetch(`${vlGateway.baseURL}/chat/completions`, {
+      method: 'POST',
+      body: JSON.stringify({ model: 'nvidia/Nemotron-3.5-Super-VL', stream: true, stream_options: { include_usage: true } }),
     });
   } finally {
     resetAgentSession(session);

@@ -43,8 +43,8 @@ All hosted AI calls route through Cloudflare AI Gateway (BYOK). Provider keys st
 
    | Provider | Default slug | Base URL | Purpose |
    | --- | --- | --- | --- |
-   | Nebius | `nebius` | `https://api.tokenfactory.nebius.com` | Chat copilot |
-   | QwenCloud | `qwencloud` | `https://maas.qwencloudapi.com` | Lyrics & audio analysis |
+   | Nebius | `nebius` | `https://api.tokenfactory.nebius.com` | Chat copilot & lyrics |
+   | QwenCloud | `qwencloud` | `https://maas.qwencloudapi.com` | Audio analysis |
    | Google AI Studio | `google-ai-studio` (built-in) | Built-in | Lyria music generation |
 
 3. Set these variables in `backend/.env` (`CF_AI_GATEWAY_TOKEN` requires the **AI Gateway - Run** permission):

@@ -6,9 +6,9 @@ interface AiGateway {
 }
 
 // USD per token, converted from the user's rates per million tokens.
-const customPrices: Record<string, { per_token_in: number; per_token_out: number }> = {
+const customPrices: Record<string, { per_token_in: number; per_token_out: number; per_cache_read_token?: number }> = {
   'nebius/nvidia/nemotron-3-super-120b-a12b': { per_token_in: 0.00000030, per_token_out: 0.00000090 },
-  'nebius/nvidia/Nemotron-3.5-Super-VL': { per_token_in: 0.00000030, per_token_out: 0.00000090 },
+  'nebius/nvidia/Nemotron-3.5-Super-VL': { per_token_in: 0.00000030, per_token_out: 0.00000090, per_cache_read_token: 0.00000006 },
   'nebius/zai-org/GLM-5.3-Flash': { per_token_in: 0.00000015, per_token_out: 0.00000050 },
   'nebius/Qwen/Qwen3.8-27B': { per_token_in: 0.00000045, per_token_out: 0.00000300 },
   'nebius/deepseek-ai/DeepSeek-V4.1-Flash': { per_token_in: 0.00000030, per_token_out: 0.00000120 },
