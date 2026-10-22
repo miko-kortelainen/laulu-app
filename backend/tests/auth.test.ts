@@ -11,11 +11,13 @@ import { TERMS_VERSION } from '../src/terms.js';
 import { configureTestQuotas } from './quota-fixture.js';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
+import { createFlagOverridesFromMap, getClient, OverrideBehaviour, PollingMode } from '@configcat/sdk/node';
 
 test('verified users own their API session and local media', async (t) => {
   const fixture = await createAuthFixture(t);
   try {
     await assertPublicAuth(fixture);
+    await assertPaidTierSwitch(fixture);
     await assertTermsOwnership(fixture);
     await assertConversationOwnership(fixture);
     await assertUploadOwnership(fixture);
@@ -34,6 +36,11 @@ async function createAuthFixture(t: TestContext) {
   process.env.MAX_AUDIO_JOBS = '2';
   process.env.SUPABASE_URL = 'https://offline-auth.supabase.co';
   process.env.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_offline';
+  process.env.CONFIGCAT_SDK_KEY = 'aaaaaaaaaaaaaaaaaaaaaa/cccccccccccccccccccccc';
+  const flags = { paidTiersEnabled: true };
+  const configcat = getClient(process.env.CONFIGCAT_SDK_KEY, PollingMode.ManualPoll, {
+    flagOverrides: createFlagOverridesFromMap(flags, OverrideBehaviour.LocalOnly, true),
+  });
   const quotas = configureTestQuotas();
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'offline', alg: 'ES256', use: 'sig' };
@@ -64,7 +71,7 @@ async function createAuthFixture(t: TestContext) {
   const headersA = { Authorization: `Bearer ${token(userA)}`, 'Content-Type': 'application/json' };
   const headersB = { Authorization: `Bearer ${token(userB)}`, 'Content-Type': 'application/json' };
 
-  return { t, url, userA, userB, headersA, headersB, filename, directory, server, auth, quotas, token, getOrCreateAgent, getChatContext, retainUploadSession, audioPath, prepareAnalysisAudio, startAudioUpload,
+  return { t, url, userA, userB, headersA, headersB, filename, directory, server, auth, quotas, flags, token, getOrCreateAgent, getChatContext, retainUploadSession, audioPath, prepareAnalysisAudio, startAudioUpload,
     cleanup: async () => {
       t.mock.restoreAll();
       syncBuiltinESMExports();
@@ -74,12 +81,31 @@ async function createAuthFixture(t: TestContext) {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
       globalThis.fetch = originalFetch;
       quotas.restore();
+      configcat.dispose();
       await rm(directory, { recursive: true, force: true });
     },
   };
 }
 
 type AuthFixture = Awaited<ReturnType<typeof createAuthFixture>>;
+
+async function assertPaidTierSwitch({ url, flags, headersA }: AuthFixture): Promise<void> {
+  flags.paidTiersEnabled = false;
+  const features = await fetch(`${url}/api/features`);
+  assert.equal(features.status, 200, 'flags are public');
+  assert.equal(features.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(await features.json(), { paidTiersEnabled: false });
+  for (const endpoint of ['checkout', 'preview', 'change']) {
+    const response = await fetch(`${url}/api/billing/${endpoint}`, {
+      method: 'POST', headers: headersA, body: JSON.stringify({ plan: 'starter', billingInterval: 'month' }),
+    });
+    assert.equal(response.status, 403, `${endpoint} is blocked on the server`);
+    assert.deepEqual(await response.json(), { error: 'paid plans are currently unavailable.' });
+  }
+  assert.equal((await fetch(`${url}/api/billing`, { headers: headersA })).status, 200, 'billing reads remain available');
+  flags.paidTiersEnabled = true;
+  assert.deepEqual(await (await fetch(`${url}/api/features`)).json(), { paidTiersEnabled: true });
+}
 
 async function assertErrorResponses({ t, url, headersA }: AuthFixture): Promise<void> {
   const { getPaddle } = await import('../src/billing.js');

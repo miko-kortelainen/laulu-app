@@ -10,6 +10,7 @@ import { PrivacyPage } from "@/features/auth/PrivacyPage";
 import { TermsPage } from "@/features/auth/TermsPage";
 import { PricingPage } from "@/features/pricing/PricingPage";
 import { cn } from "@/lib/utils";
+import { usePaidTiersEnabled } from "@/lib/feature-flags";
 
 interface AuthenticatedAppProps {
   user: User;
@@ -22,6 +23,7 @@ const linkClass = "flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm
 
 export function AuthenticatedApp({ user, onLogout, signingOut, authError }: AuthenticatedAppProps) {
   const chat = useChat(user.id);
+  const paidTiersEnabled = usePaidTiersEnabled();
   const [navigationOpen, setNavigationOpen] = useState(false);
   const drawerRef = useRef<HTMLDialogElement>(null);
 
@@ -63,13 +65,13 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
         </svg>
         my songs
       </NavLink>
-      <NavLink to="/pricing" className={cn(linkClass, "mt-auto")} onClick={closeNavigation}>
+      {paidTiersEnabled && <NavLink to="/pricing" className={cn(linkClass, "mt-auto")} onClick={closeNavigation}>
         <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M4 7h16v14H4zM8 7V3h8v4M4 12h16" />
         </svg>
         pricing
-      </NavLink>
-      <NavLink to="/profile" className={linkClass} onClick={closeNavigation}>
+      </NavLink>}
+      <NavLink to="/profile" className={cn(linkClass, !paidTiersEnabled && "mt-auto")} onClick={closeNavigation}>
         <svg viewBox="0 0 24 24" className="size-5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <circle cx="12" cy="8" r="4" />
           <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
@@ -118,7 +120,9 @@ export function AuthenticatedApp({ user, onLogout, signingOut, authError }: Auth
           <Routes>
             <Route path="/" element={<ChatPage chat={chat} />} />
             <Route path="/songs" element={<SongsPage />} />
-            <Route path="/pricing" element={<PricingPage user={user} />} />
+            <Route path="/pricing" element={paidTiersEnabled === undefined ? <p role="status">loading plans...</p>
+              : paidTiersEnabled ? <PricingPage user={user} /> : <Navigate to="/profile" replace />} />
+            <Route path="/billing" element={<PricingPage user={user} showPlans={false} />} />
             <Route path="/profile" element={
               <ProfilePage user={user} onLogout={onLogout} signingOut={signingOut} authError={authError}
                 usage={chat.usage} usageError={chat.usageError} loading={chat.loading} refreshUsage={chat.refreshUsage} />

@@ -3,13 +3,13 @@ import type { Paddle } from "@paddle/paddle-js";
 import type { User } from "@supabase/supabase-js";
 import { cancelSubscription, changeSubscription, createCheckout, getBilling, getPlanLimits, loadPricing, paidPlans, previewPlanChange, type Billing, type BillingInterval, type PlanChangePreview, type PlanLimits } from "./api";
 
-export function usePricing(user?: User) {
+export function usePricing(user: User | undefined, showPlans: boolean) {
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const [pricing, setPricing] = useState<Awaited<ReturnType<typeof loadPricing>>>();
   const [billing, setBilling] = useState<Billing>();
   const [limits, setLimits] = useState<PlanLimits[]>();
   const [limitsReady, setLimitsReady] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(showPlans);
   const [billingLoading, setBillingLoading] = useState(Boolean(user));
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
@@ -110,15 +110,17 @@ export function usePricing(user?: User) {
       setPricing(result);
       setLoading(false);
     }
-    void load();
-    void getPlanLimits(controller.signal).then(result => {
-      if (!controller.signal.aborted) {
-        setLimits(result);
-        setLimitsReady(true);
-      }
-    }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "could not load plan allowances. try again.");
-    });
+    if (showPlans) {
+      void load();
+      void getPlanLimits(controller.signal).then(result => {
+        if (!controller.signal.aborted) {
+          setLimits(result);
+          setLimitsReady(true);
+        }
+      }).catch((cause: unknown) => {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "could not load plan allowances. try again.");
+      });
+    }
     if (user) void refreshBilling(controller.signal).catch(() => {
       if (!controller.signal.aborted) {
         setError("could not load your subscription. retry before starting checkout.");
@@ -132,7 +134,7 @@ export function usePricing(user?: User) {
       checkoutOpen.current = false;
     };
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- helpers use this effect's abort signal and current transaction ref.
-  }, [attempt, user?.id]);
+  }, [attempt, user?.id, showPlans]);
 
   async function checkout(plan: typeof paidPlans[number]): Promise<void> {
     const controller = requests.current;
@@ -223,7 +225,7 @@ export function usePricing(user?: User) {
   }
 
   function retry(): void {
-    setLoading(true);
+    setLoading(showPlans);
     setLimitsReady(false);
     setBillingLoading(Boolean(user));
     setError(undefined);

@@ -16,6 +16,63 @@ test.describe("pricing", () => {
     await page.route(/\/api\/billing$/, (route) => fulfillJson(route, billing));
   });
 
+  test("hides public pricing when disabled and recovers when the flag becomes available", async ({ page }) => {
+    await page.clock.install();
+    let response: unknown = { paidTiersEnabled: false };
+    let unavailable = false;
+    await page.route(/\/api\/features$/, route => unavailable ? route.abort() : fulfillJson(route, response));
+    await page.goto("/pricing");
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("link", { name: "pricing", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "starter", exact: true })).toHaveCount(0);
+
+    unavailable = true;
+    await page.reload();
+    await expect(page.getByRole("link", { name: "pricing", exact: true })).toHaveCount(0);
+    unavailable = false;
+    response = { paidTiersEnabled: "true" };
+    await page.reload();
+    await expect(page.getByRole("link", { name: "pricing", exact: true })).toHaveCount(0);
+
+    response = { paidTiersEnabled: true };
+    await page.clock.fastForward(60_000);
+    await page.getByRole("link", { name: "pricing", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "starter", exact: true })).toBeVisible();
+    response = { paidTiersEnabled: false };
+    await page.clock.fastForward(60_000);
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("heading", { name: "starter", exact: true })).toHaveCount(0);
+  });
+
+  test("keeps cancellation available from the profile with paid tiers disabled", async ({ authedPage: page }) => {
+    await page.route(/\/api\/features$/, route => fulfillJson(route, { paidTiersEnabled: false }));
+    const periodEnd = "2099-11-13T12:00:00Z";
+    let scheduledChange: { action: string; effectiveAt: string } | null = null;
+    await page.route(/\/api\/billing$/, route => fulfillJson(route, {
+      ...billing, plan: "pro", status: "active", paidAccess: true, billingInterval: "month", periodEnd, scheduledChange,
+    }));
+    await page.route(/\/api\/billing\/cancel$/, route => {
+      scheduledChange = { action: "cancel", effectiveAt: periodEnd };
+      return fulfillJson(route, {});
+    });
+    const pricingRequests: string[] = [];
+    page.on("request", request => {
+      if (request.url().includes("cdn.paddle.com") || /\/api\/plans$/.test(request.url())) pricingRequests.push(request.url());
+    });
+    await page.goto("/pricing");
+    await expect(page).toHaveURL(/\/profile$/);
+    await expect(page.getByRole("link", { name: "pricing", exact: true })).toHaveCount(0);
+    await page.getByRole("link", { name: "manage subscription" }).click();
+    await expect(page).toHaveURL(/\/billing$/);
+    await expect(page.getByRole("heading", { name: "subscription", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "starter", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "cancel subscription", exact: true }).click();
+    await page.getByRole("button", { name: "confirm cancellation" }).click();
+    await expect(page.getByText("cancellation is scheduled. you keep access until the end of your paid period.").first()).toBeVisible();
+    expect(scheduledChange).toEqual({ action: "cancel", effectiveAt: periodEnd });
+    expect(pricingRequests).toEqual([]);
+  });
+
   test("toggles billing frequency and opens monthly and yearly checkout", async ({ authedPage: page }) => {
     await page.route(/\/api\/billing\/checkout$/, (route) => fulfillJson(route, { transactionId }));
 

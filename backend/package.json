@@ -18,6 +18,7 @@
     "test:agent": "node --import tsx tests/agent.test.ts",
     "test:songs": "node --import tsx --test tests/songs.test.ts",
     "test:billing": "node --import tsx --test tests/billing.test.ts",
+    "test:feature-flags": "node --import tsx --test tests/feature-flags.test.ts",
     "test:gateway": "node --import tsx --test tests/gateway.test.ts",
     "test:local-audio": "node --import tsx --test tests/local-audio.test.ts",
     "test:operations": "node --import tsx --test tests/operations.test.ts",
@@ -26,6 +27,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1146.0",
+    "@configcat/sdk": "^1.1.0",
     "@google/genai": "^2.28.0",
     "@paddle/paddle-node-sdk": "^3.10.0",
     "@sentry/node": "^11.8.0",

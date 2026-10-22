@@ -20,6 +20,7 @@ import { getUsage, QuotaError, quotaRpc, reserveUsage } from './quotas.js';
 import { cleanupLocalAudio, LocalAudioLimitError } from './local-audio.js';
 import { acknowledgeOperation, busySessions, getOperation, operationId, listOperations, recoverOperations, sessionBusy, startOperation } from './operations.js';
 import { cancelSubscription, changeSubscription, createCheckout, getBilling, getPaddle, previewPlanChange, processPaddleEvent } from './billing.js';
+import { paidTiersEnabled } from './feature-flags.js';
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,6 +64,9 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:5173,ht
 app.use(cors({ origin: allowedOrigins }));
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 app.use('/api', createApiRateLimit());
+app.get('/api/features', async (_req, res) => {
+  res.set('Cache-Control', 'no-store').json({ paidTiersEnabled: await paidTiersEnabled() });
+});
 app.get('/api/plans', async (_req, res) => {
   const plans = await quotaRpc('get_plan_limits', {}).catch(() => {
     res.status(503).json({ error: 'could not load plan allowances. try again.' });
@@ -106,21 +110,29 @@ app.get('/api/billing', async (_req, res) => {
   if (billing) res.set('Cache-Control', 'private, no-store').json(billing);
 });
 
-app.post('/api/billing/checkout', requireTerms, locked(async (req, res) => {
+async function requirePaidTiers(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!await paidTiersEnabled()) {
+    res.status(403).json({ error: 'paid plans are currently unavailable.' });
+    return;
+  }
+  next();
+}
+
+app.post('/api/billing/checkout', requirePaidTiers, requireTerms, locked(async (req, res) => {
   const transactionId = await createCheckout(res.locals.userId, req.body?.plan, req.body?.billingInterval).catch((error: unknown) => {
     res.status(503).json({ error: publicErrorMessage(error, 'checkout could not start. check your subscription before retrying.') });
   });
   if (transactionId) res.set('Cache-Control', 'private, no-store').json({ transactionId });
 }));
 
-app.post('/api/billing/preview', requireTerms, locked(async (req, res) => {
+app.post('/api/billing/preview', requirePaidTiers, requireTerms, locked(async (req, res) => {
   const preview = await previewPlanChange(res.locals.userId, req.body?.plan, req.body?.billingInterval).catch((error: unknown) => {
     res.status(503).json({ error: publicErrorMessage(error, 'could not preview this plan change. try again.') });
   });
   if (preview) res.set('Cache-Control', 'private, no-store').json(preview);
 }));
 
-app.post('/api/billing/change', requireTerms, locked(async (req, res) => {
+app.post('/api/billing/change', requirePaidTiers, requireTerms, locked(async (req, res) => {
   await changeSubscription(res.locals.userId, req.body?.plan, req.body?.subscriptionUpdatedAt, req.body?.billingInterval).catch((error: unknown) => {
     res.status(503).json({ error: publicErrorMessage(error, 'could not change your plan. check your subscription before retrying.') });
   });

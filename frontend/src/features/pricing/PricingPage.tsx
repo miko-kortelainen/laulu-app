@@ -21,8 +21,8 @@ function Allowances({ limits }: { limits?: PlanLimits }) {
   </>;
 }
 
-export function PricingPage({ user }: { user?: User }) {
-  const pricing = usePricing(user);
+export function PricingPage({ user, showPlans = true }: { user?: User; showPlans?: boolean }) {
+  const pricing = usePricing(user, showPlans);
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto px-1 py-8 sm:py-12">
@@ -34,16 +34,16 @@ export function PricingPage({ user }: { user?: User }) {
           <Link to="/login" state={{ from: "/pricing" }} className={linkClass}>log in</Link>
         </header>}
 
-        <section aria-labelledby="pricing-title" className="space-y-4">
+        {showPlans && <section aria-labelledby="pricing-title" className="space-y-4">
           <p className="text-xs font-medium tracking-widest text-zinc-400">plans</p>
           <h1 id="pricing-title" className="max-w-2xl text-3xl font-semibold tracking-tight sm:text-5xl">more room to make music</h1>
           <p className="max-w-xl text-sm leading-relaxed text-zinc-400">describe a song, work on its lyrics and sound, and hear your ideas take shape.</p>
           <p className="max-w-2xl rounded-lg border border-amber-300/20 bg-amber-300/5 px-4 py-3 text-sm text-amber-200">
             sandbox · checkout uses test payments. your plan activates after payment is confirmed.
           </p>
-        </section>
+        </section>}
 
-        <div role="group" aria-label="billing frequency" className="mx-auto mb-4! grid w-fit grid-cols-2 gap-1 rounded-lg border border-white/10 p-1">
+        {showPlans && <div role="group" aria-label="billing frequency" className="mx-auto mb-4! grid w-fit grid-cols-2 gap-1 rounded-lg border border-white/10 p-1">
           {(["month", "year"] as const).map(interval => <button key={interval} type="button"
             aria-pressed={pricing.billingInterval === interval}
             disabled={Boolean(pricing.selectedPlan) || pricing.syncing || pricing.managing || Boolean(pricing.pendingAction) || pricing.updatePending}
@@ -51,9 +51,9 @@ export function PricingPage({ user }: { user?: User }) {
             className={cn(buttonClass, "min-h-6 w-auto border-transparent py-0", pricing.billingInterval === interval && "bg-white/10")}>
             {interval === "month" ? "monthly" : "yearly"}
           </button>)}
-        </div>
+        </div>}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {showPlans && <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <section aria-labelledby="plan-free" className="flex flex-col rounded-xl border border-white/10 bg-zinc-900/60 p-6">
             <p className="mb-4 text-xs text-zinc-400">try laulu</p>
             <h2 id="plan-free" className="text-lg font-semibold">free</h2>
@@ -104,7 +104,15 @@ export function PricingPage({ user }: { user?: User }) {
               </section>
             );
           })}
-        </div>
+        </div>}
+
+        {!showPlans && <section className="space-y-4">
+          <h1 className="text-3xl font-semibold">subscription</h1>
+          <Link to="/profile" className={linkClass}>back to my profile</Link>
+          <p role="status" className="text-sm text-zinc-300">{pricing.billingLoading ? "loading subscription..."
+            : pricing.billing?.status ? `${pricing.billing.plan} · ${pricing.billing.status}` : pricing.error ? undefined : "no subscription"}</p>
+          {pricing.billing?.scheduledChange?.action === "cancel" && <p className="text-sm text-zinc-300">cancellation is scheduled. you keep access until the end of your paid period.</p>}
+        </section>}
 
         {pricing.pendingAction && <section aria-labelledby="subscription-confirm-title" className="max-w-xl space-y-4 rounded-xl border border-white/15 bg-zinc-900/60 p-6">
           <h2 id="subscription-confirm-title" className="text-lg font-semibold">
@@ -129,7 +137,7 @@ export function PricingPage({ user }: { user?: User }) {
 
         <div className="space-y-3 text-sm">
           <p role="status" className="text-zinc-300">{pricing.loading ? <span className="sr-only">loading prices…</span> : pricing.notice}</p>
-          {pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.billingInterval !== pricing.billingInterval &&
+          {showPlans && pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.billingInterval !== pricing.billingInterval &&
             <p className="text-zinc-400">select your current billing frequency to change tiers. billing frequency changes are not available here.</p>}
           {user && pricing.billing?.status && pricing.billing.status !== "canceled" && pricing.billing.scheduledChange?.action !== "cancel" &&
             <button type="button" className={linkClass} onClick={pricing.requestCancellation}

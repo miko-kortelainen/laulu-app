@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/date";
 import type { Usage } from "@/lib/usage";
+import { Link } from "react-router";
 
 interface ProfilePageProps {
   user: User;
@@ -55,6 +56,7 @@ export function ProfilePage({ user, onLogout, signingOut, authError, usage, usag
               className="rounded underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">retry allowances</button>
           </div>}
         </section>
+        <Link to="/billing" className="flex min-h-11 w-fit items-center rounded underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400">manage subscription</Link>
         <button type="button" disabled={signingOut} onClick={() => void onLogout()}
           className="min-h-11 rounded-lg border border-white/10 px-3 py-1.5 text-xs hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:opacity-50">
           {signingOut ? "logging out..." : "log out"}

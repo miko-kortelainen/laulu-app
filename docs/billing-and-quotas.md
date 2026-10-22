@@ -43,6 +43,24 @@ select public.reset_user_usage('USER_UUID', 'lyrics');
 
 The `/pricing` page previews USD prices from Paddle and supports monthly ($10 / $20 / $40) and annual ($99 / $199 / $380) sandbox subscriptions.
 
+### Enable or Disable Paid Plans with ConfigCat
+
+1. In ConfigCat, create an **On/Off Toggle** with the exact key `paidTiersEnabled`. Start with it off.
+2. Copy the SDK key for the ConfigCat environment you want to use.
+3. Set `CONFIGCAT_SDK_KEY` in `backend/.env` for local development, or as a runtime environment variable in Coolify. Keep it on the backend only.
+4. Deploy this integration and restart the backend after setting the SDK key. Later flag changes do not need a restart or frontend rebuild.
+5. Turn `paidTiersEnabled` on when you want to show pricing and allow new purchases and tier changes.
+
+When the flag is off, pricing links are hidden. Direct visits to `/pricing` redirect to login or the signed-in user's profile. The backend rejects checkout, plan preview, and plan change requests with HTTP 403, including requests made outside the UI.
+
+Users can still open **my profile → manage subscription** (`/billing`) to cancel. This page does not load Paddle.js or price previews. Billing reads, cancellation, webhooks, existing paid allowances, and subscription renewals remain active.
+
+The backend uses the [ConfigCat Node.js SDK](https://configcat.com/docs/sdk-reference/js/node/) with its default 60-second polling interval. The frontend reads the evaluated boolean from `/api/features` when it loads and every 60 seconds. Allow about one minute for server enforcement and up to two minutes for an open page to update under normal network conditions.
+
+Paid plans default to disabled if the SDK key or flag is missing, the key is invalid, or no usable configuration is available. During a ConfigCat outage, the SDK can continue using its last cached value. A failed frontend flag request hides pricing until a later refresh succeeds.
+
+Disabling this flag does not cancel Paddle transactions already created or payments already in progress. Those checkouts can still complete, and their webhooks must still be processed. Use Paddle to handle an existing checkout or subscription separately.
+
 ### Frontend Variables (`frontend/.env.local`, build-time in Coolify)
 
 ```dotenv

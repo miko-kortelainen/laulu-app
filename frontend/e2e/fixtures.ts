@@ -146,6 +146,7 @@ export const test = base.extend<Fixtures>({
   // External fonts add no behaviour under test and stall the load event offline.
   page: async ({ page }, run) => {
     await page.route(/\/(api|auth\/v1)\//, (route) => route.abort());
+    await page.route(/\/api\/features$/, (route) => fulfillJson(route, { paidTiersEnabled: true }));
     await page.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
     await page.route("https://challenges.cloudflare.com/turnstile/**", (route) => route.fulfill({
       contentType: "text/javascript", body: `window.captchaRenders = 0;

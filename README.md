@@ -85,6 +85,7 @@ npm --prefix backend run test:analysis
 npm --prefix backend run test:audio
 npm --prefix backend run test:songs
 npm --prefix backend run test:billing
+npm --prefix backend run test:feature-flags
 npm --prefix backend run test:gateway
 npm --prefix backend run test:local-audio
 npm --prefix backend run test:operations
