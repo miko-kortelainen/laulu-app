@@ -4,7 +4,8 @@ import { test, expect, fulfillJson, wavBuffer } from "./fixtures";
 const audioId = "44444444-4444-4444-4444-444444444444";
 const audioUrl = `/api/audio/${audioId}.wav`;
 
-test.describe("audio player", () => {
+// Audio uploads are temporarily disabled.
+test.describe.skip("audio player", () => {
   test("uploads audio and plays it back", async ({ authedPage: page }) => {
     const wav = wavBuffer();
     let mediaRequests = 0;

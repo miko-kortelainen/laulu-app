@@ -8,9 +8,10 @@ import { MusicPromptFields } from "@/components/MusicPromptFields";
 import { isMusicPrompt } from "@/lib/music-prompt";
 
 export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
-  const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, songTitle, musicError, pendingSongId, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, changeSongTitle, upload, removeAudio } = chat;
+  const { messages, loading, activity, musicPrompt, updatedMusicFields, musicModel, songTitle, musicError, pendingSongId, context, contextError, pendingAudio, uploadError, send, clear, confirmMusic, editMusicPrompt, changeMusicModel, changeSongTitle, removeAudio } = chat;
+  // const { upload } = chat;
   const messagesRef = useRef<HTMLElement>(null);
-  const audioInputRef = useRef<HTMLInputElement>(null);
+  // const audioInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const container = messagesRef.current;
@@ -44,6 +45,7 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
 
         <footer className="flex-none pt-4 border-t border-white/10">
           <div className="mb-3 space-y-3">
+            {/* Audio uploads are temporarily disabled.
             <div className="flex items-center gap-3">
               <button type="button" disabled={loading} onClick={() => audioInputRef.current?.click()}
                 className="shrink-0 rounded-lg border border-white/10 bg-zinc-800 px-3 py-1.5 text-xs font-medium text-zinc-200 transition-colors hover:bg-zinc-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-400 disabled:cursor-not-allowed disabled:opacity-50">
@@ -58,6 +60,7 @@ export function ChatPage({ chat }: { chat: ReturnType<typeof useChat> }) {
                 event.currentTarget.value = "";
                 if (file) void upload(file);
               }} />
+            */}
             {pendingAudio && (
               <div className="min-w-0 space-y-2 rounded-xl border border-white/10 bg-zinc-900/80 p-3">
                 <div className="flex items-start justify-between gap-3">
