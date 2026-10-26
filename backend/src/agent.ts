@@ -61,6 +61,7 @@ export function getOrCreateAgent(sessionId: string): Agent {
   }
 
   const model = createNebiusModel();
+  model.updateConfig({ params: { chat_template_kwargs: { enable_thinking: true, medium_effort: true } } });
   const conversationManager = new SlidingWindowConversationManager({ windowSize: contextWindowSize });
   const agent = new Agent({
     model: model,

@@ -36,6 +36,7 @@ test('only lyric requests use the default lyric model, preserve form values, and
   const originalCreateRun = Client.prototype.createRun;
   const originalUpdateRun = Client.prototype.updateRun;
   const originalTracing = process.env.LANGSMITH_TRACING;
+  const originalCoreModel = process.env.NEBIUS_MODEL;
   const originalLyricsModel = process.env.LYRICS_MODEL;
   const runs: Parameters<Client['createRun']>[0][] = [];
   const sessionId = 'offline-lyrics-test';
@@ -64,6 +65,7 @@ test('only lyric requests use the default lyric model, preserve form values, and
   Client.prototype.createRun = async (run) => { runs.push(run); };
   Client.prototype.updateRun = async () => {};
   process.env.LANGSMITH_TRACING = 'true';
+  process.env.NEBIUS_MODEL = 'offline-core-model';
   delete process.env.LYRICS_MODEL;
   globalThis.fetch = async (url, options) => {
     const httpRequest = new Request(url, options);
@@ -72,16 +74,16 @@ test('only lyric requests use the default lyric model, preserve form values, and
     assert.equal(httpRequest.url, `${testGatewayURL}/custom-nebius/v1/chat/completions`);
     const request = await httpRequest.json();
     requests.push(request);
+    assert.equal(request.reasoning_effort, undefined);
+    assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true, medium_effort: true });
     const isLyrics = request.model === 'nvidia/Nemotron-3.5-Super-VL';
-    if (isLyrics) assert.equal(request.max_completion_tokens, 32_768);
+    if (isLyrics) assert.equal(request.max_completion_tokens, 8_192);
     else assert.ok(request.max_completion_tokens > 0 && request.max_completion_tokens <= 4096);
     const lyricSkillCall = isLyrics && !!lyricSkill && request.messages.at(-1)?.role !== 'tool';
     const toolCall = lyricSkillCall || (!isLyrics && (looping || ++mainCalls % mainTurnCycle !== 0));
     if (isLyrics) {
-      assert.equal(request.reasoning_effort, undefined);
       assert.equal(request.temperature, 1);
       assert.equal(request.top_p, 0.95);
-      assert.deepEqual(request.chat_template_kwargs, { enable_thinking: true });
       assert.deepEqual(request.tools?.map((entry: { function: { name: string } }) => entry.function.name), ['skills']);
       assert.ok(request.messages[0].content.startsWith(readFileSync(new URL('../prompts/lyrics.md', import.meta.url), 'utf8').trim()));
       for (const skillName of ['country-pop-rock-folk-indie', 'melodic-hip-hop-rnb', 'street-trap-drill-rap']) {
@@ -360,6 +362,8 @@ test('only lyric requests use the default lyric model, preserve form values, and
     Client.prototype.updateRun = originalUpdateRun;
     if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
     else process.env.LANGSMITH_TRACING = originalTracing;
+    if (originalCoreModel === undefined) delete process.env.NEBIUS_MODEL;
+    else process.env.NEBIUS_MODEL = originalCoreModel;
     if (originalLyricsModel === undefined) delete process.env.LYRICS_MODEL;
     else process.env.LYRICS_MODEL = originalLyricsModel;
   }
