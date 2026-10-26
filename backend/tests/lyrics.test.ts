@@ -163,6 +163,12 @@ test('only lyric requests use the default lyric model, preserve form values, and
       { request: 'preserve verse, chorus 6 lines', supplied: lyrics, output: lyrics.split('\n[chorus]')[0] + '\n' + sixLineChorus },
       { request: 'kirjoita kuuden rivin kertosäe', output: preservedVerse + '\n' + sixLineChorus },
       { request: 'write lyrics about waiting', output: '[verse]\nline.\nline.\nline.', truncated: true },
+      { request: 'write lyrics without leading blank lines', output: '\n\n' + preservedVerse + '\n\n' + fourLineChorus,
+        expected: preservedVerse + '\n\n' + fourLineChorus },
+      { request: 'write partial lyrics without leading blank lines', output: '\r\n\r\n' + preservedVerse,
+        expected: preservedVerse, truncated: true },
+      { request: 'write long lyrics without leading blank lines', output: '\n\n' + longTaggedLyrics,
+        expected: longTaggedLyrics.slice(0, 3_000) },
       { request: 'write lyrics about waiting', output: longTaggedLyrics },
     ]) {
       currentBrief = { ...savedBrief, lyrics: example.supplied ?? preservedVerse + '\n' + fourLineChorus };
@@ -172,7 +178,7 @@ test('only lyric requests use the default lyric model, preserve form values, and
       failure = example.truncated ? 'truncated' : undefined;
       const requestCount = requests.length;
       await updateMusicFormTool.invoke({ ...currentBrief, lyricRequest }, { invocationState } as ToolContext);
-      assert.deepEqual(invocationState.musicPrompt, { ...currentBrief, lyrics: example.output.slice(0, 3_000) }, example.request);
+      assert.deepEqual(invocationState.musicPrompt, { ...currentBrief, lyrics: example.expected ?? example.output.slice(0, 3_000) }, example.request);
       assert.equal(requests.length - requestCount, 1, 'accept the output without another lyric attempt');
     }
     currentBrief = savedBrief;

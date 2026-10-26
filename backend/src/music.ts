@@ -114,7 +114,7 @@ async function applyLyricRequest(prompt: Record<string, string>, value: unknown,
     throw error;
   });
   // shortcut: preserve usable partial lyrics, even mid-section; change only with an explicit replacement policy.
-  prompt.lyrics = validateLyricOutput(lyrics.slice(0, 3_000));
+  prompt.lyrics = validateLyricOutput(lyrics.trimStart().slice(0, 3_000));
   validateMusicPrompt(Object.values(prompt).join('\n\n'));
 }
 
